@@ -134,6 +134,17 @@ test("public staging redacts the configured vault path without changing generic 
   assert.match(result, /C:\\Users\\<用户名>/)
 })
 
+test("public staging redacts POSIX roots independently of the host platform", () => {
+  const source = [
+    "source: /home/alice/Gao/Knowledge/AI Agent Engineer",
+    "escaped: \\home\\alice\\Gao\\Knowledge\\AI Agent Engineer",
+  ].join("\n")
+  const result = redactVaultRoot(source, "/home/alice/Gao/")
+  assert.doesNotMatch(result, /home[\\/]alice[\\/]Gao/i)
+  assert.match(result, /X:\/path\/to\/your-vault/)
+  assert.match(result, /X:\\path\\to\\your-vault/)
+})
+
 test("default machine-path redaction remains callable for production staging", () => {
   assert.equal(redactMachineSpecificPaths("generic path"), "generic path")
 })

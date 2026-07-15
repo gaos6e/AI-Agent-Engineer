@@ -164,11 +164,25 @@ export function redactMachineSpecificPaths(markdown) {
 
 export function redactVaultRoot(markdown, vaultRoot) {
   const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const windowsRoot = path.resolve(vaultRoot)
-  const posixRoot = windowsRoot.replaceAll("\\", "/")
-  return markdown
-    .replace(new RegExp(escapePattern(windowsRoot), "gi"), "X:\\path\\to\\your-vault")
-    .replace(new RegExp(escapePattern(posixRoot), "gi"), "X:/path/to/your-vault")
+  const configuredRoot = String(vaultRoot ?? "").trim()
+  if (!configuredRoot) return markdown
+
+  // A Windows path is not absolute according to path.resolve() on a Linux CI
+  // runner. Detect both path dialects before falling back to a host-relative
+  // path so exported content is redacted identically on every platform.
+  const isPortableAbsolute = path.win32.isAbsolute(configuredRoot) || path.posix.isAbsolute(configuredRoot)
+  const absoluteRoot = isPortableAbsolute ? configuredRoot : path.resolve(configuredRoot)
+  const rootWithoutTrailingSeparators = absoluteRoot.replace(/[\\/]+$/, "")
+  if (!rootWithoutTrailingSeparators || /^[A-Za-z]:$/.test(rootWithoutTrailingSeparators)) return markdown
+
+  const variants = [
+    [rootWithoutTrailingSeparators.replaceAll("/", "\\"), "X:\\path\\to\\your-vault"],
+    [rootWithoutTrailingSeparators.replaceAll("\\", "/"), "X:/path/to/your-vault"],
+  ]
+
+  return variants.reduce((result, [candidate, replacement]) => {
+    return result.replace(new RegExp(escapePattern(candidate), "gi"), replacement)
+  }, markdown)
 }
 
 function transformOutsideInlineCode(line, transform) {
