@@ -1,0 +1,485 @@
+{
+  "policy": {
+    "version": "local-monitor-policy-v2",
+    "allowed_metric_labels": [
+      "service",
+      "release",
+      "intent",
+      "status",
+      "model_provider"
+    ],
+    "max_p95_latency_ms": 1500,
+    "min_quality_pass_rate": 0.75,
+    "min_label_coverage_rate": 0.5,
+    "max_safety_violation_rate": 0.0,
+    "min_safety_check_coverage_rate": 0.8,
+    "max_average_estimated_cost_usd": 0.02,
+    "min_trace_completeness_rate": 0.8,
+    "max_collector_drop_rate": 0.05,
+    "max_export_age_seconds": 60,
+    "max_retention_days": 30,
+    "page_short_burn_rate": 4.0,
+    "page_long_burn_rate": 2.0,
+    "ticket_long_burn_rate": 1.0,
+    "max_cpu_utilization": 0.85,
+    "max_queue_depth": 10,
+    "max_average_agent_steps": 5.0,
+    "max_average_total_tokens": 3000.0
+  },
+  "slo": {
+    "version": "interactive-slo-v2",
+    "target": 0.8,
+    "latency_objective_ms": 1200,
+    "good_statuses": [
+      "ok"
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "stable-window",
+      "window_minutes": 60,
+      "short_window_minutes": 5,
+      "metric_label_keys": [
+        "service",
+        "release",
+        "intent",
+        "status"
+      ],
+      "telemetry_policy": {
+        "content_capture_enabled": false,
+        "redaction_check_passed": true,
+        "retention_days": 14
+      },
+      "collector": {
+        "accepted": 100,
+        "refused": 0,
+        "sent": 98,
+        "failed_to_send": 1,
+        "queue_size": 1,
+        "queue_capacity": 50,
+        "last_export_age_seconds": 5
+      },
+      "resources": {
+        "cpu_utilization": 0.4,
+        "queue_depth": 2,
+        "resource_error_count": 0
+      },
+      "events": [
+        {
+          "request_id": "stable-01",
+          "timestamp": "2026-07-14T08:00:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 400,
+          "quality_pass": true,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.01,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 1,
+          "tool_calls": 0,
+          "agent_steps": 1,
+          "input_tokens": 800,
+          "output_tokens": 200,
+          "trace_id": "10000000000000000000000000000001"
+        },
+        {
+          "request_id": "stable-02",
+          "timestamp": "2026-07-14T08:10:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 500,
+          "quality_pass": true,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.011,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 1,
+          "tool_calls": 1,
+          "agent_steps": 2,
+          "input_tokens": 900,
+          "output_tokens": 250,
+          "trace_id": "10000000000000000000000000000002"
+        },
+        {
+          "request_id": "stable-03",
+          "timestamp": "2026-07-14T08:20:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 600,
+          "quality_pass": true,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.012,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 1,
+          "tool_calls": 1,
+          "agent_steps": 2,
+          "input_tokens": 1000,
+          "output_tokens": 300,
+          "trace_id": "10000000000000000000000000000003"
+        },
+        {
+          "request_id": "stable-04",
+          "timestamp": "2026-07-14T08:55:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "ok",
+          "latency_ms": 700,
+          "quality_pass": false,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.013,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 2,
+          "tool_calls": 1,
+          "agent_steps": 3,
+          "input_tokens": 1100,
+          "output_tokens": 350,
+          "trace_id": "10000000000000000000000000000004"
+        },
+        {
+          "request_id": "stable-05",
+          "timestamp": "2026-07-14T08:57:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "ok",
+          "latency_ms": 800,
+          "quality_pass": null,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.014,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 1,
+          "tool_calls": 1,
+          "agent_steps": 2,
+          "input_tokens": 1200,
+          "output_tokens": 400,
+          "trace_id": "10000000000000000000000000000005"
+        },
+        {
+          "request_id": "stable-06",
+          "timestamp": "2026-07-14T08:59:00Z",
+          "release": "agent-release-v3",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "ok",
+          "latency_ms": 900,
+          "quality_pass": null,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.015,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-a",
+          "model_calls": 1,
+          "tool_calls": 2,
+          "agent_steps": 3,
+          "input_tokens": 1300,
+          "output_tokens": 450,
+          "trace_id": null
+        }
+      ],
+      "traces": [
+        {
+          "trace_id": "10000000000000000000000000000001",
+          "traceparent": "00-10000000000000000000000000000001-a000000000000001-01",
+          "spans": [
+            {
+              "span_id": "1000000000000001",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 400,
+              "attributes": {
+                "release": "agent-release-v3",
+                "operation_type": "request"
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "10000000000000000000000000000002",
+          "traceparent": "00-10000000000000000000000000000002-a000000000000002-01",
+          "spans": [
+            {
+              "span_id": "1000000000000002",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 500,
+              "attributes": {
+                "release": "agent-release-v3",
+                "operation_type": "request"
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "10000000000000000000000000000003",
+          "traceparent": "00-10000000000000000000000000000003-a000000000000003-01",
+          "spans": [
+            {
+              "span_id": "1000000000000003",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 600,
+              "attributes": {
+                "release": "agent-release-v3",
+                "operation_type": "request"
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "10000000000000000000000000000004",
+          "traceparent": "00-10000000000000000000000000000004-a000000000000004-01",
+          "spans": [
+            {
+              "span_id": "1000000000000004",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 700,
+              "attributes": {
+                "release": "agent-release-v3",
+                "operation_type": "request"
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "10000000000000000000000000000005",
+          "traceparent": "00-10000000000000000000000000000005-a000000000000005-01",
+          "spans": [
+            {
+              "span_id": "1000000000000005",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 800,
+              "attributes": {
+                "release": "agent-release-v3",
+                "operation_type": "request"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "incident-window",
+      "window_minutes": 60,
+      "short_window_minutes": 5,
+      "metric_label_keys": [
+        "service",
+        "release",
+        "intent",
+        "status"
+      ],
+      "telemetry_policy": {
+        "content_capture_enabled": false,
+        "redaction_check_passed": false,
+        "retention_days": 90
+      },
+      "collector": {
+        "accepted": 100,
+        "refused": 10,
+        "sent": 70,
+        "failed_to_send": 10,
+        "queue_size": 20,
+        "queue_capacity": 50,
+        "last_export_age_seconds": 180
+      },
+      "resources": {
+        "cpu_utilization": 0.95,
+        "queue_depth": 25,
+        "resource_error_count": 3
+      },
+      "events": [
+        {
+          "request_id": "incident-01",
+          "timestamp": "2026-07-14T09:00:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 600,
+          "quality_pass": true,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.015,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 1,
+          "tool_calls": 0,
+          "agent_steps": 1,
+          "input_tokens": 1000,
+          "output_tokens": 300,
+          "trace_id": "20000000000000000000000000000001"
+        },
+        {
+          "request_id": "incident-02",
+          "timestamp": "2026-07-14T09:10:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 700,
+          "quality_pass": true,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.018,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 1,
+          "tool_calls": 1,
+          "agent_steps": 2,
+          "input_tokens": 1100,
+          "output_tokens": 350,
+          "trace_id": "20000000000000000000000000000002"
+        },
+        {
+          "request_id": "incident-03",
+          "timestamp": "2026-07-14T09:20:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "read",
+          "status": "ok",
+          "latency_ms": 800,
+          "quality_pass": null,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.02,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 2,
+          "tool_calls": 1,
+          "agent_steps": 3,
+          "input_tokens": 1600,
+          "output_tokens": 600,
+          "trace_id": null
+        },
+        {
+          "request_id": "incident-04",
+          "timestamp": "2026-07-14T09:55:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "error",
+          "latency_ms": 2200,
+          "quality_pass": false,
+          "safety_checked": true,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.03,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 4,
+          "tool_calls": 3,
+          "agent_steps": 8,
+          "input_tokens": 3200,
+          "output_tokens": 1400,
+          "trace_id": null
+        },
+        {
+          "request_id": "incident-05",
+          "timestamp": "2026-07-14T09:57:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "ok",
+          "latency_ms": 2400,
+          "quality_pass": null,
+          "safety_checked": false,
+          "safety_violation": false,
+          "estimated_cost_usd": 0.04,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 5,
+          "tool_calls": 4,
+          "agent_steps": 9,
+          "input_tokens": 4200,
+          "output_tokens": 1800,
+          "trace_id": null
+        },
+        {
+          "request_id": "incident-06",
+          "timestamp": "2026-07-14T09:59:00Z",
+          "release": "agent-release-v4",
+          "service": "agent-api",
+          "intent": "write",
+          "status": "error",
+          "latency_ms": 3000,
+          "quality_pass": null,
+          "safety_checked": true,
+          "safety_violation": true,
+          "estimated_cost_usd": 0.05,
+          "model_provider": "provider-a",
+          "model_snapshot": "model-snapshot-b",
+          "model_calls": 6,
+          "tool_calls": 5,
+          "agent_steps": 10,
+          "input_tokens": 5000,
+          "output_tokens": 2200,
+          "trace_id": null
+        }
+      ],
+      "traces": [
+        {
+          "trace_id": "20000000000000000000000000000001",
+          "traceparent": "00-20000000000000000000000000000001-b000000000000001-01",
+          "spans": [
+            {
+              "span_id": "2000000000000001",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 600,
+              "attributes": {
+                "release": "agent-release-v4",
+                "operation_type": "request"
+              }
+            }
+          ]
+        },
+        {
+          "trace_id": "20000000000000000000000000000002",
+          "traceparent": "00-20000000000000000000000000000002-b000000000000002-01",
+          "spans": [
+            {
+              "span_id": "2000000000000002",
+              "parent_span_id": null,
+              "name": "agent.request",
+              "service": "agent-api",
+              "status": "ok",
+              "duration_ms": 700,
+              "attributes": {
+                "release": "agent-release-v4",
+                "operation_type": "request"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

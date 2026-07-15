@@ -1,0 +1,251 @@
+{
+  "contracts": [
+    {
+      "space_id": "toy-v1",
+      "provider": "local-fixture",
+      "model": "toy-bi-encoder",
+      "revision": "v1",
+      "dimension": 4,
+      "metric": "cosine",
+      "normalized": false,
+      "query_role": "query",
+      "document_role": "document",
+      "dtype": "float32"
+    },
+    {
+      "space_id": "toy-v2",
+      "provider": "local-fixture",
+      "model": "toy-bi-encoder",
+      "revision": "v2",
+      "dimension": 5,
+      "metric": "dot",
+      "normalized": true,
+      "query_role": "query",
+      "document_role": "document",
+      "dtype": "float32"
+    }
+  ],
+  "items": [
+    {
+      "item_id": "doc-credentials",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "API 密钥只从环境变量读取，日志不得记录密钥。",
+      "vector": [0.0, 1.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-deploy",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "生产环境使用四个副本，并由 SRE 审批。",
+      "vector": [0.0, 0.0, 1.0, 0.0],
+      "acl": ["platform"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-image",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "图像检索样例使用单独的视觉表示。",
+      "vector": [0.0, 0.0, 0.0, 1.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-noise",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "这是一条与目标问题无关的负例。",
+      "vector": [-1.0, -1.0, -1.0, -1.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-retry",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "网络超时和限流可以重试，认证失败不得重试。",
+      "vector": [0.8, 0.6, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-timeout",
+      "space_id": "toy-v1",
+      "role": "document",
+      "text": "连接超时为三秒，读取超时为十秒。",
+      "vector": [1.0, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "q-deploy",
+      "space_id": "toy-v1",
+      "role": "query",
+      "text": "生产环境由谁审批",
+      "vector": [0.0, 0.0, 1.0, 0.0],
+      "acl": ["platform"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-image",
+      "space_id": "toy-v1",
+      "role": "query",
+      "text": "视觉表示样例",
+      "vector": [0.0, 0.0, 0.0, 1.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-retry",
+      "space_id": "toy-v1",
+      "role": "query",
+      "text": "哪些错误可以重试",
+      "vector": [0.6, 0.8, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-timeout",
+      "space_id": "toy-v1",
+      "role": "query",
+      "text": "连接和读取超时",
+      "vector": [1.0, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "doc-credentials",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "API 密钥只从环境变量读取，日志不得记录密钥。",
+      "vector": [0.0, 1.0, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-deploy",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "生产环境使用四个副本，并由 SRE 审批。",
+      "vector": [0.0, 0.0, 1.0, 0.0, 0.0],
+      "acl": ["platform"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-image",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "图像检索样例使用单独的视觉表示。",
+      "vector": [0.0, 0.0, 0.0, 1.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-noise",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "这是一条与目标问题无关的负例。",
+      "vector": [0.0, 0.0, 0.0, 0.0, 1.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-retry",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "网络超时和限流可以重试，认证失败不得重试。",
+      "vector": [0.8, 0.6, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "doc-timeout",
+      "space_id": "toy-v2",
+      "role": "document",
+      "text": "连接超时为三秒，读取超时为十秒。",
+      "vector": [1.0, 0.0, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "corpus-r3"
+    },
+    {
+      "item_id": "q-deploy",
+      "space_id": "toy-v2",
+      "role": "query",
+      "text": "生产环境由谁审批",
+      "vector": [0.0, 0.0, 1.0, 0.0, 0.0],
+      "acl": ["platform"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-image",
+      "space_id": "toy-v2",
+      "role": "query",
+      "text": "视觉表示样例",
+      "vector": [0.0, 0.0, 0.0, 1.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-retry",
+      "space_id": "toy-v2",
+      "role": "query",
+      "text": "哪些错误可以重试",
+      "vector": [0.6, 0.8, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    },
+    {
+      "item_id": "q-timeout",
+      "space_id": "toy-v2",
+      "role": "query",
+      "text": "连接和读取超时",
+      "vector": [1.0, 0.0, 0.0, 0.0, 0.0],
+      "acl": ["employees"],
+      "source_revision": "query-r1"
+    }
+  ],
+  "queries": [
+    {
+      "case_id": "deploy-approval",
+      "query_item_id": "q-deploy",
+      "subject_groups": ["platform"],
+      "relevance": {
+        "doc-deploy": 3
+      },
+      "subgroups": ["fact", "zh"]
+    },
+    {
+      "case_id": "image-example",
+      "query_item_id": "q-image",
+      "subject_groups": ["employees"],
+      "relevance": {
+        "doc-image": 3
+      },
+      "subgroups": ["cross-domain", "zh"]
+    },
+    {
+      "case_id": "retry-policy",
+      "query_item_id": "q-retry",
+      "subject_groups": ["employees"],
+      "relevance": {
+        "doc-credentials": 1,
+        "doc-retry": 3
+      },
+      "subgroups": ["multi-evidence", "policy", "zh"]
+    },
+    {
+      "case_id": "timeout-values",
+      "query_item_id": "q-timeout",
+      "subject_groups": ["employees"],
+      "relevance": {
+        "doc-retry": 1,
+        "doc-timeout": 3
+      },
+      "subgroups": ["fact", "multi-evidence", "zh"]
+    }
+  ]
+}
+

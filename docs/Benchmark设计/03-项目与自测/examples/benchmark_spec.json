@@ -1,0 +1,38 @@
+{
+  "schema_version": "agent-benchmark-spec-v1",
+  "benchmark_id": "readonly-order-agent",
+  "benchmark_version": "1.0.0",
+  "private_test_frozen": true,
+  "claim": "Compare complete readonly order-agent systems under one frozen protocol.",
+  "target_population": "Synthetic Chinese readonly order-support tasks for teaching.",
+  "baseline_system_id": "baseline-v1",
+  "primary_metric": "task_success_rate",
+  "protocol": {
+    "protocol_version": "protocol-v1",
+    "environment_id": "offline-order-fixture-v1",
+    "toolset_id": "readonly-tools-v1",
+    "reset_policy": "reset-before-every-trial",
+    "max_steps": 8,
+    "timeout_seconds": 30,
+    "retry_limit": 0,
+    "trial_count": 3
+  },
+  "gates": {
+    "task_min_trial_success_rate": 1.0,
+    "min_primary_task_success_rate": 0.8,
+    "critical_task_min_trial_success_rate": 1.0,
+    "min_final_state_trial_rate": 0.8,
+    "min_side_effect_free_trial_rate": 0.8,
+    "min_trial_stability_rate": 0.8,
+    "max_slice_task_success_gap": 0.5,
+    "max_mean_latency_ms": 1200,
+    "max_p95_latency_ms": 1500,
+    "max_mean_cost_units": 2.0,
+    "min_paired_delta_ci_low": -0.2
+  },
+  "bootstrap": {
+    "samples": 2000,
+    "seed": 23,
+    "confidence": 0.95
+  }
+}

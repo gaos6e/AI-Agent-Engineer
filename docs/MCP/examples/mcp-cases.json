@@ -1,0 +1,1011 @@
+{
+  "schema_version": 1,
+  "protocol_version": "2025-11-25",
+  "client": {
+    "info": {
+      "name": "offline-course-client",
+      "version": "1.0.0"
+    },
+    "capabilities": {
+      "roots": {
+        "listChanged": true
+      },
+      "sampling": {
+        "tools": {}
+      },
+      "elicitation": {
+        "form": {},
+        "url": {}
+      },
+      "tasks": {
+        "list": {},
+        "cancel": {},
+        "requests": {
+          "sampling": {
+            "createMessage": {}
+          },
+          "elicitation": {
+            "create": {}
+          }
+        }
+      }
+    }
+  },
+  "server": {
+    "info": {
+      "name": "offline-course-server",
+      "version": "1.0.0"
+    },
+    "capabilities": {
+      "logging": {},
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": true,
+        "listChanged": true
+      },
+      "tools": {
+        "listChanged": true
+      },
+      "tasks": {
+        "list": {},
+        "cancel": {},
+        "requests": {
+          "tools": {
+            "call": {}
+          }
+        }
+      }
+    }
+  },
+  "tool": {
+    "name": "lookup_weather",
+    "description": "Return deterministic sample weather without network access.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "celsius",
+            "fahrenheit"
+          ]
+        }
+      },
+      "required": [
+        "city"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "temperature": {
+          "type": "number"
+        },
+        "conditions": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "celsius",
+            "fahrenheit"
+          ]
+        }
+      },
+      "required": [
+        "temperature",
+        "conditions",
+        "unit"
+      ],
+      "additionalProperties": false
+    },
+    "execution": {
+      "taskSupport": "optional"
+    }
+  },
+  "cases": [
+    {
+      "name": "valid_tool_call_and_structured_result",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai",
+                "unit": "celsius"
+              }
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "{\"temperature\": 23.5, \"conditions\": \"sample\", \"unit\": \"celsius\"}"
+                }
+              ],
+              "structuredContent": {
+                "temperature": 23.5,
+                "conditions": "sample",
+                "unit": "celsius"
+              },
+              "isError": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing_required_tool_argument",
+      "expect": "fail",
+      "error_contains": "missing required value",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "unit": "celsius"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown_tool_argument",
+      "expect": "fail",
+      "error_contains": "unknown values",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai",
+                "timezone": "Asia/Shanghai"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "invalid_tool_enum",
+      "expect": "fail",
+      "error_contains": "must be one of",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai",
+                "unit": "kelvin"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "wrong_tool_argument_type",
+      "expect": "fail",
+      "error_contains": "must be a string",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": 42
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "successful_tool_result_missing_structured_content",
+      "expect": "fail",
+      "error_contains": "structuredContent",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai"
+              }
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "weather"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tool_result_wrong_output_type",
+      "expect": "fail",
+      "error_contains": "must be a number",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai"
+              }
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "weather"
+                }
+              ],
+              "structuredContent": {
+                "temperature": "warm",
+                "conditions": "sample",
+                "unit": "celsius"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tool_execution_error_without_structured_content",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Nowhere"
+              }
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "city is outside the sample data"
+                }
+              ],
+              "isError": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_roots_list",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "roots/list"
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "result": {
+              "roots": [
+                {
+                  "uri": "file:///D:/course/project",
+                  "name": "course-project"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "roots_without_client_capability",
+      "expect": "fail",
+      "error_contains": "client did not declare capability: roots",
+      "client_capabilities": {
+        "sampling": {},
+        "elicitation": {
+          "form": {}
+        }
+      },
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "roots/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_sampling_with_tools",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "sampling/createMessage",
+            "params": {
+              "messages": [
+                {
+                  "role": "user",
+                  "content": {
+                    "type": "text",
+                    "text": "Summarize the sample."
+                  }
+                }
+              ],
+              "maxTokens": 64,
+              "tools": [
+                {
+                  "name": "local_lookup",
+                  "description": "Read deterministic local sample data.",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "result": {
+              "role": "assistant",
+              "content": {
+                "type": "text",
+                "text": "sample summary"
+              },
+              "model": "offline-placeholder",
+              "stopReason": "endTurn"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sampling_tools_without_subcapability",
+      "expect": "fail",
+      "error_contains": "sampling.tools",
+      "client_capabilities": {
+        "roots": {},
+        "sampling": {},
+        "elicitation": {
+          "form": {}
+        }
+      },
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "sampling/createMessage",
+            "params": {
+              "messages": [
+                {
+                  "role": "user",
+                  "content": {
+                    "type": "text",
+                    "text": "Use a tool."
+                  }
+                }
+              ],
+              "maxTokens": 64,
+              "tools": [
+                {
+                  "name": "local_lookup"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sampling_context_without_subcapability",
+      "expect": "fail",
+      "error_contains": "sampling.context",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "sampling/createMessage",
+            "params": {
+              "messages": [
+                {
+                  "role": "user",
+                  "content": {
+                    "type": "text",
+                    "text": "Use all context."
+                  }
+                }
+              ],
+              "maxTokens": 64,
+              "includeContext": "allServers"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_form_elicitation",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "elicitation/create",
+            "params": {
+              "mode": "form",
+              "message": "Choose the report language.",
+              "requestedSchema": {
+                "type": "object",
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "zh-CN",
+                      "en"
+                    ]
+                  }
+                },
+                "required": [
+                  "language"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 15,
+            "result": {
+              "action": "accept",
+              "content": {
+                "language": "zh-CN"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "form_elicitation_requests_secret",
+      "expect": "fail",
+      "error_contains": "must not request secrets",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 16,
+            "method": "elicitation/create",
+            "params": {
+              "message": "Enter a credential.",
+              "requestedSchema": {
+                "type": "object",
+                "properties": {
+                  "api_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api_key"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_url_elicitation",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "method": "elicitation/create",
+            "params": {
+              "mode": "url",
+              "message": "Complete the external authorization flow.",
+              "url": "https://example.com/connect?id=course-demo",
+              "elicitationId": "course-demo"
+            }
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 17,
+            "result": {
+              "action": "accept"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "url_elicitation_without_subcapability",
+      "expect": "fail",
+      "error_contains": "elicitation.url",
+      "client_capabilities": {
+        "roots": {},
+        "sampling": {},
+        "elicitation": {
+          "form": {}
+        }
+      },
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 18,
+            "method": "elicitation/create",
+            "params": {
+              "mode": "url",
+              "message": "Open a secure page.",
+              "url": "https://example.com/connect",
+              "elicitationId": "missing-capability"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_tasks_list",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 19,
+            "method": "tasks/list",
+            "params": {}
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 19,
+            "result": {
+              "tasks": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tasks_list_without_server_capability",
+      "expect": "fail",
+      "error_contains": "server did not declare capability: tasks.list",
+      "server_capabilities": {
+        "tools": {},
+        "resources": {},
+        "prompts": {}
+      },
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tasks/list",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_task_augmented_tool_call",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 21,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai"
+              },
+              "task": {
+                "ttl": 60000
+              }
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 21,
+            "result": {
+              "task": {
+                "taskId": "task-course-1",
+                "status": "working",
+                "createdAt": "2026-07-14T00:00:00Z",
+                "lastUpdatedAt": "2026-07-14T00:00:00Z",
+                "ttl": 60000,
+                "pollInterval": 1000
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "task_augmented_tool_call_without_capability",
+      "expect": "fail",
+      "error_contains": "tasks.requests.tools.call",
+      "server_capabilities": {
+        "tools": {},
+        "resources": {},
+        "prompts": {}
+      },
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "tools/call",
+            "params": {
+              "name": "lookup_weather",
+              "arguments": {
+                "city": "Shanghai"
+              },
+              "task": {}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate_outstanding_request_id",
+      "expect": "fail",
+      "error_contains": "duplicate outstanding request id",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "tools/list"
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 23,
+            "method": "resources/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "response_id_mismatch",
+      "expect": "fail",
+      "error_contains": "no matching outstanding request",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 24,
+            "method": "tools/list"
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 999,
+            "result": {
+              "tools": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "response_contains_result_and_error",
+      "expect": "fail",
+      "error_contains": "exactly one of result or error",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 25,
+            "method": "tools/list"
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 25,
+            "result": {
+              "tools": []
+            },
+            "error": {
+              "code": -32603,
+              "message": "ambiguous"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "request_before_initialize",
+      "expect": "fail",
+      "error_contains": "initialize request must be the first interaction",
+      "setup": "none",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 26,
+            "method": "tools/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "notification_carries_id",
+      "expect": "fail",
+      "error_contains": "notification method must not contain id",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 27,
+            "method": "notifications/tools/list_changed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tools_method_without_server_capability",
+      "expect": "fail",
+      "error_contains": "server did not declare capability: tools",
+      "server_capabilities": {
+        "resources": {},
+        "prompts": {}
+      },
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 28,
+            "method": "tools/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_protocol_error_response",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 29,
+            "method": "tools/list"
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 29,
+            "error": {
+              "code": -32603,
+              "message": "sample protocol failure",
+              "data": {
+                "retryable": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "boolean_request_id_rejected",
+      "expect": "fail",
+      "error_contains": "id must be a string or integer",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": true,
+            "method": "tools/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tool_request_in_wrong_direction",
+      "expect": "fail",
+      "error_contains": "wrong direction",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "tools/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_roots_list_changed_notification",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/roots/list_changed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tool_list_changed_without_subcapability",
+      "expect": "fail",
+      "error_contains": "tools.listChanged",
+      "server_capabilities": {
+        "tools": {},
+        "resources": {},
+        "prompts": {}
+      },
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/tools/list_changed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_response_id_mismatch",
+      "expect": "fail",
+      "error_contains": "no matching outstanding request",
+      "setup": "initialize_request_only",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 99,
+            "result": {
+              "protocolVersion": "2025-11-25",
+              "capabilities": {},
+              "serverInfo": {
+                "name": "bad-id-server",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

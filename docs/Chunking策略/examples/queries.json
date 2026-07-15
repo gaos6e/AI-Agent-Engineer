@@ -1,0 +1,74 @@
+[
+  {
+    "query_id": "timeout-values",
+    "query": "连接超时和读取超时分别是多少",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e1", "quote": "连接超时为 3 秒"},
+      {"element_id": "api-e1", "quote": "读取超时为 10 秒"}
+    ]
+  },
+  {
+    "query_id": "retry-policy",
+    "query": "哪些错误可以重试，最多几次",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e2", "quote": "网络超时、限流和服务端临时错误"},
+      {"element_id": "api-e3", "quote": "最多 3 次"}
+    ]
+  },
+  {
+    "query_id": "auth-failure",
+    "query": "认证失败能否重试",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e3", "quote": "认证失败不得重试"}
+    ]
+  },
+  {
+    "query_id": "credential-log",
+    "query": "日志能记录 API 密钥吗",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e4", "quote": "日志不得记录密钥"}
+    ]
+  },
+  {
+    "query_id": "python-timeout",
+    "query": "Python client.get timeout 示例",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e5", "quote": "client.get(url, timeout=timeout)"}
+    ]
+  },
+  {
+    "query_id": "production-row",
+    "query": "production 副本数和审批人",
+    "subject_groups": ["platform"],
+    "evidence": [
+      {"element_id": "deploy-e1", "quote": "环境 | 副本数 | 审批"},
+      {"element_id": "deploy-e2", "quote": "production | 4 | SRE"}
+    ]
+  },
+  {
+    "query_id": "rollback-condition",
+    "query": "错误率连续几个窗口超过阈值时回滚",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "ops-e1", "quote": "错误率连续两个窗口超过阈值"},
+      {"element_id": "ops-e1", "quote": "停止扩容并回滚"}
+    ]
+  },
+  {
+    "query_id": "unauthorized-production",
+    "query": "production 4 SRE",
+    "subject_groups": ["employees"],
+    "evidence": []
+  },
+  {
+    "query_id": "absent-code",
+    "query": "ZXQ-991",
+    "subject_groups": ["employees"],
+    "evidence": []
+  }
+]

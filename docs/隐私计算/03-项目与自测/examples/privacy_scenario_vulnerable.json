@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "scenario_id": "regional-statistics-vulnerable",
+  "purpose": "Publish aggregate regional service-usage statistics from two institutions.",
+  "non_goals": ["identify a person", "publish rare diagnoses", "retain raw records for future uses"],
+  "subject_scope": "One row per person during one reporting month.",
+  "data_fields": [
+    {"name": "person_name", "classification": "direct_identifier", "necessary": false, "contribution_bound": 1},
+    {"name": "postal_code", "classification": "quasi_identifier", "necessary": true, "contribution_bound": 1},
+    {"name": "diagnosis", "classification": "sensitive_attribute", "necessary": true, "contribution_bound": 1},
+    {"name": "usage_count", "classification": "measure", "necessary": true, "contribution_bound": 20}
+  ],
+  "participants": [
+    {"id": "holder-a", "role": "data_holder", "trusted": true},
+    {"id": "holder-b", "role": "data_holder", "trusted": true},
+    {"id": "central-server", "role": "compute_service", "trusted": false},
+    {"id": "public-publisher", "role": "publisher", "trusted": false}
+  ],
+  "data_flows": [
+    {"id": "a-to-server", "from": "holder-a", "to": "central-server", "fields": ["person_name", "postal_code", "diagnosis", "usage_count"], "raw": true},
+    {"id": "b-to-server", "from": "holder-b", "to": "central-server", "fields": ["person_name", "postal_code", "diagnosis", "usage_count"], "raw": true}
+  ],
+  "processing": {
+    "raw_data_centralized": true,
+    "local_training": true,
+    "secure_aggregation": false,
+    "mpc": false,
+    "homomorphic_encryption": false,
+    "tee": false
+  },
+  "release": {
+    "public": true,
+    "minimum_group_size": 5,
+    "adjacency_definition": "not-defined",
+    "epsilon_limit": "1.0",
+    "delta_limit": "0.000001",
+    "mechanisms": [
+      {"id": "monthly-counts", "mechanism": "illustrative-laplace", "epsilon": "0.8", "delta": "0.0000008", "approved": false},
+      {"id": "diagnosis-breakdown", "mechanism": "illustrative-gaussian", "epsilon": "0.7", "delta": "0.0000008", "approved": true}
+    ]
+  },
+  "retention": {"days": 365, "deletion_verified": false, "backups_in_scope": false},
+  "controls": {
+    "access_control": false,
+    "purpose_enforcement": false,
+    "output_review": false,
+    "budget_ledger": false,
+    "provenance": false,
+    "incident_plan": false,
+    "update_validation": false
+  },
+  "threat_model": {
+    "honest_but_curious_server": true,
+    "collusion_threshold": 1,
+    "malicious_clients": true,
+    "final_output_inference": true
+  },
+  "risk_policy": {
+    "block_severities": ["critical", "high"],
+    "review_severities": ["medium"]
+  }
+}

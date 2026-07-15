@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "query": {
+    "id": "q-refund-time",
+    "text": "退款审核通过后多久到账",
+    "tenant_id": "alpha",
+    "subject_groups": ["guests"],
+    "as_of": "2026-07-14"
+  },
+  "settings": {
+    "candidate_window": 6,
+    "output_top_n": 3,
+    "max_per_canonical": 2
+  },
+  "candidates": [
+    {
+      "id": "d-01-membership",
+      "canonical_document_id": "doc-membership",
+      "title": "会员续费规则",
+      "text": "会员自动续费可在下一个扣费日前关闭。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 1,
+      "first_score": 0.91
+    },
+    {
+      "id": "d-02-refund-apply",
+      "canonical_document_id": "doc-refund-apply",
+      "title": "退款申请入口",
+      "text": "提交订单号和付款凭证后可以申请退款。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-06-01",
+      "effective_to": null,
+      "source_revision": "r2",
+      "first_rank": 2,
+      "first_score": 0.84
+    },
+    {
+      "id": "d-03-login",
+      "canonical_document_id": "doc-login",
+      "title": "账号审核与登录",
+      "text": "账号审核失败时请重新提交身份材料。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 3,
+      "first_score": 0.81
+    },
+    {
+      "id": "d-04-refund-time",
+      "canonical_document_id": "doc-refund-time",
+      "title": "退款到账时间",
+      "text": "退款审核通过后通常在一至三个工作日原路返回。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r4",
+      "first_rank": 4,
+      "first_score": 0.78
+    },
+    {
+      "id": "d-05-refund-time-faq",
+      "canonical_document_id": "doc-refund-time",
+      "title": "退款到账常见问题",
+      "text": "审核通过后，退款一般在三个工作日内到账。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r4",
+      "first_rank": 5,
+      "first_score": 0.73
+    },
+    {
+      "id": "d-06-refund-delay",
+      "canonical_document_id": "doc-refund-delay",
+      "title": "退款延迟处理",
+      "text": "银行卡退款超过七个工作日仍未到账时，请联系人工客服。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-02-01",
+      "effective_to": null,
+      "source_revision": "r2",
+      "first_rank": 6,
+      "first_score": 0.69
+    },
+    {
+      "id": "d-07-beta-private",
+      "canonical_document_id": "doc-beta-refund",
+      "title": "Beta 租户退款承诺",
+      "text": "退款审核通过后立即到账，并自动提供专属赔付。",
+      "tenant_id": "beta",
+      "acl": ["guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 7,
+      "first_score": 0.68
+    },
+    {
+      "id": "d-08-expired-policy",
+      "canonical_document_id": "doc-old-refund",
+      "title": "旧版退款到账时间",
+      "text": "退款审核通过后固定在二十四小时内到账。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2023-01-01",
+      "effective_to": "2025-01-01",
+      "source_revision": "r-old",
+      "first_rank": 8,
+      "first_score": 0.66
+    },
+    {
+      "id": "d-09-internal-runbook",
+      "canonical_document_id": "doc-refund-runbook",
+      "title": "退款故障内部处置",
+      "text": "退款审核通过后未到账时，平台人员应检查支付网关队列。",
+      "tenant_id": "alpha",
+      "acl": ["platform"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r3",
+      "first_rank": 9,
+      "first_score": 0.63
+    }
+  ],
+  "qrels": {
+    "d-02-refund-apply": 1,
+    "d-04-refund-time": 3,
+    "d-05-refund-time-faq": 2,
+    "d-06-refund-delay": 2
+  },
+  "must_not_return": [
+    "d-07-beta-private",
+    "d-08-expired-policy",
+    "d-09-internal-runbook"
+  ]
+}

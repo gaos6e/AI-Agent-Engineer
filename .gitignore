@@ -1,0 +1,17 @@
+# Website runtime and generated output
+.website/.runtime/
+.website/.generated/
+.website/.cache/
+.website/public/
+.website/node_modules/
+.website/.quartz/
+.website/*.log
+
+# Local browser QA artifacts
+.playwright-cli/
+
+# Common local/generated files
+**/__pycache__/
+*.py[cod]
+.venv/
+node_modules/

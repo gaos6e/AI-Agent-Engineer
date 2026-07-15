@@ -1,0 +1,159 @@
+{
+  "schema_version": "1.0",
+  "project_id": "video-task-flow-001",
+  "purpose": "制作一段展示任务卡片流转的无真人教学短片",
+  "audience": "AI Agent 工程初学者",
+  "technical": {
+    "duration_seconds": 8.0,
+    "fps": 24,
+    "width": 1280,
+    "height": 720,
+    "aspect_ratio": "16:9",
+    "container": "mp4"
+  },
+  "shots": [
+    {
+      "shot_id": "S01",
+      "start_seconds": 0.0,
+      "end_seconds": 2.5,
+      "shot_size": "远景",
+      "camera_motion": "固定机位",
+      "subject": "白色小型机器人和三张蓝色任务卡片",
+      "action": "机器人站在工作台左侧，卡片整齐放在桌面",
+      "setting": "明亮的现代工作台，冷白柔光",
+      "continuity_anchors": [
+        "机器人外壳为白色并有蓝色圆形指示灯",
+        "三张卡片始终为蓝色",
+        "主光始终来自画面右侧"
+      ],
+      "prompt": "远景固定机位，白色小型机器人站在工作台左侧，三张蓝色卡片位于桌面中央；冷白柔光；镜头结束时机器人右手靠近第一张卡片。",
+      "reference_assets": []
+    },
+    {
+      "shot_id": "S02",
+      "start_seconds": 2.5,
+      "end_seconds": 5.5,
+      "shot_size": "中景",
+      "camera_motion": "缓慢向右平移",
+      "subject": "同一台白色机器人和三张蓝色任务卡片",
+      "action": "机器人把第一张卡片移到右侧的完成区",
+      "setting": "同一工作台与光线",
+      "continuity_anchors": [
+        "机器人蓝色指示灯保持亮起",
+        "卡片移动方向为从左到右",
+        "第二、三张卡片留在桌面中央"
+      ],
+      "prompt": "中景，镜头缓慢向右平移；同一台白色机器人把第一张蓝色卡片从中央移到右侧完成区；动作只有一次，结束时卡片平放。",
+      "reference_assets": []
+    },
+    {
+      "shot_id": "S03",
+      "start_seconds": 5.5,
+      "end_seconds": 8.0,
+      "shot_size": "近景",
+      "camera_motion": "固定机位",
+      "subject": "右侧完成区中的蓝色卡片和机器人手部",
+      "action": "机器人手部离开卡片，蓝色指示灯闪烁一次",
+      "setting": "同一工作台右侧，背景轻微虚化",
+      "continuity_anchors": [
+        "完成区卡片来自上一镜头",
+        "机器人外壳和蓝色指示灯外观不变",
+        "光线方向保持来自画面右侧"
+      ],
+      "prompt": "近景固定机位，右侧完成区的一张蓝色卡片清晰可见；机器人白色手部离开画面，蓝色指示灯闪烁一次；结束时画面保持稳定。",
+      "reference_assets": []
+    }
+  ],
+  "audio": {
+    "mode": "post_production",
+    "narration": "任务被拆分、执行并完成。",
+    "music_rights_confirmed": true,
+    "voice_subject_consent": "not_applicable",
+    "sync_review_required": true
+  },
+  "captions": {
+    "format": "webvtt",
+    "language": "zh-CN",
+    "cues": [
+      {
+        "start_seconds": 0.5,
+        "end_seconds": 3.0,
+        "text": "任务先被拆分。"
+      },
+      {
+        "start_seconds": 3.2,
+        "end_seconds": 7.2,
+        "text": "再由 Agent 执行并记录结果。"
+      }
+    ]
+  },
+  "risk": {
+    "reference_rights_confirmed": true,
+    "real_person": false,
+    "person_consent": "not_applicable",
+    "human_review_required": true,
+    "provenance_plan": "保存逐镜头请求、输入和输出哈希；发布前验证最终资产的 C2PA 状态",
+    "disclosure_plan": "成片说明为 AI 辅助生成，并保留人工剪辑与字幕记录"
+  },
+  "acceptance": [
+    {
+      "dimension": "prompt_adherence",
+      "criterion": "每个镜头只完成规定的单一动作",
+      "hard_failure": true
+    },
+    {
+      "dimension": "visual_quality",
+      "criterion": "机器人和卡片形状完整，没有明显闪烁或融化",
+      "hard_failure": false
+    },
+    {
+      "dimension": "motion",
+      "criterion": "卡片从左向右移动且速度连续",
+      "hard_failure": true
+    },
+    {
+      "dimension": "identity",
+      "criterion": "机器人外壳与蓝色指示灯跨镜头一致",
+      "hard_failure": true
+    },
+    {
+      "dimension": "continuity",
+      "criterion": "S02 移动的卡片在 S03 完成区保持一致",
+      "hard_failure": true
+    },
+    {
+      "dimension": "audio_captions",
+      "criterion": "旁白与字幕语义正确、时间不越界且人工校对",
+      "hard_failure": true
+    },
+    {
+      "dimension": "safety",
+      "criterion": "无真人、误导性事实或敏感内容",
+      "hard_failure": true
+    },
+    {
+      "dimension": "rights",
+      "criterion": "所有视觉和音频素材权利已确认",
+      "hard_failure": true
+    }
+  ],
+  "recovery": {
+    "max_attempts_per_shot": 3,
+    "checkpoint_between_shots": true,
+    "retry_policy": "只对瞬时技术故障自动重试；同一视觉失败连续出现则转人工",
+    "fallback": "缩短或拆分失败镜头，必要时改用静帧加后期运动",
+    "manual_escalation_required": true
+  },
+  "budget": {
+    "max_total_attempts": 9,
+    "max_generated_seconds": 72,
+    "pricing_source_required_at_run": true,
+    "manual_approval_before_budget_increase": true
+  },
+  "adapter": {
+    "provider": "offline-no-provider",
+    "model": "offline-no-model",
+    "version": "video-job-validator-v1",
+    "documentation_checked_on": "2026-07-14"
+  }
+}

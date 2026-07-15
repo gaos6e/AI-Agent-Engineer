@@ -1,0 +1,101 @@
+[
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e1",
+    "kind": "paragraph",
+    "text": "每个外部请求必须同时设置连接超时和读取超时。连接超时为 3 秒，读取超时为 10 秒。",
+    "section_path": ["API 指南", "超时"],
+    "acl": ["employees"],
+    "line_start": 3,
+    "line_end": 4
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e2",
+    "kind": "paragraph",
+    "text": "只有网络超时、限流和服务端临时错误可以进入重试判断。",
+    "section_path": ["API 指南", "重试"],
+    "acl": ["employees"],
+    "line_start": 6,
+    "line_end": 6
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e3",
+    "kind": "paragraph",
+    "text": "重试采用指数退避，最多 3 次；认证失败不得重试。",
+    "section_path": ["API 指南", "重试"],
+    "acl": ["employees"],
+    "line_start": 7,
+    "line_end": 7
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e4",
+    "kind": "paragraph",
+    "text": "API 密钥只从环境变量读取，日志不得记录密钥。",
+    "section_path": ["API 指南", "凭据"],
+    "acl": ["employees"],
+    "line_start": 9,
+    "line_end": 9
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e5",
+    "kind": "code_block",
+    "text": "timeout = (3, 10)\nresponse = client.get(url, timeout=timeout)",
+    "section_path": ["API 指南", "Python 示例"],
+    "acl": ["employees"],
+    "line_start": 11,
+    "line_end": 12
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e1",
+    "kind": "table_header",
+    "text": "环境 | 副本数 | 审批",
+    "section_path": ["部署指南", "环境矩阵"],
+    "acl": ["platform"],
+    "line_start": 4,
+    "line_end": 4
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e2",
+    "kind": "table_row",
+    "text": "production | 4 | SRE",
+    "section_path": ["部署指南", "环境矩阵"],
+    "acl": ["platform"],
+    "line_start": 5,
+    "line_end": 5
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e3",
+    "kind": "table_row",
+    "text": "staging | 2 | team-lead",
+    "section_path": ["部署指南", "环境矩阵"],
+    "acl": ["platform"],
+    "line_start": 6,
+    "line_end": 6
+  },
+  {
+    "source_id": "operations-guide",
+    "source_revision": "rev-1",
+    "element_id": "ops-e1",
+    "kind": "paragraph",
+    "text": "发布前先检查配置、依赖、权限和回滚入口。发布过程中逐步扩大流量，持续观察错误率和延迟；如果错误率连续两个窗口超过阈值，就停止扩容并回滚。恢复后必须保存事件时间线、影响范围和验证证据，最终结论是未经验证不得再次发布。",
+    "section_path": ["运行手册", "灰度发布"],
+    "acl": ["employees"],
+    "line_start": 3,
+    "line_end": 5
+  }
+]

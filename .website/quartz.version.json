@@ -1,0 +1,9 @@
+{
+  "name": "Quartz",
+  "version": "5.0.0",
+  "tag": "v5.0.0",
+  "commit": "ab346fa66a895e12d63a308e70ce330ba795822a",
+  "repository": "https://github.com/jackyzha0/quartz.git",
+  "release": "https://github.com/jackyzha0/quartz/releases/tag/v5.0.0",
+  "pluginCommand": "restore"
+}

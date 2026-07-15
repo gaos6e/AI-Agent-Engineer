@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "representation": {
+    "name": "hand-authored-teaching-space",
+    "revision": "toy-r1",
+    "dimension": 7,
+    "metric": "cosine",
+    "normalized": true,
+    "notice": "手工单位向量只用于离线管线教学，不是训练过的 Embedding，也不代表真实模型质量。"
+  },
+  "documents": [
+    {
+      "id": "d-01-format-general",
+      "title": "上传格式检查",
+      "text": "上传文件前请检查扩展名和大小限制。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "uploads",
+      "source_revision": "r1",
+      "vector": [0, 0, 1, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-02-e042",
+      "title": "错误码 E042",
+      "text": "错误码 E042 表示上传文件格式不受支持，请转换为 PDF。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "uploads",
+      "source_revision": "r1",
+      "vector": [0, 0, 1, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-03-refund-time",
+      "title": "退款到账时间",
+      "text": "退款审核通过后通常在一至三个工作日原路返回。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "payments",
+      "source_revision": "r2",
+      "vector": [1, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-04-double-charge",
+      "title": "重复扣款处理",
+      "text": "订单发生重复扣款时，请提交订单号和两笔支付流水申请处理。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "payments",
+      "source_revision": "r3",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-05-vpn",
+      "title": "远程办公 VPN 排障",
+      "text": "远程办公无法连接公司网络时，先检查 VPN 账号和客户端时间。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "network",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 1, 0, 0, 0]
+    },
+    {
+      "id": "d-06-membership",
+      "title": "关闭自动续费",
+      "text": "会员自动续费可在下一个扣费日前从订阅设置中关闭。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "membership",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 0, 1, 0, 0]
+    },
+    {
+      "id": "d-07-verification",
+      "title": "收不到验证码",
+      "text": "收不到短信验证码时，请检查手机号码、拦截设置和发送频率。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "account",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 0, 0, 1, 0]
+    },
+    {
+      "id": "d-08-internal-runbook",
+      "title": "技术故障升级流程",
+      "text": "内部技术故障应按值班表升级，并在事故频道记录处置时间线。",
+      "tenant_id": "alpha",
+      "acl": ["platform"],
+      "status": "published",
+      "language": "zh",
+      "product": "ops",
+      "source_revision": "r4",
+      "vector": [0, 0, 0, 0, 0, 0, 1]
+    },
+    {
+      "id": "d-09-beta-private",
+      "title": "Beta 租户重复扣款赔付",
+      "text": "钱被扣了两次时可直接进入 Beta 租户的专属赔付通道。",
+      "tenant_id": "beta",
+      "acl": ["guests"],
+      "status": "published",
+      "language": "zh",
+      "product": "payments",
+      "source_revision": "r1",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-10-draft-payment",
+      "title": "重复扣款新草案",
+      "text": "钱被扣了两次时立即自动赔付，此规则尚未发布。",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "draft",
+      "language": "zh",
+      "product": "payments",
+      "source_revision": "r9-draft",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    }
+  ],
+  "queries": [
+    {
+      "id": "q-refund-time",
+      "text": "退款多久到账",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "payments"},
+      "vector": [1, 0, 0, 0, 0, 0, 0],
+      "qrels": {"d-03-refund-time": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-double-charge",
+      "text": "钱被扣了两次怎么办",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "payments"},
+      "vector": [0, 1, 0, 0, 0, 0, 0],
+      "qrels": {"d-04-double-charge": 3},
+      "must_not_return": ["d-09-beta-private", "d-10-draft-payment"]
+    },
+    {
+      "id": "q-e042",
+      "text": "E042 是什么",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "uploads"},
+      "vector": [0, 0, 1, 0, 0, 0, 0],
+      "qrels": {"d-01-format-general": 1, "d-02-e042": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-vpn",
+      "text": "在家连不上公司内网",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "network"},
+      "vector": [0, 0, 0, 1, 0, 0, 0],
+      "qrels": {"d-05-vpn": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-membership",
+      "text": "怎么关闭自动续费",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "membership"},
+      "vector": [0, 0, 0, 0, 1, 0, 0],
+      "qrels": {"d-06-membership": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-ops-platform",
+      "text": "技术故障升级流程",
+      "tenant_id": "alpha",
+      "subject_groups": ["platform"],
+      "filters": {"language": "zh", "product": "ops"},
+      "vector": [0, 0, 0, 0, 0, 0, 1],
+      "qrels": {"d-08-internal-runbook": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-ops-guest",
+      "text": "技术故障升级流程",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "zh", "product": "ops"},
+      "vector": [0, 0, 0, 0, 0, 0, 1],
+      "qrels": {},
+      "must_not_return": ["d-08-internal-runbook"]
+    }
+  ]
+}

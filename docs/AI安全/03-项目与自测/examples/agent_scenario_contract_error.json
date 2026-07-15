@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "scenario_id": "invalid-scenario",
+  "purpose": "This fixture intentionally contains an unknown field.",
+  "non_goals": ["production use"],
+  "assets": [{"id": "demo", "classification": "internal"}],
+  "trust_boundaries": [{"id": "demo-boundary", "from": "a", "to": "b", "data_assets": ["demo"]}],
+  "untrusted_sources": [{"id": "input", "type": "text", "trust_level": "untrusted"}],
+  "identities": [{"id": "demo-id", "shared": false, "ttl_minutes": 5, "scopes": ["demo.read"]}],
+  "tools": [{"name": "demo_read", "mode": "read", "destination": "internal", "side_effect": false, "required_for_purpose": true, "required_scopes": ["demo.read"]}],
+  "dependencies": [{"name": "demo", "version": "1.0.0", "pinned": true, "provenance_verified": true}],
+  "controls": {
+    "treat_external_content_as_data": true,
+    "tool_allowlist": ["demo_read"],
+    "destination_allowlist": ["internal"],
+    "approval": {"required_for_tools": [], "binds_parameters": true, "expires_minutes": 5},
+    "sandbox": {"enabled": true, "network_default_deny": true},
+    "output_validation": true,
+    "data_egress_validation": true,
+    "memory_write_validation": true,
+    "audit_logging": true,
+    "rate_limit": true,
+    "emergency_disable": true
+  },
+  "risk_policy": {"block_severities": ["critical", "high"], "review_severities": ["medium"]},
+  "unexpected_field": true
+}

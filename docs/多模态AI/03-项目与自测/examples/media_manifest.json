@@ -1,0 +1,59 @@
+{
+  "policy": {
+    "allowed_mime": [
+      "image/png",
+      "audio/wav",
+      "video/mp4",
+      "application/pdf",
+      "text/plain"
+    ],
+    "max_bytes_per_asset": 5000000,
+    "budget_units": 20,
+    "external_processing_allowed_for": ["public", "internal"]
+  },
+  "query": {
+    "required_modalities": ["image", "audio", "video", "document"]
+  },
+  "assets": [
+    {
+      "asset_id": "IMG-1",
+      "file_name": "synthetic-slide.png",
+      "declared_mime": "image/png",
+      "detected_mime": "image/png",
+      "bytes": 250000,
+      "privacy": "public",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "asset_id": "AUD-1",
+      "file_name": "synthetic-voice.wav",
+      "declared_mime": "audio/wav",
+      "detected_mime": "audio/wav",
+      "bytes": 700000,
+      "privacy": "personal",
+      "duration_ms": 25000
+    },
+    {
+      "asset_id": "VID-1",
+      "file_name": "synthetic-demo.mp4",
+      "declared_mime": "video/mp4",
+      "detected_mime": "video/mp4",
+      "bytes": 1800000,
+      "privacy": "internal",
+      "duration_ms": 45000,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "asset_id": "DOC-1",
+      "file_name": "synthetic-guide.pdf",
+      "declared_mime": "application/pdf",
+      "detected_mime": "application/pdf",
+      "bytes": 150000,
+      "privacy": "public",
+      "pages": 3
+    }
+  ]
+}
+

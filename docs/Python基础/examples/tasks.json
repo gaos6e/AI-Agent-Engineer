@@ -1,0 +1,18 @@
+[
+  {
+    "id": "task-001",
+    "title": "解析需求文档",
+    "status": "done"
+  },
+  {
+    "id": "task-002",
+    "title": "验证工具参数",
+    "status": "pending"
+  },
+  {
+    "id": "task-003",
+    "title": "生成评测报告",
+    "status": "pending"
+  }
+]
+

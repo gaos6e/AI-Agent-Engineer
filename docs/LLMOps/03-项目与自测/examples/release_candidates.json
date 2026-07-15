@@ -1,0 +1,180 @@
+{
+  "policy": {
+    "version": "local-llmops-policy-v2",
+    "required_tests": [
+      "schema_contract",
+      "retrieval_regression",
+      "tool_contract",
+      "output_policy"
+    ],
+    "min_task_success_delta": -0.01,
+    "min_critical_success_delta": 0.0,
+    "max_safety_violation_rate": 0.0,
+    "min_safety_samples": 50,
+    "max_latency_increase_ratio": 0.2,
+    "max_cost_increase_ratio": 0.1,
+    "human_approval_required": true,
+    "online_min_samples": 100,
+    "online_max_task_drop": 0.02,
+    "online_max_critical_drop": 0.01,
+    "online_max_provider_error_rate": 0.03,
+    "online_max_provider_shift_score": 0.15,
+    "online_max_latency_increase_ratio": 0.25,
+    "online_max_cost_increase_ratio": 0.15
+  },
+  "baseline": {
+    "release_id": "release-baseline-v3",
+    "metrics": {
+      "task_success_rate": 0.88,
+      "critical_slice_success_rate": 0.84,
+      "safety_violation_rate": 0.0,
+      "safety_sample_count": 120,
+      "p95_latency_ms": 3200,
+      "estimated_cost_usd_per_1k_requests": 12.0
+    }
+  },
+  "candidates": [
+    {
+      "release_id": "release-safe",
+      "app": {
+        "commit": "8b29f11"
+      },
+      "api": {
+        "contract_version": "responses-contract-v3",
+        "sdk_lock_hash": "sha256-sdk-lock-a92d"
+      },
+      "prompt": {
+        "version": "support-prompt-v4",
+        "digest": "sha256-prompt-b351"
+      },
+      "context": {
+        "policy_version": "support-context-v3"
+      },
+      "retrieval": {
+        "snapshot": "support-kb-2026-07-10",
+        "config_version": "support-retrieval-v7"
+      },
+      "model": {
+        "provider": "provider-a",
+        "model_snapshot": "provider-model-snapshot-a",
+        "parameters_version": "generation-params-v2"
+      },
+      "tools": [
+        {
+          "name": "lookup-ticket",
+          "schema_version": "lookup-ticket-schema-v2",
+          "implementation_version": "lookup-ticket-code-v5"
+        }
+      ],
+      "policies": {
+        "guardrail_version": "support-guardrails-v2",
+        "data_handling_version": "support-data-policy-v3"
+      },
+      "evaluation": {
+        "suite_version": "support-regression-v8",
+        "dataset_version": "support-eval-data-2026-07-11",
+        "rubric_version": "support-rubric-v4",
+        "grader_version": "support-grader-v5"
+      },
+      "routing": {
+        "policy_version": "support-routing-v3",
+        "fallback_manifest": "fallback-release-v2"
+      },
+      "pricing": {
+        "policy_version": "local-price-snapshot-2026-07-12"
+      },
+      "tests": {
+        "schema_contract": true,
+        "retrieval_regression": true,
+        "tool_contract": true,
+        "output_policy": true
+      },
+      "metrics": {
+        "task_success_rate": 0.9,
+        "critical_slice_success_rate": 0.85,
+        "safety_violation_rate": 0.0,
+        "safety_sample_count": 125,
+        "p95_latency_ms": 3400,
+        "estimated_cost_usd_per_1k_requests": 12.6
+      },
+      "operations": {
+        "trace_schema_complete": true,
+        "redaction_check_passed": true,
+        "canary_plan_ready": true,
+        "rollback_manifest_ready": true,
+        "human_approval_recorded": true
+      }
+    },
+    {
+      "release_id": "release-regression",
+      "app": {
+        "commit": "1c04d7a"
+      },
+      "api": {
+        "contract_version": "responses-contract-v4",
+        "sdk_lock_hash": "sha256-sdk-lock-c31f"
+      },
+      "prompt": {
+        "version": "support-prompt-v5",
+        "digest": "sha256-prompt-d918"
+      },
+      "context": {
+        "policy_version": "support-context-v4"
+      },
+      "retrieval": {
+        "snapshot": "support-kb-2026-07-13",
+        "config_version": "support-retrieval-v8"
+      },
+      "model": {
+        "provider": "provider-a",
+        "model_snapshot": "provider-model-snapshot-b",
+        "parameters_version": "generation-params-v3"
+      },
+      "tools": [
+        {
+          "name": "lookup-ticket",
+          "schema_version": "lookup-ticket-schema-v3",
+          "implementation_version": "lookup-ticket-code-v6"
+        }
+      ],
+      "policies": {
+        "guardrail_version": "support-guardrails-v3",
+        "data_handling_version": "support-data-policy-v3"
+      },
+      "evaluation": {
+        "suite_version": "support-regression-v9",
+        "dataset_version": "support-eval-data-2026-07-13",
+        "rubric_version": "support-rubric-v4",
+        "grader_version": "support-grader-v5"
+      },
+      "routing": {
+        "policy_version": "support-routing-v4",
+        "fallback_manifest": "fallback-release-v2"
+      },
+      "pricing": {
+        "policy_version": "local-price-snapshot-2026-07-12"
+      },
+      "tests": {
+        "schema_contract": true,
+        "retrieval_regression": true,
+        "tool_contract": false,
+        "output_policy": true
+      },
+      "metrics": {
+        "task_success_rate": 0.91,
+        "critical_slice_success_rate": 0.79,
+        "safety_violation_rate": 0.0,
+        "safety_sample_count": 18,
+        "p95_latency_ms": 3500,
+        "estimated_cost_usd_per_1k_requests": 14.5
+      },
+      "operations": {
+        "trace_schema_complete": true,
+        "redaction_check_passed": true,
+        "canary_plan_ready": true,
+        "rollback_manifest_ready": true,
+        "human_approval_recorded": false
+      }
+    }
+  ]
+}

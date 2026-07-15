@@ -1,0 +1,45 @@
+{
+  "schema_version": "1",
+  "scenario_id": "mail-draft-assistant-hardened",
+  "purpose": "Read one email and draft a reply; never send automatically.",
+  "non_goals": ["send messages", "modify mailbox state", "persist email content to memory"],
+  "assets": [
+    {"id": "private_mail", "classification": "restricted"},
+    {"id": "mailbox_identity", "classification": "confidential"},
+    {"id": "audit_trace", "classification": "internal"}
+  ],
+  "trust_boundaries": [
+    {"id": "email-to-agent", "from": "external_sender", "to": "agent_context", "data_assets": ["private_mail"]},
+    {"id": "agent-to-mail-service", "from": "agent_runtime", "to": "internal_mail_api", "data_assets": ["private_mail", "mailbox_identity"]}
+  ],
+  "untrusted_sources": [
+    {"id": "email_body", "type": "message", "trust_level": "untrusted"},
+    {"id": "attachment_text", "type": "document", "trust_level": "untrusted"}
+  ],
+  "identities": [
+    {"id": "per-user-read-session", "shared": false, "ttl_minutes": 15, "scopes": ["mail.read"]}
+  ],
+  "tools": [
+    {"name": "read_mail", "mode": "read", "destination": "internal", "side_effect": false, "required_for_purpose": true, "required_scopes": ["mail.read"]}
+  ],
+  "dependencies": [
+    {"name": "mail-connector", "version": "2.4.1", "pinned": true, "provenance_verified": true}
+  ],
+  "controls": {
+    "treat_external_content_as_data": true,
+    "tool_allowlist": ["read_mail"],
+    "destination_allowlist": ["internal"],
+    "approval": {"required_for_tools": [], "binds_parameters": true, "expires_minutes": 5},
+    "sandbox": {"enabled": true, "network_default_deny": true},
+    "output_validation": true,
+    "data_egress_validation": true,
+    "memory_write_validation": true,
+    "audit_logging": true,
+    "rate_limit": true,
+    "emergency_disable": true
+  },
+  "risk_policy": {
+    "block_severities": ["critical", "high"],
+    "review_severities": ["medium"]
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ai-agent-engineer/context-pack.schema.json",
+  "title": "Deterministic context pack",
+  "type": "object",
+  "properties": {
+    "fixture_version": {"type": "string", "minLength": 1},
+    "selector_version": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "format": "date"},
+    "budget_tokens": {"type": "integer", "minimum": 1},
+    "used_tokens": {"type": "integer", "minimum": 0},
+    "remaining_tokens": {"type": "integer", "minimum": 0},
+    "selected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "section": {
+            "type": "string",
+            "enum": ["policy", "state", "evidence", "current-input"]
+          },
+          "source_uri": {"type": "string", "minLength": 1},
+          "source_version": {"type": "string", "minLength": 1},
+          "effective_from": {"type": "string", "format": "date"},
+          "expires_on": {
+            "anyOf": [
+              {"type": "string", "format": "date"},
+              {"type": "null"}
+            ]
+          },
+          "trust": {"type": "string", "minLength": 1},
+          "required": {"type": "boolean"},
+          "estimated_tokens": {"type": "integer", "minimum": 1},
+          "content": {"type": "string", "minLength": 1}
+        },
+        "required": [
+          "id",
+          "section",
+          "source_uri",
+          "source_version",
+          "effective_from",
+          "expires_on",
+          "trust",
+          "required",
+          "estimated_tokens",
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "reason": {
+            "type": "string",
+            "enum": [
+              "permission_denied",
+              "trust_denied",
+              "not_yet_effective",
+              "expired",
+              "duplicate",
+              "budget"
+            ]
+          }
+        },
+        "required": ["id", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "fixture_version",
+    "selector_version",
+    "as_of",
+    "budget_tokens",
+    "used_tokens",
+    "remaining_tokens",
+    "selected",
+    "excluded"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "document_id": "synthetic-invoice-001",
+  "review_threshold": 0.9,
+  "pages": [
+    {
+      "page": 1,
+      "width": 1000,
+      "height": 1400,
+      "blocks": [
+        {
+          "block_id": "p1-title",
+          "type": "title",
+          "bbox": [100, 80, 900, 150],
+          "order": 1,
+          "reference_text": "示例采购单",
+          "predicted_text": "示例采购单",
+          "confidence": 0.98,
+          "critical": false
+        },
+        {
+          "block_id": "p1-number",
+          "type": "field",
+          "bbox": [100, 190, 500, 250],
+          "order": 2,
+          "reference_text": "编号 A1028",
+          "predicted_text": "编号 A1O28",
+          "confidence": 0.87,
+          "critical": true
+        },
+        {
+          "block_id": "p1-table",
+          "type": "table",
+          "bbox": [100, 300, 900, 620],
+          "order": 3,
+          "reference_text": "项目 数量 总价 样品 2 128.00",
+          "predicted_text": "项目 数量 总价 样品 2 128.00",
+          "confidence": 0.94,
+          "critical": true,
+          "table": {
+            "reference_shape": [2, 3],
+            "predicted_shape": [2, 3]
+          }
+        }
+      ]
+    }
+  ]
+}

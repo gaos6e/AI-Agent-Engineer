@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "session_id": "synthetic-meeting-001",
+  "normalization": "nfkc-casefold-remove-punctuation-v1",
+  "segments": [
+    {
+      "segment_id": "s1",
+      "start_seconds": 0.0,
+      "end_seconds": 2.4,
+      "speaker": "speaker_0",
+      "slice": "synthetic-clean",
+      "reference": "Welcome to the agent review.",
+      "hypothesis": "Welcome to the agent review."
+    },
+    {
+      "segment_id": "s2",
+      "start_seconds": 2.6,
+      "end_seconds": 5.8,
+      "speaker": "speaker_1",
+      "slice": "synthetic-noisy",
+      "reference": "We will test two tools today.",
+      "hypothesis": "We will test tool today."
+    },
+    {
+      "segment_id": "s3",
+      "start_seconds": 6.0,
+      "end_seconds": 8.2,
+      "speaker": "speaker_0",
+      "slice": "synthetic-clean",
+      "reference": "请记录最终结果。",
+      "hypothesis": "请记录最终结里。"
+    }
+  ]
+}

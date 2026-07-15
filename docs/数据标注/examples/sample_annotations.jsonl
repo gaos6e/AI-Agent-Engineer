@@ -1,0 +1,16 @@
+{"sample_id":"s-001","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"helpful"}
+{"sample_id":"s-001","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"helpful"}
+{"sample_id":"s-002","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"not_helpful"}
+{"sample_id":"s-002","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"not_helpful"}
+{"sample_id":"s-003","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"unsafe"}
+{"sample_id":"s-003","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"not_helpful"}
+{"sample_id":"s-004","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"helpful"}
+{"sample_id":"s-004","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"helpful"}
+{"sample_id":"s-005","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"helpful"}
+{"sample_id":"s-005","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"not_helpful"}
+{"sample_id":"s-006","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"unsafe"}
+{"sample_id":"s-006","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"unsafe"}
+{"sample_id":"s-007","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"not_helpful"}
+{"sample_id":"s-007","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"not_helpful"}
+{"sample_id":"s-008","data_version":"v1","guideline_version":"1.0","annotator":"ann-a","label":"helpful"}
+{"sample_id":"s-008","data_version":"v1","guideline_version":"1.0","annotator":"ann-b","label":"helpful"}

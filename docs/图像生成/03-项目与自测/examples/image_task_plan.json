@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "task_id": "img-course-cover-001",
+  "purpose": "生成 AI Agent 入门课程的无字封面底图",
+  "audience": "刚开始学习 AI 工程的中文读者",
+  "task_type": "text_to_image",
+  "prompt": {
+    "subject": "一台白色小型机器人在桌面整理蓝色任务卡片",
+    "action": "机器人把三张卡片排成清晰的流程",
+    "setting": "明亮、整洁的现代工作台",
+    "composition": "4:5 竖版，中景，主体位于中下部，上方保留 25% 标题安全区",
+    "lighting": "冷白柔光，蓝色轮廓光轻微强调主体",
+    "style": "简洁矢量插画，低饱和蓝白色板，粗细一致的轮廓",
+    "text_rendering": "不生成文字，由后期排版",
+    "must_include": [
+      "一台机器人",
+      "三张蓝色任务卡片",
+      "上方标题安全区"
+    ],
+    "must_avoid": [
+      "可读文字",
+      "商标",
+      "真实人物"
+    ]
+  },
+  "output": {
+    "aspect_ratio": "4:5",
+    "width": 1080,
+    "height": 1350,
+    "format": "png",
+    "candidate_count": 3
+  },
+  "reference_assets": [],
+  "risk": {
+    "rights_confirmed": true,
+    "real_person": false,
+    "minor": false,
+    "sensitive_context": false,
+    "human_review_required": true,
+    "provenance_plan": "保留请求、输入与输出哈希；供应商支持时附加并验证 C2PA 内容凭证",
+    "disclosure_plan": "发布页标注为 AI 辅助生成并记录人工排版步骤"
+  },
+  "acceptance": [
+    {
+      "dimension": "prompt_adherence",
+      "criterion": "机器人、三张卡片和标题安全区均存在",
+      "hard_failure": true
+    },
+    {
+      "dimension": "composition",
+      "criterion": "主体没有被裁切，上方安全区没有关键元素",
+      "hard_failure": true
+    },
+    {
+      "dimension": "text",
+      "criterion": "画面中没有伪文字、网址或商标",
+      "hard_failure": true
+    },
+    {
+      "dimension": "visual_quality",
+      "criterion": "机器人和卡片形状完整，透视与光照自洽",
+      "hard_failure": false
+    },
+    {
+      "dimension": "safety",
+      "criterion": "不含真实人物、敏感内容或误导性事实表达",
+      "hard_failure": true
+    },
+    {
+      "dimension": "rights",
+      "criterion": "没有未授权商标、角色或参考素材",
+      "hard_failure": true
+    }
+  ],
+  "budget": {
+    "max_attempts": 6,
+    "max_outputs": 6,
+    "pricing_source_required_at_run": true,
+    "manual_approval_before_budget_increase": true
+  },
+  "reproducibility": {
+    "provider": "offline-no-provider",
+    "model": "offline-no-model",
+    "adapter_version": "image-plan-auditor-v1",
+    "seed_policy": "若供应商支持则记录，但不承诺跨版本确定性",
+    "save_normalized_request_hash": true,
+    "documentation_checked_on": "2026-07-14"
+  }
+}

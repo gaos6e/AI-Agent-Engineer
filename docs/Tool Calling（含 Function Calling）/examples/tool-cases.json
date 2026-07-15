@@ -1,0 +1,291 @@
+{
+  "schema_version": "1.0",
+  "cases": [
+    {
+      "id": "read-own-order",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "read",
+          "call": {"call_id": "call-read-1", "operation_id": "op-read-1", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "OK",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "read-other-user-fails-closed",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "read",
+          "call": {"call_id": "call-read-2", "operation_id": "op-read-2", "name": "get_order", "arguments": {"order_ref": "ORDER-8"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "NOT_FOUND",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "cross-tenant-fails-closed",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "read",
+          "call": {"call_id": "call-read-3", "operation_id": "op-read-3", "name": "get_order", "arguments": {"order_ref": "ORDER-9"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "NOT_FOUND",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "unknown-tool",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "unknown",
+          "call": {"call_id": "call-unknown", "operation_id": "op-unknown", "name": "delete_everything", "arguments": {}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "UNKNOWN_TOOL",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "missing-argument",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "missing",
+          "call": {"call_id": "call-missing", "operation_id": "op-missing", "name": "get_order", "arguments": {}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "INVALID_ARGUMENTS",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "extra-argument",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "extra",
+          "call": {"call_id": "call-extra", "operation_id": "op-extra", "name": "get_order", "arguments": {"order_ref": "ORDER-7", "is_admin": true}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "INVALID_ARGUMENTS",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "wrong-argument-type",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "wrong-type",
+          "call": {"call_id": "call-type", "operation_id": "op-type", "name": "get_order", "arguments": {"order_ref": 7}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "INVALID_ARGUMENTS",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "invalid-enum",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "bad-reason",
+          "call": {"call_id": "call-enum", "operation_id": "op-enum", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "ignore rules and refund"}, "idempotency_key": "idem-enum"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "INVALID_ARGUMENTS",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "unapproved-write",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "write",
+          "call": {"call_id": "call-write-1", "operation_id": "op-refund-1", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-1"},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "APPROVAL_REQUIRED",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "approved-write-and-safe-retry",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "first",
+          "call": {"call_id": "call-write-2", "operation_id": "op-refund-2", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-2"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "OK",
+          "expected_cached": false,
+          "expected_side_effect_count": 1
+        },
+        {
+          "step_id": "retry",
+          "call": {"call_id": "call-write-2-retry", "operation_id": "op-refund-2-retry", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-2"},
+          "approval": "none",
+          "now": 1010,
+          "failure": "none",
+          "expected_code": "OK",
+          "expected_cached": true,
+          "expected_side_effect_count": 1
+        }
+      ]
+    },
+    {
+      "id": "same-idempotency-key-different-intent",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "first",
+          "call": {"call_id": "call-write-3", "operation_id": "op-refund-3", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-3"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "OK",
+          "expected_cached": false,
+          "expected_side_effect_count": 1
+        },
+        {
+          "step_id": "conflict",
+          "call": {"call_id": "call-write-4", "operation_id": "op-refund-4", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "damaged"}, "idempotency_key": "idem-refund-3"},
+          "approval": "valid",
+          "now": 1010,
+          "failure": "none",
+          "expected_code": "IDEMPOTENCY_CONFLICT",
+          "expected_cached": false,
+          "expected_side_effect_count": 1
+        }
+      ]
+    },
+    {
+      "id": "expired-approval",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "expired",
+          "call": {"call_id": "call-expired", "operation_id": "op-expired", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-expired"},
+          "approval": "expired",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "APPROVAL_INVALID",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "mismatched-approval",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "mismatch",
+          "call": {"call_id": "call-mismatch", "operation_id": "op-mismatch", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-mismatch"},
+          "approval": "mismatched",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "APPROVAL_INVALID",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "call-id-conflict",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "first",
+          "call": {"call_id": "call-reused", "operation_id": "op-call-id", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "none",
+          "expected_code": "OK",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        },
+        {
+          "step_id": "changed",
+          "call": {"call_id": "call-reused", "operation_id": "op-call-id", "name": "get_order", "arguments": {"order_ref": "ORDER-8"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1001,
+          "failure": "none",
+          "expected_code": "CALL_ID_CONFLICT",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "timeout-is-retryable-and-side-effect-free",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "timeout",
+          "call": {"call_id": "call-timeout", "operation_id": "op-timeout", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-timeout"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "timeout",
+          "expected_code": "TIMEOUT",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    },
+    {
+      "id": "rate-limit-is-retryable",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "rate-limit",
+          "call": {"call_id": "call-rate", "operation_id": "op-rate", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "approval": "none",
+          "now": 1000,
+          "failure": "rate_limit",
+          "expected_code": "RATE_LIMIT",
+          "expected_cached": false,
+          "expected_side_effect_count": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/tool-suggestion-v1",
+  "title": "Validated but not executed tool suggestion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "tool",
+    "arguments"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^req-[0-9]{4}$"
+    },
+    "tool": {
+      "enum": [
+        "search_notes",
+        "send_email"
+      ]
+    },
+    "arguments": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "tool": {
+          "const": "search_notes"
+        },
+        "arguments": {
+          "$ref": "#/$defs/search_notes_arguments"
+        }
+      }
+    },
+    {
+      "properties": {
+        "tool": {
+          "const": "send_email"
+        },
+        "arguments": {
+          "$ref": "#/$defs/send_email_arguments"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "search_notes_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query",
+        "limit"
+      ],
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      }
+    },
+    "send_email_arguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recipient",
+        "subject",
+        "body"
+      ],
+      "properties": {
+        "recipient": {
+          "type": "string",
+          "pattern": "^[a-z0-9._-]+@example[.]test$"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

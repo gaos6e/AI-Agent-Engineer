@@ -1,0 +1,60 @@
+{
+  "schema_version": "1",
+  "scenario_id": "regional-statistics-hardened",
+  "purpose": "Publish differentially private regional service-usage counts from two institutions.",
+  "non_goals": ["identify a person", "publish record-level data", "reuse inputs for training"],
+  "subject_scope": "Add or remove all bounded contributions from one person in one reporting month.",
+  "data_fields": [
+    {"name": "region_bucket", "classification": "measure", "necessary": true, "contribution_bound": 1},
+    {"name": "usage_count", "classification": "measure", "necessary": true, "contribution_bound": 3}
+  ],
+  "participants": [
+    {"id": "holder-a", "role": "data_holder", "trusted": true},
+    {"id": "holder-b", "role": "data_holder", "trusted": true},
+    {"id": "mpc-service", "role": "compute_service", "trusted": true},
+    {"id": "reviewed-publisher", "role": "publisher", "trusted": true}
+  ],
+  "data_flows": [
+    {"id": "a-to-mpc", "from": "holder-a", "to": "mpc-service", "fields": ["region_bucket", "usage_count"], "raw": false},
+    {"id": "b-to-mpc", "from": "holder-b", "to": "mpc-service", "fields": ["region_bucket", "usage_count"], "raw": false}
+  ],
+  "processing": {
+    "raw_data_centralized": false,
+    "local_training": false,
+    "secure_aggregation": false,
+    "mpc": true,
+    "homomorphic_encryption": false,
+    "tee": false
+  },
+  "release": {
+    "public": true,
+    "minimum_group_size": 50,
+    "adjacency_definition": "add-or-remove-one-person-with-bounded-monthly-contribution",
+    "epsilon_limit": "1.0",
+    "delta_limit": "0.000001",
+    "mechanisms": [
+      {"id": "monthly-counts", "mechanism": "reviewed-teaching-mechanism-a", "epsilon": "0.4", "delta": "0.0000001", "approved": true},
+      {"id": "quarterly-summary", "mechanism": "reviewed-teaching-mechanism-b", "epsilon": "0.4", "delta": "0.0000001", "approved": true}
+    ]
+  },
+  "retention": {"days": 30, "deletion_verified": true, "backups_in_scope": true},
+  "controls": {
+    "access_control": true,
+    "purpose_enforcement": true,
+    "output_review": true,
+    "budget_ledger": true,
+    "provenance": true,
+    "incident_plan": true,
+    "update_validation": true
+  },
+  "threat_model": {
+    "honest_but_curious_server": true,
+    "collusion_threshold": 1,
+    "malicious_clients": true,
+    "final_output_inference": true
+  },
+  "risk_policy": {
+    "block_severities": ["critical", "high"],
+    "review_severities": ["medium"]
+  }
+}

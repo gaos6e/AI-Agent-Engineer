@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "policy_version": "promotion-lab-v2",
+  "deployment": {
+    "release_id": "release-2026-07-14-01",
+    "model_id": "candidate-safe",
+    "artifact_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "baseline_model_id": "champion-v7"
+  },
+  "reference": {
+    "critical_slice_recall": 0.77,
+    "p95_latency_ms": 98.0,
+    "error_rate": 0.005
+  },
+  "windows": [
+    {
+      "window_id": "window-healthy",
+      "sample_count": 2000,
+      "label_coverage": 0.8,
+      "signals": {
+        "error_rate": 0.006,
+        "p95_latency_ms": 101.0,
+        "input_drift_score": 0.05,
+        "critical_slice_recall": 0.77
+      }
+    },
+    {
+      "window_id": "window-drift-no-label",
+      "sample_count": 1800,
+      "label_coverage": 0.12,
+      "signals": {
+        "error_rate": 0.007,
+        "p95_latency_ms": 103.0,
+        "input_drift_score": 0.35,
+        "critical_slice_recall": null
+      }
+    },
+    {
+      "window_id": "window-quality-regression",
+      "sample_count": 2200,
+      "label_coverage": 0.82,
+      "signals": {
+        "error_rate": 0.008,
+        "p95_latency_ms": 105.0,
+        "input_drift_score": 0.31,
+        "critical_slice_recall": 0.7
+      }
+    },
+    {
+      "window_id": "window-technical-failure",
+      "sample_count": 900,
+      "label_coverage": 0.2,
+      "signals": {
+        "error_rate": 0.05,
+        "p95_latency_ms": 165.0,
+        "input_drift_score": 0.04,
+        "critical_slice_recall": null
+      }
+    }
+  ]
+}
+

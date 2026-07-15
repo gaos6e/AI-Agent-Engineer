@@ -1,0 +1,145 @@
+{
+  "skill_name": "text-statistics",
+  "evals": [
+    {
+      "id": "positive-01",
+      "prompt": "请统计这段产品说明有多少英文单词、字符和行，并返回 JSON：Hello agent\\nBuild safely.",
+      "should_trigger": true,
+      "reason": "明确请求脚本支持的三类计数和 JSON 输出。",
+      "expected_output": "加载 Skill；返回包含整数 words、characters、lines 的合法 JSON。"
+    },
+    {
+      "id": "positive-02",
+      "prompt": "这份 UTF-8 文本文件一共有几行？也顺便给我字符数。",
+      "should_trigger": true,
+      "reason": "文件文本的行数和字符数属于范围。",
+      "expected_output": "加载 Skill；优先使用 --input，并说明 UTF-8 与 1 MB 限制。"
+    },
+    {
+      "id": "positive-03",
+      "prompt": "空字符串按这个课程工具的规则有多少 word-like tokens 和逻辑行？",
+      "should_trigger": true,
+      "reason": "请求明确引用工具的计数规则和边界输入。",
+      "expected_output": "加载 Skill；words、characters、lines 均为 0。"
+    },
+    {
+      "id": "positive-04",
+      "prompt": "Count the words and lines in 'one two\\nthree' and give machine-readable output.",
+      "should_trigger": true,
+      "reason": "英文措辞仍是确定性文本计数。",
+      "expected_output": "加载 Skill；返回 JSON，不回显未请求的全文。"
+    },
+    {
+      "id": "positive-05",
+      "prompt": "帮我核对 README 片段的字符总数，包含空格和换行。",
+      "should_trigger": true,
+      "reason": "字符计数及空白字符规则在契约内。",
+      "expected_output": "加载 Skill；说明 characters 是 Unicode code points。"
+    },
+    {
+      "id": "positive-06",
+      "prompt": "“你好 Agent”按你们的教学规则算几个 word-like tokens？",
+      "should_trigger": true,
+      "reason": "中英文混合 word-like token 计数在范围内。",
+      "expected_output": "加载 Skill；按单个汉字和拉丁连续串规则计算。"
+    },
+    {
+      "id": "positive-07",
+      "prompt": "我需要一个 JSON 摘要，只含文本的 words、characters、lines。",
+      "should_trigger": true,
+      "reason": "字段与输出契约完全匹配。",
+      "expected_output": "加载 Skill；stdout 结果只包含三个整数计数字段。"
+    },
+    {
+      "id": "positive-08",
+      "prompt": "这个日志片段用了 CRLF，能按逻辑行数统计吗？",
+      "should_trigger": true,
+      "reason": "CRLF 逻辑行计数是已声明边界。",
+      "expected_output": "加载 Skill；把 CRLF 视为单个行分隔符。"
+    },
+    {
+      "id": "positive-09",
+      "prompt": "先别分析含义，只告诉我这段内容多长：单词样式计数、字符、行。",
+      "should_trigger": true,
+      "reason": "明确排除语义分析并请求三类计数。",
+      "expected_output": "加载 Skill；仅执行确定性统计。"
+    },
+    {
+      "id": "positive-10",
+      "prompt": "请用离线方式统计我指定文本文件的字数和行数，不要上传。",
+      "should_trigger": true,
+      "reason": "离线文件计数与无网络约束匹配。",
+      "expected_output": "加载 Skill；使用 --input，且不进行网络访问。"
+    },
+    {
+      "id": "negative-01",
+      "prompt": "把这段英文产品说明润色得更自然。",
+      "should_trigger": false,
+      "reason": "这是改写任务，不是计数。",
+      "expected_output": "不加载 Skill；使用文本改写能力。"
+    },
+    {
+      "id": "negative-02",
+      "prompt": "把这份文档翻译成中文，并保持 Markdown 格式。",
+      "should_trigger": false,
+      "reason": "这是翻译和格式保留任务。",
+      "expected_output": "不加载 Skill。"
+    },
+    {
+      "id": "negative-03",
+      "prompt": "这段评论的情感是正面还是负面？",
+      "should_trigger": false,
+      "reason": "情感分类是语义分析，不是长度统计。",
+      "expected_output": "不加载 Skill。"
+    },
+    {
+      "id": "negative-04",
+      "prompt": "这段提示词会消耗多少 GPT 模型 token，费用是多少？",
+      "should_trigger": false,
+      "reason": "模型 token 与费用依赖具体 tokenizer 和价格，不等于 word-like tokens。",
+      "expected_output": "不加载 Skill；应使用目标模型的官方 tokenizer 和当前价格。"
+    },
+    {
+      "id": "negative-05",
+      "prompt": "按词频画一个前 20 名柱状图。",
+      "should_trigger": false,
+      "reason": "词频分布和可视化超出三个总计数字段。",
+      "expected_output": "不加载 Skill；使用词频分析与可视化流程。"
+    },
+    {
+      "id": "negative-06",
+      "prompt": "概括这篇文章的三个核心观点。",
+      "should_trigger": false,
+      "reason": "这是语义摘要。",
+      "expected_output": "不加载 Skill。"
+    },
+    {
+      "id": "negative-07",
+      "prompt": "检查这段 Python 代码有多少处 lint 错误。",
+      "should_trigger": false,
+      "reason": "虽然含“多少”，目标是静态代码检查而非文本长度。",
+      "expected_output": "不加载 Skill；运行合适的 linter。"
+    },
+    {
+      "id": "negative-08",
+      "prompt": "从合同中提取所有人名并统计出现次数。",
+      "should_trigger": false,
+      "reason": "实体抽取与分组频次超出简单总计数。",
+      "expected_output": "不加载 Skill；使用实体抽取流程。"
+    },
+    {
+      "id": "negative-09",
+      "prompt": "比较两篇文章的语义相似度。",
+      "should_trigger": false,
+      "reason": "这是 Embedding 或语义匹配任务。",
+      "expected_output": "不加载 Skill。"
+    },
+    {
+      "id": "negative-10",
+      "prompt": "把一个 3 GB 日志文件完整读入并统计每种错误码。",
+      "should_trigger": false,
+      "reason": "输入超过 1 MB 且要求按错误码聚合，不符合 Skill 的输入和输出边界。",
+      "expected_output": "不加载 Skill；设计流式日志分析方案。"
+    }
+  ]
+}

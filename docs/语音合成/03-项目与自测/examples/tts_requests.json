@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "policy": {
+    "max_characters": 500,
+    "allowed_voices": ["demo-zh-neutral", "demo-en-neutral"],
+    "allowed_rates": ["slow", "medium", "fast"],
+    "allowed_emphasis": ["none", "moderate", "strong"]
+  },
+  "requests": [
+    {
+      "request_id": "tts-demo-001",
+      "locale": "zh-CN",
+      "voice_id": "demo-zh-neutral",
+      "source_text": "欢迎使用 A&B <测试> 助手。",
+      "rate": "medium",
+      "emphasis": "moderate",
+      "purpose": "offline-training-demo",
+      "authorization_reference": "synthetic-voice-catalog-demo"
+    },
+    {
+      "request_id": "tts-demo-002",
+      "locale": "en-US",
+      "voice_id": "demo-en-neutral",
+      "source_text": "Review the final result before publishing.",
+      "rate": "slow",
+      "emphasis": "none",
+      "purpose": "offline-training-demo",
+      "authorization_reference": "synthetic-voice-catalog-demo"
+    }
+  ]
+}
