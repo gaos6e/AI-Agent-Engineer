@@ -1,5 +1,8 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   buildRoadmapTable,
   classifyPath,
@@ -87,6 +90,33 @@ test("roadmap table preserves all ordered courses", () => {
   assert.equal((table.match(/\[\[/g) ?? []).length, 53)
   assert.match(table, /课程1\/00-目录/)
   assert.match(table, /课程53\/00-目录/)
+})
+
+test("authored roadmap contains only the main route and advanced direction sections", () => {
+  const roadmapPath = fileURLToPath(new URL("../../docs/All of AI.md", import.meta.url))
+  const docsRoot = path.dirname(roadmapPath)
+  const source = readFileSync(roadmapPath, "utf8")
+  const headings = [...source.matchAll(/^## (.+)$/gm)].map((match) => match[1])
+
+  assert.deepEqual(headings, ["主线路线（按学习顺序）", "进阶方向（非优先）"])
+  assert.doesNotMatch(source, /^## (?:导航|提示词工程|上下文工程|Agent 核心)$/m)
+
+  const mainRoute = source.split("## 进阶方向（非优先）", 1)[0]
+  const linkedCourses = [...mainRoute.matchAll(
+    /\[\[(?:Knowledge\/AI Agent Engineer\/docs\/)?([^/\]]+)\/00-目录\\\|[^\]]+\]\]/g,
+  )].map((match) => match[1])
+  assert.equal(linkedCourses.length, 53)
+  assert.equal(new Set(linkedCourses).size, 53)
+
+  const actualCourses = readdirSync(docsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => existsSync(path.join(docsRoot, name, "00-目录.md")))
+    .sort((left, right) => left.localeCompare(right, "zh-CN"))
+  assert.deepEqual(
+    [...linkedCourses].sort((left, right) => left.localeCompare(right, "zh-CN")),
+    actualCourses,
+  )
 })
 
 test("table wikilinks escape alias pipes and unwrap link-only code spans", () => {

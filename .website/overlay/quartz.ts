@@ -21,11 +21,11 @@ function withSiteShell(layout: Partial<FullPageLayout>, includeCourses = true) {
   }
 }
 
-const defaults = withSiteShell(baseLayout.defaults)
+const defaults = withSiteShell(baseLayout.defaults, false)
 const byPageType = Object.fromEntries(
   Object.entries(baseLayout.byPageType).map(([pageType, pageLayout]) => [
     pageType,
-    withSiteShell(pageLayout, pageType !== "404"),
+    withSiteShell(pageLayout, pageType === "content"),
   ]),
 )
 

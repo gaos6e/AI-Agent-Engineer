@@ -3,7 +3,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger"
 
 gsap.registerPlugin(ScrollTrigger)
 
-let motionContext: gsap.Context | undefined
+let motionMedia: ReturnType<typeof gsap.matchMedia> | undefined
 let refreshFrame: number | undefined
 let routeScrollFrame: number | undefined
 let previousPath = window.location.pathname
@@ -13,8 +13,8 @@ function teardownMotion() {
   if (routeScrollFrame !== undefined) cancelAnimationFrame(routeScrollFrame)
   refreshFrame = undefined
   routeScrollFrame = undefined
-  motionContext?.revert()
-  motionContext = undefined
+  motionMedia?.revert()
+  motionMedia = undefined
 }
 
 function resetScrollOnRouteChange() {
@@ -36,16 +36,15 @@ function resetScrollOnRouteChange() {
 
 function initMotion() {
   teardownMotion()
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-
-  motionContext = gsap.context(() => {
+  motionMedia = gsap.matchMedia()
+  motionMedia.add("(prefers-reduced-motion: no-preference)", () => {
     const siteHeader = document.querySelector("[data-aae-animate='site-header']")
     if (siteHeader) {
       gsap.from(siteHeader, {
-        x: -12,
+        y: -8,
         autoAlpha: 0,
-        duration: 0.34,
-        delay: 0.12,
+        duration: 0.3,
+        delay: 0.08,
         ease: "power3.out",
       })
     }
@@ -55,35 +54,37 @@ function initMotion() {
       const timeline = gsap.timeline({ defaults: { overwrite: "auto" } })
       timeline
         .from("[data-aae-hero='eyebrow']", {
-          x: -22,
+          y: 12,
           autoAlpha: 0,
-          duration: 0.36,
-          ease: "expo.out",
-        }, 0.18)
+          duration: 0.34,
+          ease: "power3.out",
+        }, 0.12)
         .from("[data-aae-hero='title']", {
-          y: 30,
+          y: 24,
           autoAlpha: 0,
-          duration: 0.68,
+          duration: 0.58,
           ease: "power4.out",
-        }, 0.28)
+        }, 0.2)
         .from("[data-aae-hero='lead']", {
-          autoAlpha: 0,
-          duration: 0.5,
-          ease: "sine.out",
-        }, 0.5)
-        .from("[data-aae-hero='actions']", {
-          x: 16,
+          y: 12,
           autoAlpha: 0,
           duration: 0.42,
-          ease: "back.out(1.25)",
-        }, 0.62)
-        .from("[data-aae-hero='stats'] > div", {
-          y: 16,
+          ease: "power3.out",
+        }, 0.38)
+        .from("[data-aae-hero='actions']", {
+          y: 10,
           autoAlpha: 0,
-          duration: 0.4,
-          stagger: 0.07,
-          ease: "circ.out",
-        }, 0.56)
+          duration: 0.38,
+          ease: "power3.out",
+        }, 0.48)
+        .from("[data-aae-hero='board'] > div", {
+          y: 18,
+          scale: 0.97,
+          autoAlpha: 0,
+          duration: 0.44,
+          stagger: 0.06,
+          ease: "power3.out",
+        }, 0.34)
 
       ScrollTrigger.batch("[data-aae-reveal]", {
         start: "top 88%",
@@ -199,12 +200,70 @@ async function openAssetPreview(url: URL, label: string) {
 
 function initInteractions() {
   ensureSearchPortal()
+  const courseDrawer = document.querySelector<HTMLElement>("#aae-course-nav")
+  const coursePanel = courseDrawer?.querySelector<HTMLElement>("[data-aae-course-panel]")
+  const courseTrigger = document.querySelector<HTMLButtonElement>("[data-aae-action='courses']")
+  const courseMedia = window.matchMedia("(max-width: 960px)")
+  let returnFocusTarget: HTMLElement | undefined
+
+  const courseDrawerOpen = () => courseDrawer?.classList.contains("is-mobile-open") ?? false
+  const setCourseDrawer = (open: boolean, restoreFocus = true) => {
+    if (!courseDrawer || !courseMedia.matches) return
+    if (open) {
+      returnFocusTarget = courseTrigger ?? undefined
+      courseDrawer.inert = false
+      courseDrawer.removeAttribute("aria-hidden")
+      courseDrawer.classList.add("is-mobile-open")
+      courseTrigger?.setAttribute("aria-expanded", "true")
+      document.body.classList.add("aae-course-drawer-open")
+      requestAnimationFrame(() => {
+        courseDrawer.querySelector<HTMLButtonElement>("[data-aae-action='close-courses']")?.focus()
+      })
+      return
+    }
+
+    courseDrawer.classList.remove("is-mobile-open")
+    courseTrigger?.setAttribute("aria-expanded", "false")
+    courseDrawer.setAttribute("aria-hidden", "true")
+    courseDrawer.inert = true
+    document.body.classList.remove("aae-course-drawer-open")
+    if (restoreFocus) returnFocusTarget?.focus()
+  }
+
+  const syncCourseDrawerMode = () => {
+    if (!courseDrawer) return
+    if (courseMedia.matches) {
+      if (!courseDrawerOpen()) {
+        courseDrawer.setAttribute("aria-hidden", "true")
+        courseDrawer.inert = true
+      }
+      return
+    }
+    courseDrawer.classList.remove("is-mobile-open")
+    courseDrawer.removeAttribute("aria-hidden")
+    courseDrawer.inert = false
+    courseTrigger?.setAttribute("aria-expanded", "false")
+    document.body.classList.remove("aae-course-drawer-open")
+  }
+
+  syncCourseDrawerMode()
+  courseMedia.addEventListener("change", syncCourseDrawerMode)
   document.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => {
     if (previewable.test(anchor.href)) anchor.dataset.routerIgnore = ""
   })
   const onClick = (event: MouseEvent) => {
     const target = event.target as Element | null
     const action = target?.closest<HTMLElement>("[data-aae-action]")?.dataset.aaeAction
+    if (action === "courses") {
+      event.preventDefault()
+      setCourseDrawer(true)
+      return
+    }
+    if (action === "close-courses") {
+      event.preventDefault()
+      setCourseDrawer(false)
+      return
+    }
     if (action === "search") {
       event.preventDefault()
       const search = ensureSearchPortal()
@@ -219,6 +278,9 @@ function initInteractions() {
     }
 
     const anchor = target?.closest<HTMLAnchorElement>("a[href]")
+    if (anchor && courseDrawer?.contains(anchor) && courseMedia.matches) {
+      setCourseDrawer(false, false)
+    }
     if (!anchor || anchor.hasAttribute("download") || !previewable.test(anchor.href) ||
         event.button !== 0 || event.metaKey || event.ctrlKey) return
     const url = new URL(anchor.href, window.location.href)
@@ -231,6 +293,32 @@ function initInteractions() {
   }
 
   const onKeydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && courseDrawerOpen()) {
+      event.preventDefault()
+      setCourseDrawer(false)
+      return
+    }
+
+    if (event.key === "Tab" && courseDrawerOpen() && coursePanel) {
+      const focusable = Array.from(
+        coursePanel.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), summary, [tabindex]:not([tabindex='-1'])",
+        ),
+      ).filter((element) => element.offsetParent !== null && !element.inert)
+      if (focusable.length > 0) {
+        const first = focusable[0]
+        const last = focusable.at(-1)!
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+      return
+    }
+
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "k") return
     const active = document.activeElement
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return
@@ -243,6 +331,8 @@ function initInteractions() {
   window.addCleanup(() => {
     document.removeEventListener("click", onClick, true)
     document.removeEventListener("keydown", onKeydown)
+    courseMedia.removeEventListener("change", syncCourseDrawerMode)
+    document.body.classList.remove("aae-course-drawer-open")
     document.querySelector<HTMLDialogElement>(".aae-asset-dialog")?.close()
   })
 }

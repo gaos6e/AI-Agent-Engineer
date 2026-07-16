@@ -66,6 +66,9 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
   const roadmap = allFiles.find(
     (file) => file.relativePath?.replaceAll("\\", "/") === "All of AI.md",
   )
+  const notices = allFiles.find(
+    (file) => file.relativePath?.replaceAll("\\", "/") === "THIRD_PARTY_NOTICES.md",
+  )
   const sourceDocuments = Number(fileData.frontmatter?.site_source_document_count ?? 844)
   const fullDocuments = Number(fileData.frontmatter?.site_full_document_count ?? sourceDocuments)
   const sourceStubs = Number(fileData.frontmatter?.site_stub_count ?? 0)
@@ -74,16 +77,13 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
   return (
     <main class="aae-home">
       <section class="aae-hero" aria-labelledby="aae-home-title">
-        <div class="aae-hero__signal" aria-hidden="true">
-          <span>01</span><span>BUILD</span><span>OBSERVE</span><span>SHIP</span>
-        </div>
         <div class="aae-hero__content">
           <p class="aae-eyebrow" data-aae-hero="eyebrow">OPEN ENGINEERING ROADMAP · 2026</p>
           <h1 id="aae-home-title" data-aae-hero="title">
             从零构建、评测与部署 <span>AI Agent</span>
           </h1>
           <p class="aae-hero__lead" data-aae-hero="lead">
-            一套面向真实工程交付的中文学习知识库。沿 8 个阶段完成 53 个知识库，
+            一套面向真实工程交付的中文学习知识库。沿 8 个阶段完成 53 个学习重点，
             从 Python、API 与数据底座，走到 RAG、Agent、评测、治理和复杂协作。
           </p>
           <div class="aae-hero__actions" data-aae-hero="actions">
@@ -97,18 +97,32 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
             </button>
           </div>
         </div>
-        <dl class="aae-hero__stats" data-aae-hero="stats">
-          <div><dt>阶段</dt><dd>08</dd></div>
-          <div><dt>知识库</dt><dd>{String(courses.length).padStart(2, "0")}</dd></div>
-          <div><dt>源文档</dt><dd>{sourceDocuments}</dd></div>
-          <div><dt>公开正文</dt><dd>{fullDocuments}</dd></div>
-        </dl>
+
+        <div class="aae-hero__board" data-aae-hero="board" aria-hidden="true">
+          <div class="aae-sticky aae-sticky--lilac"><span>01 · BUILD</span><strong>工具契约</strong></div>
+          <div class="aae-sticky aae-sticky--lime"><span>02 · GROUND</span><strong>可靠检索</strong></div>
+          <div class="aae-sticky aae-sticky--coral"><span>03 · EVALUATE</span><strong>分层评测</strong></div>
+          <div class="aae-sticky aae-sticky--navy"><span>04 · SHIP</span><strong>生产治理</strong></div>
+        </div>
       </section>
 
-      <section class="aae-home-section" aria-labelledby="aae-stage-title">
+      <aside class="aae-marquee" aria-label="知识库规模">
+        <dl>
+          <div><dt>08</dt><dd>STAGES</dd></div>
+          <div><dt>{String(courses.length).padStart(2, "0")}</dt><dd>KNOWLEDGE BASES</dd></div>
+          <div><dt>{sourceDocuments}</dt><dd>SOURCE DOCUMENTS</dd></div>
+          <div><dt>{fullDocuments}</dt><dd>PUBLIC ARTICLES</dd></div>
+        </dl>
+        <p aria-hidden="true">BUILD · OBSERVE · EVALUATE · SHIP · ITERATE</p>
+      </aside>
+
+      <section class="aae-home-section aae-stage-system" aria-labelledby="aae-stage-title">
         <div class="aae-section-heading">
-          <div><p class="aae-eyebrow">LEARNING SYSTEM</p><h2 id="aae-stage-title">八阶段能力路径</h2></div>
-          <p>按顺序推进，也可以从当前项目的缺口进入。每一阶段都以可完成的实践和掌握检查收束。</p>
+          <div>
+            <p class="aae-eyebrow">LEARNING SYSTEM</p>
+            <h2 id="aae-stage-title">八阶段能力路径</h2>
+          </div>
+          <p>按顺序推进，也可以从当前项目的能力缺口进入；每个阶段都以实践和掌握检查收束。</p>
         </div>
         <div class="aae-stage-grid">
           {stages.map((stage, index) => {
@@ -127,7 +141,8 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
                   <strong>{copy.label}</strong>
                   <span>{copy.description}</span>
                 </span>
-                <span class="aae-stage-card__count">{stageCourses.length} 个知识库</span>
+                <span class="aae-stage-card__count">{stageCourses.length} 个学习重点</span>
+                <span class="aae-stage-card__arrow" aria-hidden="true">↗</span>
               </a>
             )
           })}
@@ -136,8 +151,11 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
 
       <section class="aae-home-section aae-course-map" aria-labelledby="aae-course-title">
         <div class="aae-section-heading">
-          <div><p class="aae-eyebrow">53 KNOWLEDGE BASES</p><h2 id="aae-course-title">全部知识库</h2></div>
-          <p>每个入口都指向该知识库的统一目录页；左侧课程导航会在阅读时展开当前知识库。</p>
+          <div>
+            <p class="aae-eyebrow">53 KNOWLEDGE BASES</p>
+            <h2 id="aae-course-title">全部学习重点</h2>
+          </div>
+          <p>每个入口都进入统一课程目录；阅读页左栏会保留阶段、课程与真实子目录层级。</p>
         </div>
         <div class="aae-course-map__stages">
           {stages.map((stage, stageIndex) => {
@@ -153,6 +171,7 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
                     <a href={resolveRelative(current, course.slug)}>
                       <span>{String(course.order).padStart(2, "0")}</span>
                       <strong>{course.name}</strong>
+                      <i aria-hidden="true">↗</i>
                     </a>
                   ))}
                 </div>
@@ -163,11 +182,21 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
       </section>
 
       <aside class="aae-publishing-note" data-aae-reveal="note">
-        <span class="aae-publishing-note__label">PUBLICATION BOUNDARY</span>
-        <p>
-          网站不包含登录或学习进度。{sourceStubs} 篇许可不明确的完整第三方复刻已替换为来源跳转页；
-          {assets} 个允许公开的示例和图片以只读方式提供。
-        </p>
+        <div>
+          <span class="aae-publishing-note__label">PUBLICATION BOUNDARY</span>
+          <h2>公开，保持边界清晰。</h2>
+        </div>
+        <div>
+          <p>
+            网站不包含登录或学习进度。{sourceStubs} 篇许可不明确的第三方完整复刻已替换为来源跳转页；
+            {assets} 个允许公开的示例和图片以只读方式提供。
+          </p>
+          {notices?.slug && (
+            <a class="aae-button aae-button--inverse" href={resolveRelative(current, notices.slug)}>
+              查看第三方与许可说明
+            </a>
+          )}
+        </div>
       </aside>
     </main>
   )

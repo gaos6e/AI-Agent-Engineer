@@ -13,6 +13,7 @@ const SiteHeader: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProp
   const roadmap = pageByRelativePath(allFiles, "All of AI.md")
   const resources = pageByRelativePath(allFiles, "资源索引.md")
   const current = fileData.slug!
+  const showCourseNavigation = Boolean(fileData.relativePath) && fileData.slug !== "index"
 
   return (
     <div class="aae-site-header" data-aae-animate="site-header">
@@ -35,7 +36,22 @@ const SiteHeader: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProp
             示例资源
           </a>
         )}
-        <button type="button" class="aae-site-header__button" data-aae-action="search">
+        {showCourseNavigation && (
+          <button
+            type="button"
+            class="aae-site-header__button aae-site-header__button--courses"
+            data-aae-action="courses"
+            aria-controls="aae-course-nav"
+            aria-expanded="false"
+          >
+            课程目录
+          </button>
+        )}
+        <button
+          type="button"
+          class="aae-site-header__button aae-site-header__button--primary"
+          data-aae-action="search"
+        >
           <span>搜索</span>
           <kbd>Ctrl K</kbd>
         </button>
@@ -45,7 +61,8 @@ const SiteHeader: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProp
           data-aae-action="theme"
           aria-label="切换明暗主题"
         >
-          主题
+          <span aria-hidden="true">◐</span>
+          <span class="aae-site-header__theme-label">主题</span>
         </button>
       </nav>
     </div>

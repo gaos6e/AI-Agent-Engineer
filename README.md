@@ -20,17 +20,25 @@
 
 ## 本地预览
 
-需要 Node.js 24 或更高版本。在 PowerShell 7 中运行：
+需要 Node.js 22 或更高版本（本机已验证 Node.js 24）。在 PowerShell 7 中运行：
 
 ```powershell
 Set-Location ".website"
 npm ci
 npm run test
 npm run build
-npm run dev
+npm run preview
 ```
 
-预览地址为 `http://localhost:8080/AI-Agent-Engineer/`。
+预览地址为 `http://127.0.0.1:8080/AI-Agent-Engineer/`。
+
+首次执行 `npm run build` 会下载固定版本的 Quartz、依赖与插件；网络正常时需要数分钟。只有看到 `Done processing 847 files`，以及最后一行校验中的 `brokenLocalLinks`、`sensitiveLeaks` 等均为 `0`，才表示构建完成。KaTeX 的 Unicode 警告来自已有笔记中的公式写法，不会阻止构建。
+
+需要编辑后自动重建和刷新时，再运行：
+
+```powershell
+npm run dev
+```
 
 ## 设计与技术
 

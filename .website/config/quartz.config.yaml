@@ -16,31 +16,31 @@ configuration:
     fontOrigin: local
     cdnCaching: false
     typography:
-      title: Bahnschrift
-      header: Bahnschrift
-      body: Microsoft YaHei UI
-      code: Cascadia Code
+      title: Inter
+      header: Inter
+      body: Inter
+      code: JetBrains Mono
     colors:
       lightMode:
-        light: "#F4F9FC"
-        lightgray: "#D7E3EC"
-        gray: "#71879A"
-        darkgray: "#30485E"
-        dark: "#091827"
-        secondary: "#007FA3"
-        tertiary: "#2D5FC7"
-        highlight: "rgba(0, 127, 163, 0.12)"
-        textHighlight: "rgba(73, 215, 255, 0.24)"
+        light: "#FFFFFF"
+        lightgray: "#E6E6E6"
+        gray: "#4A4A4A"
+        darkgray: "#171717"
+        dark: "#000000"
+        secondary: "#000000"
+        tertiary: "#1F1D3D"
+        highlight: "rgba(197, 176, 244, 0.34)"
+        textHighlight: "rgba(220, 238, 177, 0.72)"
       darkMode:
-        light: "#06101D"
-        lightgray: "#10233A"
-        gray: "#6F879D"
-        darkgray: "#AFC2D6"
-        dark: "#EAF4FF"
-        secondary: "#49D7FF"
-        tertiary: "#86E6FF"
-        highlight: "rgba(73, 215, 255, 0.12)"
-        textHighlight: "rgba(73, 215, 255, 0.24)"
+        light: "#0D0D0D"
+        lightgray: "#2A2A2A"
+        gray: "#B6B6B6"
+        darkgray: "#F0F0F0"
+        dark: "#FFFFFF"
+        secondary: "#FFFFFF"
+        tertiary: "#DCEEB1"
+        highlight: "rgba(197, 176, 244, 0.22)"
+        textHighlight: "rgba(220, 238, 177, 0.34)"
 plugins:
   - source: github:quartz-community/note-properties
     enabled: true

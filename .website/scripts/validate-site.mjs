@@ -183,6 +183,32 @@ export async function validateSite() {
     errors.push(`Missing or colliding course indexes: ${missingCourseIndexes.slice(0, 20).join(", ")}`)
   }
 
+  const navigationProbe = "RAG/00-目录.html"
+  let navigationStages = 0
+  let navigationCourses = 0
+  let navigationFolders = 0
+  if (fileSet.has(navigationProbe)) {
+    const html = await readFile(path.join(PUBLIC_ROOT, ...navigationProbe.split("/")), "utf8")
+    navigationStages = (html.match(/data-nav-stage=/g) ?? []).length
+    navigationCourses = (html.match(/data-nav-course=/g) ?? []).length
+    navigationFolders = (html.match(/data-nav-folder=/g) ?? []).length
+    if (navigationStages !== 8 || navigationCourses !== 53 || navigationFolders === 0) {
+      errors.push(
+        `Invalid learning navigation: ${navigationStages} stages, ${navigationCourses} courses, ${navigationFolders} folders`,
+      )
+    }
+    if (html.includes("Folder:")) errors.push("Virtual folder titles leaked into the learning navigation")
+  } else {
+    errors.push(`Missing navigation probe page: ${navigationProbe}`)
+  }
+
+  if (fileSet.has("index.html")) {
+    const homeHtml = await readFile(path.join(PUBLIC_ROOT, "index.html"), "utf8")
+    if (homeHtml.includes('id="aae-course-nav"')) {
+      errors.push("Homepage unexpectedly embeds the full article navigation tree")
+    }
+  }
+
   const stagedMarkdown = [
     ...manifest.publishedMarkdown,
     ...manifest.stubMarkdown,
@@ -324,6 +350,9 @@ export async function validateSite() {
     tableWikilinkLeaks: 0,
     checkboxProgressRuntimeLeaks: 0,
     interactiveCheckboxes: 0,
+    navigationStages,
+    navigationCourses,
+    navigationFolders,
   }
   console.log(JSON.stringify(summary))
   return summary
