@@ -13,11 +13,11 @@
 
 .aae-hero {
   display: grid;
-  min-height: min(46rem, calc(100vh - 5rem));
+  min-height: auto;
   grid-template-columns: minmax(0, 1.2fr) minmax(25rem, 0.8fr);
   gap: clamp(3rem, 7vw, 7.5rem);
   align-items: center;
-  padding: clamp(4rem, 8vw, 7.5rem) 0;
+  padding: clamp(2.75rem, 4.8vw, 4.5rem) 0 clamp(4rem, 7vw, 6.5rem);
 }
 
 .aae-hero__content {
@@ -451,7 +451,7 @@
   .aae-hero {
     min-height: auto;
     grid-template-columns: 1fr;
-    padding: 4rem 0;
+    padding: 3rem 0 4rem;
   }
 
   .aae-hero__board {
