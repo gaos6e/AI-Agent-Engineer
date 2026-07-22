@@ -8,7 +8,9 @@ tags:
   - guardrails
   - sandbox
   - human-in-the-loop
-source_checked: 2026-07-14
+source_checked: 2026-07-21
+content_origin: original
+content_status: validated
 ---
 
 # Guardrail、沙箱与人工审批
@@ -32,6 +34,8 @@ source_checked: 2026-07-14
 ## 确定性策略层
 
 模型只能提出候选动作；策略层接收可信身份、任务用途、规范化参数、对象、数据分类、环境、预算和审批状态，返回 allow/deny/review。默认拒绝未知工具、字段、目的地和状态。策略决策与模型文字分离，才能单元测试和审计。
+
+Guardrail、沙箱与人工批准都不能替代服务端对象级授权。即使审批者同意“发送这封邮件”，执行器仍要确认当前主体确实能访问正文、能代表该租户发送给该收件人，且批准所绑定的对象与版本仍未变化。
 
 ## 安全人工审批
 
@@ -96,6 +100,6 @@ source_checked: 2026-07-14
 
 ## 参考资料
 
-- [NIST AI 600-1, Generative AI Profile](https://doi.org/10.6028/NIST.AI.600-1)（2024-07；获取日期：2026-07-14）
-- [OWASP GenAI Security Project](https://genai.owasp.org/)（获取日期：2026-07-14）
-- [MITRE ATLAS](https://atlas.mitre.org/)（持续更新；获取日期：2026-07-14）
+- [NIST AI 600-1, Generative AI Profile](https://doi.org/10.6028/NIST.AI.600-1)（2024-07；获取日期：2026-07-21）
+- [OWASP GenAI Security Project](https://genai.owasp.org/)（获取日期：2026-07-21）
+- [MITRE ATLAS](https://atlas.mitre.org/)（持续更新；获取日期：2026-07-21）

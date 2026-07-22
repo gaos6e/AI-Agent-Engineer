@@ -114,14 +114,27 @@ def emit(state: dict[str, Any], event_type: str, **payload: Any) -> None:
     )
 
 
-def validate_research(research: Any, catalog: Mapping[str, Any]) -> None:
+def validate_research(
+    research: Any,
+    catalog: Mapping[str, Any] | None = None,
+) -> None:
+    """Validate a research result, optionally against a trusted source catalog.
+
+    State can be validated structurally after it has been persisted, but source
+    identifiers are only meaningful relative to a concrete catalog revision.
+    Callers at an external-effect boundary must therefore pass the catalog.
+    """
+
     if not isinstance(research, dict):
         raise FlowError("research Task 产物必须是对象")
     require_exact_keys(research, {"topic", "claims", "unknowns"}, "research")
     require_nonempty_text(research["topic"], "research.topic", 120)
     if not isinstance(research["claims"], list):
         raise FlowError("research.claims 必须是数组")
-    known = source_index(catalog)
+    known: dict[str, Mapping[str, Any]] | None = None
+    if catalog is not None:
+        validate_catalog(catalog)
+        known = source_index(catalog)
     for index, claim in enumerate(research["claims"]):
         label = f"research.claims[{index}]"
         if not isinstance(claim, dict):
@@ -129,9 +142,10 @@ def validate_research(research: Any, catalog: Mapping[str, Any]) -> None:
         require_exact_keys(claim, {"text", "source_ids"}, label)
         require_nonempty_text(claim["text"], f"{label}.text", 1000)
         identifiers = _validate_text_list(claim["source_ids"], f"{label}.source_ids", 10)
-        unknown = [identifier for identifier in identifiers if identifier not in known]
-        if unknown:
-            raise FlowError(f"{label} 引用了未知来源：{unknown}")
+        if known is not None:
+            unknown = [identifier for identifier in identifiers if identifier not in known]
+            if unknown:
+                raise FlowError(f"{label} 引用了未知来源：{unknown}")
     if not isinstance(research["unknowns"], list):
         raise FlowError("research.unknowns 必须是数组")
     for item in research["unknowns"]:
@@ -277,14 +291,17 @@ def run_crew(
     return {"research": research, "draft": draft, "review": review}
 
 
-def validate_state(state: Any) -> None:
+def validate_state(
+    state: Any,
+    catalog: Mapping[str, Any] | None = None,
+) -> None:
     if not isinstance(state, dict):
         raise FlowError("Flow state 必须是对象")
     require_exact_keys(
         state,
         {
             "schema_version",
-            "run_id",
+            "operation_id",
             "topic",
             "catalog_fingerprint",
             "stage",
@@ -298,10 +315,14 @@ def validate_state(state: Any) -> None:
     )
     if state["schema_version"] != FLOW_SCHEMA_VERSION:
         raise FlowError("Flow state schema_version 不受支持")
-    require_nonempty_text(state["run_id"], "state.run_id", 80)
+    require_nonempty_text(state["operation_id"], "state.operation_id", 80)
     require_nonempty_text(state["topic"], "state.topic", 120)
     if not isinstance(state["catalog_fingerprint"], str) or len(state["catalog_fingerprint"]) != 64:
         raise FlowError("state.catalog_fingerprint 非法")
+    if catalog is not None:
+        validate_catalog(catalog)
+        if state["catalog_fingerprint"] != fingerprint(catalog):
+            raise FlowError("Flow state 与当前来源目录版本不一致")
     if state["stage"] not in {
         "started",
         "revising",
@@ -330,6 +351,7 @@ def validate_state(state: Any) -> None:
         if not isinstance(state["result"], dict):
             raise FlowError("state.result 必须是对象或 null")
         require_exact_keys(state["result"], {"research", "draft", "review"}, "state.result")
+        validate_research(state["result"]["research"], catalog)
         validate_draft(state["result"]["draft"])
         validate_review(state["result"]["review"])
     if state["stage"] in TERMINAL_STAGES and state["result"] is None:
@@ -356,7 +378,7 @@ def run_flow(
     catalog_fingerprint = fingerprint(catalog)
     state: dict[str, Any] = {
         "schema_version": FLOW_SCHEMA_VERSION,
-        "run_id": f"run-{fingerprint({'topic': topic, 'catalog': catalog_fingerprint})[:16]}",
+        "operation_id": f"operation-{fingerprint({'topic': topic, 'catalog': catalog_fingerprint})[:16]}",
         "topic": topic,
         "catalog_fingerprint": catalog_fingerprint,
         "stage": "started",
@@ -384,7 +406,7 @@ def run_flow(
         if result["review"]["passed"]:
             state["stage"] = "ready_to_publish"
             emit(state, "routed:ready_to_publish")
-            validate_state(state)
+            validate_state(state, catalog)
             return state
         if state["attempt"] < max_attempts:
             revision_note = "；".join(result["review"]["reasons"])
@@ -393,14 +415,38 @@ def run_flow(
 
     state["stage"] = "human_review"
     emit(state, "routed:human_review")
-    validate_state(state)
+    validate_state(state, catalog)
     return state
 
 
-def publish_report(output_path: Path, state: dict[str, Any]) -> dict[str, Any]:
-    validate_state(state)
+def validate_publication_contract(
+    state: dict[str, Any],
+    catalog: Mapping[str, Any],
+) -> None:
+    """Recheck trusted evidence immediately before the local side effect."""
+
+    validate_state(state, catalog)
     if state["stage"] != "ready_to_publish":
         raise FlowError("只有 ready_to_publish 状态可以发布")
+    trusted_review = run_reviewer_task(
+        state["result"]["research"],
+        state["result"]["draft"],
+        catalog,
+    )
+    if trusted_review != state["result"]["review"]:
+        raise FlowError("state.review 与可信 reviewer 重算结果不一致")
+    if not trusted_review["passed"]:
+        raise FlowError("可信 reviewer 未通过，拒绝发布")
+
+
+def publish_report(
+    output_path: Path,
+    state: dict[str, Any],
+    catalog: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Publish only after a same-catalog, deterministic pre-write recheck."""
+
+    validate_publication_contract(state, catalog)
     content = state["result"]["draft"]["markdown"]
     recovered = False
     if output_path.exists():
@@ -430,7 +476,7 @@ def publish_report(output_path: Path, state: dict[str, Any]) -> dict[str, Any]:
     }
     state["stage"] = "published"
     emit(state, "report_recovered" if recovered else "report_published")
-    validate_state(state)
+    validate_state(state, catalog)
     return state
 
 
@@ -459,7 +505,7 @@ def main(argv: list[str] | None = None) -> int:
             force_failure=args.force_failure,
         )
         if args.output is not None and state["stage"] == "ready_to_publish":
-            state = publish_report(args.output, state)
+            state = publish_report(args.output, state, catalog)
     except FlowError as exc:
         print(json.dumps({"stage": "error", "message": str(exc)}, ensure_ascii=False))
         return 2

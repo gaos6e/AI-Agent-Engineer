@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import sys
+from datetime import date
 from typing import Any
 
 
-AS_OF = "2026-07-14"
+AS_OF = "2026-07-22"
+NEXT_REVIEW = "2026-08-22"
 SCENARIO: dict[str, Any] = {
     "system_id": "GOV-EX-001",
     "name": "synthetic-benefit-intake-assistant",
@@ -28,7 +31,10 @@ SCENARIO: dict[str, Any] = {
             "id": "DATA-001",
             "category": "synthetic_application_text",
             "source": "locally_authored_fixture",
+            "version": "fixture-v1",
+            "owner": "fictional_data_owner",
             "personal_data": False,
+            "sensitive_data": False,
             "retention": "discard_after_each_test_run",
         }
     ],
@@ -58,6 +64,8 @@ SCENARIO: dict[str, Any] = {
     "vendor": {
         "id": "VENDOR-001",
         "name": "fictional-model-provider",
+        "profile_snapshot": "supplier-profile-2026-07-22",
+        "owner": "fictional_procurement_owner",
         "training_on_inputs": False,
         "change_notice": "notice-required-before-material-change",
         "exit_plan": "disable endpoint and switch to manual review",
@@ -94,6 +102,52 @@ def _text_list(value: Any, location: str) -> list[str]:
     return result
 
 
+def _exact_object(value: Any, fields: set[str], location: str) -> dict[str, Any]:
+    require(isinstance(value, dict), f"{location} must be an object")
+    require(set(value) == fields, f"{location} fields must match the frozen contract")
+    return value
+
+
+def _iso_date(value: Any, location: str) -> date:
+    text = _non_empty_text(value, location)
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError as exc:
+        raise GovernanceError(f"{location} must be an ISO date") from exc
+    require(parsed.isoformat() == text, f"{location} must use YYYY-MM-DD")
+    return parsed
+
+
+def _validate_risk_facts(value: Any, location: str) -> dict[str, Any]:
+    expected = {
+        "severity", "likelihood", "consequential_context", "sensitive_or_personal_data",
+        "autonomous_action", "uncertainty",
+    }
+    facts = _exact_object(value, expected, location)
+    for key in ("severity", "likelihood"):
+        item = facts[key]
+        require(
+            not isinstance(item, bool) and isinstance(item, int) and 1 <= item <= 5,
+            f"{location}.{key} must be an integer from 1 to 5",
+        )
+    for key in ("consequential_context", "sensitive_or_personal_data", "autonomous_action"):
+        require(isinstance(facts[key], bool), f"{location}.{key} must be boolean")
+    _non_empty_text(facts["uncertainty"], f"{location}.uncertainty")
+    return facts
+
+
+def scenario_fingerprint(scenario: dict[str, Any]) -> str:
+    """Bind generated evidence with stable local serialization, not a signature."""
+    canonical = json.dumps(
+        scenario,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def validate_scenario(raw: Any) -> dict[str, Any]:
     """Validate the frozen in-memory teaching contract and return a deep copy."""
     expected = {
@@ -108,14 +162,24 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     _text_list(raw["users"], "scenario.users")
     _text_list(raw["affected_groups"], "scenario.affected_groups")
 
-    data_expected = {"id", "category", "source", "personal_data", "retention"}
+    data_expected = {
+        "id",
+        "category",
+        "source",
+        "version",
+        "owner",
+        "personal_data",
+        "sensitive_data",
+        "retention",
+    }
     require(isinstance(raw["data"], list) and bool(raw["data"]), "scenario.data must be non-empty")
     data_ids: list[str] = []
     for index, item in enumerate(raw["data"]):
         require(isinstance(item, dict) and set(item) == data_expected, f"scenario.data[{index}] fields mismatch")
-        for key in ("id", "category", "source", "retention"):
+        for key in ("id", "category", "source", "version", "owner", "retention"):
             _non_empty_text(item[key], f"scenario.data[{index}].{key}")
-        require(isinstance(item["personal_data"], bool), f"scenario.data[{index}].personal_data must be boolean")
+        for key in ("personal_data", "sensitive_data"):
+            require(isinstance(item[key], bool), f"scenario.data[{index}].{key} must be boolean")
         data_ids.append(item["id"])
     require(len(data_ids) == len(set(data_ids)), "scenario data IDs must be unique")
 
@@ -130,33 +194,40 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         component_ids.append(item["id"])
     require(len(component_ids) == len(set(component_ids)), "scenario component IDs must be unique")
 
-    vendor_expected = {"id", "name", "training_on_inputs", "change_notice", "exit_plan"}
+    vendor_expected = {
+        "id",
+        "name",
+        "profile_snapshot",
+        "owner",
+        "training_on_inputs",
+        "change_notice",
+        "exit_plan",
+    }
     vendor = raw["vendor"]
     require(isinstance(vendor, dict) and set(vendor) == vendor_expected, "scenario.vendor fields mismatch")
-    for key in ("id", "name", "change_notice", "exit_plan"):
+    for key in ("id", "name", "profile_snapshot", "owner", "change_notice", "exit_plan"):
         _non_empty_text(vendor[key], f"scenario.vendor.{key}")
     require(isinstance(vendor["training_on_inputs"], bool), "scenario.vendor.training_on_inputs must be boolean")
 
-    facts_expected = {
-        "severity", "likelihood", "consequential_context", "sensitive_or_personal_data",
-        "autonomous_action", "uncertainty",
-    }
-    facts = raw["risk_facts"]
-    require(isinstance(facts, dict) and set(facts) == facts_expected, "scenario.risk_facts fields mismatch")
-    for key in ("severity", "likelihood"):
-        value = facts[key]
-        require(not isinstance(value, bool) and isinstance(value, int) and 1 <= value <= 5, f"scenario.risk_facts.{key} must be an integer from 1 to 5")
-    for key in ("consequential_context", "sensitive_or_personal_data", "autonomous_action"):
-        require(isinstance(facts[key], bool), f"scenario.risk_facts.{key} must be boolean")
-    _non_empty_text(facts["uncertainty"], "scenario.risk_facts.uncertainty")
+    require(raw["status"] == "sandbox_proposal", "teaching scenario status must remain sandbox_proposal")
+    require(
+        raw["decision_role"] == "advisory_draft_only",
+        "teaching scenario decision_role must remain advisory_draft_only",
+    )
+    facts = _validate_risk_facts(raw["risk_facts"], "scenario.risk_facts")
+    declared_sensitive = any(
+        item["personal_data"] or item["sensitive_data"] for item in raw["data"]
+    )
+    require(
+        facts["sensitive_or_personal_data"] == declared_sensitive,
+        "scenario.risk_facts.sensitive_or_personal_data must match the data register",
+    )
     return copy.deepcopy(raw)
 
 
 def tier_risk(facts: dict[str, Any]) -> dict[str, Any]:
     """Apply a teaching rubric; this is not a legal classification."""
-    for key in ("severity", "likelihood"):
-        value = facts.get(key)
-        require(not isinstance(value, bool) and isinstance(value, int) and 1 <= value <= 5, f"risk fact {key} must be an integer from 1 to 5")
+    facts = _validate_risk_facts(facts, "risk_facts")
     score = facts["severity"] * facts["likelihood"]
     if score >= 10:
         tier = "high"
@@ -165,17 +236,24 @@ def tier_risk(facts: dict[str, Any]) -> dict[str, Any]:
     else:
         tier = "low"
     reasons = [f"teaching matrix score={score} (severity x likelihood)"]
-    if facts.get("consequential_context"):
+    required_reviews: list[str] = []
+    if facts["consequential_context"]:
         tier = "high"
         reasons.append("consequential public-benefit context forces high internal review")
-    if facts.get("autonomous_action"):
+        required_reviews.extend(["domain", "independent_risk"])
+    if facts["autonomous_action"]:
         tier = "high"
         reasons.append("autonomous action forces high internal review")
-    reasons.append(str(facts.get("uncertainty", "uncertainty not recorded")))
+        required_reviews.extend(["safety", "independent_risk"])
+    if facts["sensitive_or_personal_data"]:
+        reasons.append("personal or sensitive data requires privacy review independent of the tier")
+        required_reviews.append("privacy")
+    reasons.append(facts["uncertainty"])
     return {
         "internal_tier": tier,
         "score": score,
         "reasons": reasons,
+        "required_reviews": sorted(set(required_reviews)),
         "boundary": "internal teaching rubric; not a statutory or regulatory category",
     }
 
@@ -183,6 +261,7 @@ def tier_risk(facts: dict[str, Any]) -> dict[str, Any]:
 def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
     scenario = validate_scenario(scenario)
     risk = tier_risk(scenario["risk_facts"])
+    scenario_sha256 = scenario_fingerprint(scenario)
     version_set = {
         item["id"]: item["version"] for item in scenario["components"]
     }
@@ -191,6 +270,7 @@ def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
             "pack_version": "1.0",
             "as_of": AS_OF,
             "scenario_kind": "synthetic_offline_training",
+            "scenario_sha256": scenario_sha256,
         },
         "system_register": {
             "system_id": scenario["system_id"],
@@ -204,7 +284,7 @@ def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
             "affected_groups": scenario["affected_groups"],
             "decision_role": scenario["decision_role"],
             "deployment_regions": ["training-only"],
-            "next_review": "2026-08-13",
+            "next_review": NEXT_REVIEW,
         },
         "role_assignment": {
             "accountable": "fictional_service_owner",
@@ -246,13 +326,14 @@ def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
         "approval": {
             "decision": "conditional_synthetic_sandbox_only",
             "approved_version_set": dict(version_set),
+            "scenario_sha256": scenario_sha256,
             "conditions": [
                 "no real personal or case data",
                 "no eligibility decision or ranking",
                 "no external write or contact capability",
                 "record every serious unsupported claim as a hazard",
             ],
-            "expires": "2026-08-13",
+            "expires": NEXT_REVIEW,
             "production_approved": False,
         },
         "change_triggers": [
@@ -298,8 +379,15 @@ def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
         ],
         "source_status": {
             "as_of": AS_OF,
-            "nist_ai_rmf": "version 1.0; official site says revision in progress",
-            "oecd_ai_principles": "updated May 2024",
+            "snapshot_kind": "frozen_static_training_snapshot",
+            "nist_ai_rmf": {
+                "version_status": "version 1.0; official site says revision in progress",
+                "official_url": "https://www.nist.gov/itl/ai-risk-management-framework",
+            },
+            "oecd_ai_principles": {
+                "version_status": "updated May 2024",
+                "official_url": "https://oecd.ai/en/ai-principles",
+            },
             "legal_review": "not performed; deployment-specific review required",
         },
         "disclaimer": (
@@ -309,7 +397,9 @@ def build_pack(scenario: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_pack(pack: dict[str, Any]) -> None:
+def validate_pack(pack: dict[str, Any], scenario: dict[str, Any] | None = None) -> None:
+    """Validate every frozen section and bind it back to canonical scenario facts."""
+    validated_scenario = validate_scenario(SCENARIO if scenario is None else scenario)
     required = {
         "metadata",
         "system_register",
@@ -327,31 +417,118 @@ def validate_pack(pack: dict[str, Any]) -> None:
     }
     require(isinstance(pack, dict), "pack must be an object")
     require(required == set(pack), "pack top-level sections must match the frozen contract")
-    require(pack["system_register"]["system_id"] == "GOV-EX-001", "system ID changed")
-    require(pack["risk_assessment"]["internal_tier"] == "high", "risk tier must be high")
-    require(
-        pack["risk_assessment"]["boundary"]
-        == "internal teaching rubric; not a statutory or regulatory category",
-        "risk boundary is missing",
+    metadata = _exact_object(
+        pack["metadata"], {"pack_version", "as_of", "scenario_kind", "scenario_sha256"}, "pack.metadata",
     )
-    require(
-        pack["approval"]["decision"] == "conditional_synthetic_sandbox_only",
-        "approval scope changed",
+    require(metadata["pack_version"] == "1.0", "pack version changed")
+    as_of = _iso_date(metadata["as_of"], "pack.metadata.as_of")
+    require(metadata["as_of"] == AS_OF, "pack source date changed")
+    require(metadata["scenario_kind"] == "synthetic_offline_training", "scenario kind changed")
+    expected_fingerprint = scenario_fingerprint(validated_scenario)
+    require(metadata["scenario_sha256"] == expected_fingerprint, "metadata is not bound to the scenario")
+
+    system = _exact_object(
+        pack["system_register"],
+        {
+            "system_id", "name", "status", "purpose", "prohibited_uses", "business_owner",
+            "system_owner", "users", "affected_groups", "decision_role", "deployment_regions",
+            "next_review",
+        },
+        "pack.system_register",
     )
-    require(pack["approval"]["production_approved"] is False, "production must remain unapproved")
-    require(
-        pack["approval"]["approved_version_set"]
-        == pack["component_register"]["approved_version_set"],
-        "approval is not bound to the component version set",
+    for key in ("system_id", "name", "status", "purpose", "prohibited_uses", "users", "affected_groups", "decision_role"):
+        require(system[key] == validated_scenario[key], f"system register {key} is not scenario-derived")
+    _non_empty_text(system["business_owner"], "pack.system_register.business_owner")
+    _non_empty_text(system["system_owner"], "pack.system_register.system_owner")
+    _text_list(system["deployment_regions"], "pack.system_register.deployment_regions")
+    require(_iso_date(system["next_review"], "pack.system_register.next_review") > as_of, "next review must follow the snapshot date")
+
+    roles = _exact_object(
+        pack["role_assignment"],
+        {"accountable", "responsible", "independent_review", "consulted", "informed", "decision_rights"},
+        "pack.role_assignment",
     )
-    require(len(pack["change_triggers"]) >= 5, "too few change triggers")
-    require(len(pack["monitoring_plan"]) >= 2, "too few monitoring controls")
-    require(
-        all(item.get("metric") and item.get("threshold") and item.get("action") and item.get("owner") for item in pack["monitoring_plan"]),
-        "monitoring controls must include metric, threshold, action, and owner",
+    _non_empty_text(roles["accountable"], "pack.role_assignment.accountable")
+    for key in ("responsible", "independent_review", "consulted", "informed"):
+        _text_list(roles[key], f"pack.role_assignment.{key}")
+    rights = _exact_object(
+        roles["decision_rights"], {"approve_sandbox", "accept_high_residual_risk", "emergency_stop"},
+        "pack.role_assignment.decision_rights",
     )
-    require(len(pack["retirement_plan"]) >= 5, "retirement plan is incomplete")
-    require("not legal advice" in pack["disclaimer"], "legal boundary is missing")
+    for key in rights:
+        _non_empty_text(rights[key], f"pack.role_assignment.decision_rights.{key}")
+
+    risk = _exact_object(
+        pack["risk_assessment"], {"internal_tier", "score", "reasons", "required_reviews", "boundary"},
+        "pack.risk_assessment",
+    )
+    require(risk == tier_risk(validated_scenario["risk_facts"]), "risk assessment is not scenario-derived")
+
+    impact = _exact_object(
+        pack["impact_assessment"],
+        {"benefit", "non_ai_baseline", "impact_paths", "controls", "residual_risk", "affected_party_feedback"},
+        "pack.impact_assessment",
+    )
+    for key in ("benefit", "non_ai_baseline", "residual_risk", "affected_party_feedback"):
+        _non_empty_text(impact[key], f"pack.impact_assessment.{key}")
+    for key in ("impact_paths", "controls"):
+        _text_list(impact[key], f"pack.impact_assessment.{key}")
+
+    component = _exact_object(
+        pack["component_register"], {"data", "components", "vendor", "approved_version_set"},
+        "pack.component_register",
+    )
+    require(component["data"] == validated_scenario["data"], "data register is not scenario-derived")
+    require(component["components"] == validated_scenario["components"], "component register is not scenario-derived")
+    require(component["vendor"] == validated_scenario["vendor"], "vendor register is not scenario-derived")
+    expected_versions = {item["id"]: item["version"] for item in validated_scenario["components"]}
+    require(component["approved_version_set"] == expected_versions, "component version set is not scenario-derived")
+
+    approval = _exact_object(
+        pack["approval"],
+        {"decision", "approved_version_set", "scenario_sha256", "conditions", "expires", "production_approved"},
+        "pack.approval",
+    )
+    require(approval["decision"] == "conditional_synthetic_sandbox_only", "approval scope changed")
+    require(approval["production_approved"] is False, "production must remain unapproved")
+    require(approval["approved_version_set"] == expected_versions, "approval is not bound to scenario versions")
+    require(approval["scenario_sha256"] == expected_fingerprint, "approval is not bound to the scenario")
+    _text_list(approval["conditions"], "pack.approval.conditions")
+    require(_iso_date(approval["expires"], "pack.approval.expires") > as_of, "approval must expire after the snapshot date")
+
+    require(len(_text_list(pack["change_triggers"], "pack.change_triggers")) >= 5, "too few change triggers")
+    require(isinstance(pack["monitoring_plan"], list) and len(pack["monitoring_plan"]) >= 2, "too few monitoring controls")
+    metrics: list[str] = []
+    for index, item in enumerate(pack["monitoring_plan"]):
+        record = _exact_object(item, {"metric", "threshold", "action", "owner"}, f"pack.monitoring_plan[{index}]")
+        for key in record:
+            _non_empty_text(record[key], f"pack.monitoring_plan[{index}].{key}")
+        metrics.append(record["metric"])
+    require(len(metrics) == len(set(metrics)), "monitoring metrics must be unique")
+
+    incident = _exact_object(
+        pack["incident_and_hazard_plan"], {"containment", "record_fields", "external_notification"},
+        "pack.incident_and_hazard_plan",
+    )
+    _text_list(incident["containment"], "pack.incident_and_hazard_plan.containment")
+    _text_list(incident["record_fields"], "pack.incident_and_hazard_plan.record_fields")
+    _non_empty_text(incident["external_notification"], "pack.incident_and_hazard_plan.external_notification")
+    require(len(_text_list(pack["retirement_plan"], "pack.retirement_plan")) >= 5, "retirement plan is incomplete")
+
+    source = _exact_object(
+        pack["source_status"], {"as_of", "snapshot_kind", "nist_ai_rmf", "oecd_ai_principles", "legal_review"},
+        "pack.source_status",
+    )
+    require(source["as_of"] == AS_OF, "source status date changed")
+    require(source["snapshot_kind"] == "frozen_static_training_snapshot", "source snapshot boundary changed")
+    for key in ("nist_ai_rmf", "oecd_ai_principles"):
+        record = _exact_object(source[key], {"version_status", "official_url"}, f"pack.source_status.{key}")
+        _non_empty_text(record["version_status"], f"pack.source_status.{key}.version_status")
+        require(record["official_url"].startswith("https://"), f"pack.source_status.{key}.official_url must use HTTPS")
+    require("not performed" in _non_empty_text(source["legal_review"], "pack.source_status.legal_review"), "legal review boundary is missing")
+    require("not legal advice" in _non_empty_text(pack["disclaimer"], "pack.disclaimer"), "legal boundary is missing")
+
+    require(pack == build_pack(validated_scenario), "pack content must match the scenario-derived frozen contract")
 
 
 def self_test() -> None:

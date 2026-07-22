@@ -1,40 +1,49 @@
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "scenario_id": "regional-statistics-hardened",
   "purpose": "Publish differentially private regional service-usage counts from two institutions.",
   "non_goals": ["identify a person", "publish record-level data", "reuse inputs for training"],
   "subject_scope": "Add or remove all bounded contributions from one person in one reporting month.",
   "data_fields": [
-    {"name": "region_bucket", "classification": "measure", "necessary": true, "contribution_bound": 1},
-    {"name": "usage_count", "classification": "measure", "necessary": true, "contribution_bound": 3}
+    {"name": "region_bucket", "privacy_class": "quasi_identifier", "output_role": "dimension", "necessary": true, "contribution_bound": 1},
+    {"name": "usage_count", "privacy_class": "non_sensitive", "output_role": "measure", "necessary": true, "contribution_bound": 3}
   ],
   "participants": [
     {"id": "holder-a", "role": "data_holder", "trusted": true},
     {"id": "holder-b", "role": "data_holder", "trusted": true},
-    {"id": "mpc-service", "role": "compute_service", "trusted": true},
+    {"id": "mpc-node-a", "role": "compute_service", "trusted": false},
+    {"id": "mpc-node-b", "role": "compute_service", "trusted": false},
     {"id": "reviewed-publisher", "role": "publisher", "trusted": true}
   ],
   "data_flows": [
-    {"id": "a-to-mpc", "from": "holder-a", "to": "mpc-service", "fields": ["region_bucket", "usage_count"], "raw": false},
-    {"id": "b-to-mpc", "from": "holder-b", "to": "mpc-service", "fields": ["region_bucket", "usage_count"], "raw": false}
+    {"id": "a-to-mpc-a", "from": "holder-a", "to": "mpc-node-a", "fields": ["region_bucket", "usage_count"], "protection": "mpc_share"},
+    {"id": "a-to-mpc-b", "from": "holder-a", "to": "mpc-node-b", "fields": ["region_bucket", "usage_count"], "protection": "mpc_share"},
+    {"id": "b-to-mpc-a", "from": "holder-b", "to": "mpc-node-a", "fields": ["region_bucket", "usage_count"], "protection": "mpc_share"},
+    {"id": "b-to-mpc-b", "from": "holder-b", "to": "mpc-node-b", "fields": ["region_bucket", "usage_count"], "protection": "mpc_share"}
   ],
   "processing": {
-    "raw_data_centralized": false,
+    "task_type": "aggregate_statistics",
     "local_training": false,
     "secure_aggregation": false,
     "mpc": true,
     "homomorphic_encryption": false,
-    "tee": false
+    "tee": false,
+    "protocol_participants": ["holder-a", "holder-b", "mpc-node-a", "mpc-node-b"],
+    "protocol_security": "semi_honest",
+    "protocol_evidence": true
   },
   "release": {
     "public": true,
     "minimum_group_size": 50,
-    "adjacency_definition": "add-or-remove-one-person-with-bounded-monthly-contribution",
+    "adjacency": {"unit": "person", "relation": "add_remove", "time_window": "one reporting month", "contribution_bounds_enforced": true},
     "epsilon_limit": "1.0",
     "delta_limit": "0.000001",
     "mechanisms": [
       {"id": "monthly-counts", "mechanism": "reviewed-teaching-mechanism-a", "epsilon": "0.4", "delta": "0.0000001", "approved": true},
       {"id": "quarterly-summary", "mechanism": "reviewed-teaching-mechanism-b", "epsilon": "0.4", "delta": "0.0000001", "approved": true}
+    ],
+    "outputs": [
+      {"id": "reviewed-regional-counts", "fields": ["region_bucket", "usage_count"], "transformation": "dp_aggregate", "public": true}
     ]
   },
   "retention": {"days": 30, "deletion_verified": true, "backups_in_scope": true},
@@ -45,7 +54,8 @@
     "budget_ledger": true,
     "provenance": true,
     "incident_plan": true,
-    "update_validation": true
+    "linkage_evaluation": true,
+    "update_validation": false
   },
   "threat_model": {
     "honest_but_curious_server": true,
@@ -55,6 +65,6 @@
   },
   "risk_policy": {
     "block_severities": ["critical", "high"],
-    "review_severities": ["medium"]
+    "review_severities": ["medium", "low"]
   }
 }

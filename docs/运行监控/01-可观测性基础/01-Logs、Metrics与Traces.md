@@ -48,6 +48,8 @@ something went wrong for user 93827
 }
 ```
 
+这里同样保留严格 JSON：`timestamp`、`service`、`environment` 与 `release_id` 确定发生位置和版本；`trace_id` 只承担跨信号关联；`event_name`、`tool_name` 和 `error_type` 让告警与排障能按结构聚合；`severity` 只表达事件级别，不能单独替代 SLO 或业务质量判断。
+
 这是教学样例。真实日志应使用平台的时间和Trace ID格式，不记录密钥、Authorization header、完整个人资料或不必要的Prompt。如果需用户关联，使用受控、有保留期且不能当认证凭据的代理标识。
 
 ## Metric类型与单位

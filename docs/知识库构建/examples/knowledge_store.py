@@ -18,6 +18,9 @@ import unicodedata
 
 SCHEMA_VERSION = "1.0"
 MAX_CONTENT_BYTES = 100_000
+MAX_ACL_GROUPS = 128
+MAX_SUBJECT_GROUPS = 128
+MAX_SEARCH_RESULTS = 100
 DELETE_REASONS = {
     "access_revoked",
     "retention_expired",
@@ -201,6 +204,8 @@ def _normalise_record(record: SourceRecord) -> SourceRecord:
         raise StoreError(f"content 不得超过 {MAX_CONTENT_BYTES} UTF-8 bytes")
     if not isinstance(record.allowed_groups, tuple) or not record.allowed_groups:
         raise StoreError("allowed_groups 必须是非空 tuple；公开内容也要使用显式组")
+    if len(record.allowed_groups) > MAX_ACL_GROUPS:
+        raise StoreError(f"allowed_groups 不得超过 {MAX_ACL_GROUPS} 项")
     validated_groups = tuple(
         _validate_token("group_id", group) for group in record.allowed_groups
     )
@@ -243,6 +248,43 @@ def _state_hashes(record: SourceRecord, config: BuildConfig) -> tuple[str, str, 
         )
     )
     return content_hash, source_state_hash, build_state_hash
+
+
+def _persisted_revision_hash_errors(
+    revision: sqlite3.Row, groups: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Recompute canonical hashes from persisted values instead of trusting labels."""
+
+    content = revision["content"]
+    if not isinstance(content, str):
+        return ("canonical_content_missing",)
+    content_hash = _digest_text(content)
+    source_state_hash = _digest_text(
+        _canonical_json(
+            {
+                "allowed_groups": list(groups),
+                "content": content,
+                "source_uri": revision["source_uri"],
+                "source_version": revision["source_version"],
+            }
+        )
+    )
+    build_state_hash = _digest_text(
+        _canonical_json(
+            {
+                "pipeline_version": revision["pipeline_version"],
+                "source_state_hash": source_state_hash,
+            }
+        )
+    )
+    errors: list[str] = []
+    if revision["content_hash"] != content_hash:
+        errors.append("canonical_content_hash_mismatch")
+    if revision["source_state_hash"] != source_state_hash:
+        errors.append("canonical_source_state_hash_mismatch")
+    if revision["build_state_hash"] != build_state_hash:
+        errors.append("canonical_build_state_hash_mismatch")
+    return tuple(errors)
 
 
 def connect(path: str = ":memory:") -> sqlite3.Connection:
@@ -498,6 +540,17 @@ def delete_document(
             return ChangeResult("stale_ignored", None, None)
         if source_sequence == last_sequence:
             if bool(document["deleted"]):
+                tombstone = connection.execute(
+                    """
+                    SELECT reason_code FROM tombstones
+                    WHERE tenant_id = ? AND document_id = ? AND event_version = ?
+                    """,
+                    (tenant_id, document_id, document["current_event_version"]),
+                ).fetchone()
+                if tombstone is None:
+                    raise StoreError("删除状态缺少当前墓碑，不能确认幂等重放")
+                if tombstone["reason_code"] != reason_code:
+                    raise StoreError("相同 source_sequence 的删除原因冲突")
                 return ChangeResult("noop", None, None)
             raise StoreError("相同 source_sequence 不能同时表示 upsert 与 delete")
 
@@ -585,43 +638,52 @@ def project_next_event(
             raise RuntimeError("outbox 指向不存在的 documents 行")
 
         if event["event_kind"] == "document.upserted":
+            if event["revision_id"] is None:
+                raise RuntimeError("upsert 事件缺少 revision 指针")
             revision = _revision(connection, int(event["revision_id"]))
             if revision is None or revision["content"] is None:
                 raise RuntimeError("upsert 事件缺少可投影 revision 内容")
-            connection.execute(
-                """
-                INSERT INTO search_revisions(
-                    revision_id, tenant_id, document_id, revision_number,
-                    content, content_hash
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(revision_id) DO UPDATE SET
-                    content = excluded.content,
-                    content_hash = excluded.content_hash
-                """,
-                (
-                    revision["revision_id"],
-                    revision["tenant_id"],
-                    revision["document_id"],
-                    revision["revision_number"],
-                    revision["content"],
-                    revision["content_hash"],
-                ),
-            )
-            connection.execute(
-                "DELETE FROM search_acl WHERE revision_id = ?",
-                (revision["revision_id"],),
-            )
-            groups = _revision_groups(connection, int(revision["revision_id"]))
-            connection.executemany(
-                "INSERT INTO search_acl(revision_id, group_id) VALUES (?, ?)",
-                [(revision["revision_id"], group) for group in groups],
-            )
+            if (
+                revision["tenant_id"] != event["tenant_id"]
+                or revision["document_id"] != event["document_id"]
+            ):
+                raise RuntimeError("outbox upsert revision 与事件身份不一致")
             is_current = (
                 not bool(document["deleted"])
                 and int(document["current_event_version"]) == int(event["event_version"])
+                and document["current_revision_id"] is not None
                 and int(document["current_revision_id"]) == int(revision["revision_id"])
             )
+            # 过期 revision 不得物化；否则会在后续删除后残留，或保留从未具备发布资格的内容。
             if is_current:
+                connection.execute(
+                    """
+                    INSERT INTO search_revisions(
+                        revision_id, tenant_id, document_id, revision_number,
+                        content, content_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(revision_id) DO UPDATE SET
+                        content = excluded.content,
+                        content_hash = excluded.content_hash
+                    """,
+                    (
+                        revision["revision_id"],
+                        revision["tenant_id"],
+                        revision["document_id"],
+                        revision["revision_number"],
+                        revision["content"],
+                        revision["content_hash"],
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM search_acl WHERE revision_id = ?",
+                    (revision["revision_id"],),
+                )
+                groups = _revision_groups(connection, int(revision["revision_id"]))
+                connection.executemany(
+                    "INSERT INTO search_acl(revision_id, group_id) VALUES (?, ?)",
+                    [(revision["revision_id"], group) for group in groups],
+                )
                 connection.execute(
                     """
                     UPDATE documents SET
@@ -687,9 +749,22 @@ def search_visible(
     tenant_id: str,
     subject_groups: Sequence[str],
     term: str,
+    limit: int = MAX_SEARCH_RESULTS,
 ) -> list[dict[str, Any]]:
     tenant_id = _validate_token("tenant_id", tenant_id)
     term = _validate_token("term", term, maximum=500)
+    if isinstance(subject_groups, (str, bytes)) or not isinstance(
+        subject_groups, Sequence
+    ):
+        raise StoreError("subject_groups 必须是字符串序列")
+    if len(subject_groups) > MAX_SUBJECT_GROUPS:
+        raise StoreError(f"subject_groups 不得超过 {MAX_SUBJECT_GROUPS} 项")
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 1 <= limit <= MAX_SEARCH_RESULTS
+    ):
+        raise StoreError(f"limit 必须是 1..{MAX_SEARCH_RESULTS} 的整数")
     groups = tuple(
         sorted({_validate_token("group_id", group) for group in subject_groups})
     )
@@ -698,33 +773,83 @@ def search_visible(
     placeholders = ",".join("?" for _ in groups)
     rows = connection.execute(
         f"""
-        SELECT d.document_id, s.revision_number, s.content
+        SELECT
+            d.document_id,
+            s.revision_number,
+            s.revision_id,
+            s.content AS search_content,
+            s.content_hash AS search_content_hash,
+            r.content,
+            r.content_hash,
+            r.source_uri,
+            r.source_version,
+            r.pipeline_version,
+            r.source_state_hash,
+            r.build_state_hash
         FROM documents AS d
         JOIN search_revisions AS s
           ON s.revision_id = d.published_revision_id
          AND s.tenant_id = d.tenant_id
          AND s.document_id = d.document_id
+        JOIN revisions AS r
+          ON r.revision_id = d.published_revision_id
+         AND r.tenant_id = d.tenant_id
+         AND r.document_id = d.document_id
         WHERE d.tenant_id = ?
           AND d.deleted = 0
           AND d.access_blocked = 0
-          AND instr(lower(s.content), lower(?)) > 0
           AND EXISTS (
-              SELECT 1 FROM search_acl AS a
-              WHERE a.revision_id = s.revision_id
+              SELECT 1 FROM revision_acl AS a
+              WHERE a.revision_id = r.revision_id
                 AND a.group_id IN ({placeholders})
           )
+          AND instr(lower(s.content), lower(?)) > 0
         ORDER BY d.document_id
+        LIMIT ?
         """,
-        (tenant_id, term, *groups),
+        (tenant_id, *groups, term, limit + 1),
     ).fetchall()
-    return [
-        {
-            "document_id": row["document_id"],
-            "revision_number": row["revision_number"],
-            "content": row["content"],
-        }
-        for row in rows
-    ]
+    if len(rows) > limit:
+        raise StoreError("候选窗口超过 limit；必须收窄查询或显式分页")
+    result: list[dict[str, Any]] = []
+    requested_groups = set(groups)
+    for row in rows:
+        revision_id = int(row["revision_id"])
+        canonical_groups = _revision_groups(connection, revision_id)
+        search_groups = tuple(
+            item["group_id"]
+            for item in connection.execute(
+                "SELECT group_id FROM search_acl WHERE revision_id = ? ORDER BY group_id",
+                (revision_id,),
+            ).fetchall()
+        )
+        integrity_errors = list(
+            _persisted_revision_hash_errors(row, canonical_groups)
+        )
+        search_content = row["search_content"]
+        if (
+            not isinstance(search_content, str)
+            or _digest_text(search_content) != row["search_content_hash"]
+            or row["search_content_hash"] != row["content_hash"]
+        ):
+            integrity_errors.append("search_content_hash_mismatch")
+        if search_groups != canonical_groups:
+            integrity_errors.append("published_acl_mismatch")
+        if integrity_errors:
+            raise StoreError(
+                "查询候选完整性失败："
+                + ",".join(sorted(set(integrity_errors)))
+            )
+        if not requested_groups.intersection(canonical_groups):
+            continue
+        result.append(
+            {
+                "document_id": row["document_id"],
+                "revision_number": row["revision_number"],
+                "content": search_content,
+            }
+        )
+    return result
 
 
 def reconcile(connection: sqlite3.Connection) -> dict[str, int]:
@@ -812,6 +937,34 @@ def reconcile(connection: sqlite3.Connection) -> dict[str, int]:
     for name, query in scalar_queries.items():
         row = connection.execute(query).fetchone()
         result[name] = int(row[0])
+    body_hash_tables = {
+        "canonical_content_hash_mismatch": "revisions",
+        "search_content_hash_mismatch": "search_revisions",
+    }
+    for name, table_name in body_hash_tables.items():
+        rows = connection.execute(
+            f"SELECT content, content_hash FROM {table_name} WHERE content IS NOT NULL"
+        ).fetchall()
+        result[name] = sum(
+            1
+            for row in rows
+            if not isinstance(row["content"], str)
+            or _digest_text(row["content"]) != row["content_hash"]
+        )
+    canonical_rows = connection.execute(
+        "SELECT * FROM revisions WHERE content IS NOT NULL"
+    ).fetchall()
+    canonical_hash_errors = {
+        "canonical_source_state_hash_mismatch": 0,
+        "canonical_build_state_hash_mismatch": 0,
+    }
+    for row in canonical_rows:
+        errors = _persisted_revision_hash_errors(
+            row, _revision_groups(connection, int(row["revision_id"]))
+        )
+        for name in canonical_hash_errors:
+            canonical_hash_errors[name] += int(name in errors)
+    result.update(canonical_hash_errors)
     return result
 
 
@@ -827,6 +980,10 @@ def require_reconciled(
             "deleted_projection_rows",
             "published_cross_identity",
             "published_hash_mismatch",
+            "canonical_content_hash_mismatch",
+            "canonical_source_state_hash_mismatch",
+            "canonical_build_state_hash_mismatch",
+            "search_content_hash_mismatch",
             "published_acl_mismatch",
         )
         if report[name]

@@ -7,7 +7,9 @@ tags:
   - langgraph
   - human-in-the-loop
   - evaluation
-source_checked: 2026-07-14
+source_checked: 2026-07-21
+content_origin: original
+content_status: dynamic
 ---
 
 # LangGraph 边界、审批、恢复与评测
@@ -79,6 +81,8 @@ Checkpoint 不是跨系统事务。若节点在付款成功后、状态写入前
 - 审批载荷只放简单、可序列化、经裁剪的数据；
 - 复杂表单不要在一个节点中用 `while True + interrupt()`，官方指南建议一次节点调用只产生一次 interrupt，再通过条件边重问。
 
+应用还必须在调用 `Command(resume=...)` **之前**检查 checkpoint。锁定的 `langgraph==1.2.9` 实验表明，已完成 thread 的 resume 可能只返回旧状态，而不存在的 thread 甚至可能从 `START` 进入新运行；因此不能把 runtime 的默认行为当成业务拒绝。至少检查 thread 所有权、`snapshot.next`、pending interrupt 数量及审批动作指纹。
+
 ## 审批要绑定什么
 
 “approved=true”不足以授权动作。审批请求至少绑定：
@@ -119,11 +123,11 @@ LangGraph 官方测试指南展示了单独编译节点、使用测试 checkpoin
 
 ## 下一步
 
-完成 [[LangChain/00-初学者路线/07-项目-离线工具代理骨架|项目：离线工具代理骨架]]，先在无依赖环境中验证稳定责任边界。
+先完成 [[LangChain/00-初学者路线/07-项目-离线工具代理骨架|Layer A：离线工具代理骨架]]，再运行 [[LangChain/00-初学者路线/10-项目-无密钥create_agent运行时合同|Layer B：无密钥 create_agent 运行时合同]]，最后进入 [[LangChain/00-初学者路线/08-项目-LangGraph可恢复审批流|Layer C：LangGraph 可恢复审批流]]。三步分别验证框架无关执行器、当前 LangChain harness 和真实 runtime 恢复语义；它们都不替代 provider 集成、授权或外部副作用的生产测试。
 
 ## 资料基线
 
-官方事实核对日期：2026-07-14。
+官方事实与锁定 runtime 核对日期：2026-07-21。
 
 - [LangGraph Overview](https://docs.langchain.com/oss/python/langgraph/overview)
 - [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
@@ -131,4 +135,5 @@ LangGraph 官方测试指南展示了单独编译节点、使用测试 checkpoin
 - [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
 - [LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
 - [LangGraph Test](https://docs.langchain.com/oss/python/langgraph/test)
+- [LangGraph Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)
 - [[LangChain/01-Conceptual Overviews/06-Graph API|既有官方译文：Graph API]]

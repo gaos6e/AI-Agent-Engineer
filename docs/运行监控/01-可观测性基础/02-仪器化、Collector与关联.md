@@ -7,7 +7,11 @@ tags:
 aliases:
   - 遥测仪器化
   - 上下文传播与 Collector
-source_checked: 2026-07-14
+source_checked: 2026-07-22
+content_origin: original
+content_status: dynamic
+source_baseline: "OpenTelemetry、W3C Trace
+  Context官方资料截至2026-07-22；GenAI语义约定独立仓库、schema版本与组件稳定性边界已复核"
 ---
 
 # 仪器化、Collector 与关联
@@ -38,7 +42,7 @@ source_checked: 2026-07-14
 | `trace_id`、`span_id` | 不透明ID | 单次调用链关联 |
 | 受控业务属性 | `task_type=ticket_triage` | 诊断有限类别 |
 
-字段名、单位、枚举和缺失语义应写入团队的**遥测契约**并做测试。OpenTelemetry（OTel）语义约定的稳定性按组件和信号分别声明，不能只凭“属于 OTel”就假定全部稳定。截至 2026-07-14，生成式 AI 语义约定仍标为 **Development**；接入时应锁定语义约定版本、记录 schema URL 或等价版本字段，并用契约测试发现升级带来的字段变化。不要凭记忆编造当前字段。
+字段名、单位、枚举和缺失语义应写入团队的**遥测契约**并做测试。OpenTelemetry（OTel）语义约定的稳定性按组件和信号分别声明，不能只凭“属于 OTel”就假定全部稳定。截至2026-07-21，OTel核心语义约定页为1.43.0，生成式AI约定已迁移到独立仓库。接入时应固定实际采用的仓库修订/发布、记录schema URL或等价契约版本，并按所用信号和组件的稳定性用契约测试发现字段变化。不要把核心页版本当作当前GenAI字段版本，也不要凭记忆编造字段。
 
 ## 用 W3C Trace Context 传播关联
 
@@ -71,7 +75,7 @@ OTel Collector 的基本流水线是：
 - **Connector**可把一条流水线的输出连接到另一条流水线；
 - **Extension**提供健康检查、鉴权等不直接处理遥测的数据面外能力。
 
-Collector 可以靠近应用以 Agent 方式部署，也可在共享网关集中处理；真实拓扑需结合网络边界、故障域、资源成本和敏感数据位置决定。最小方案也要监控 Collector 自身：accepted、refused、sent、failed、队列长度、丢弃、配置版本和数据新鲜度。否则“Dashboard 一片正常”可能只是 Collector 已经停止上报。
+Collector 可以靠近应用以 Agent 方式部署，也可在共享网关集中处理；真实拓扑需结合网络边界、故障域、资源成本和敏感数据位置决定。最小方案也要监控 Collector 自身：accepted、refused、sent、failed、队列长度、丢弃、配置版本和数据新鲜度。还要把**Collector 导出时龄**与**最新业务事件相对观察终点的时龄**分开：前者新鲜不代表上游业务流仍在产生事件。否则“Dashboard 一片正常”可能只是 Collector 正在成功导出一段已经停滞的数据。
 
 ## 采样、基数与成本
 
@@ -80,7 +84,7 @@ Trace 全量保存通常成本很高，常用两类采样：
 - **Head sampling**：在 Trace 开始时决定，开销可控，但当时还不知道最终是否失败；
 - **Tail sampling**：观察到更多 Span 后再决定，更容易保留错误或高延迟Trace，但需要缓冲、状态和容量规划。
 
-任何采样都会改变“能看到哪些个案”。应记录策略版本和估算覆盖率，优先保留错误、高风险操作和极慢调用，并用不依赖 Trace 采样的Metric计算总体率。Trace 采样也不能解决Metric高基数：`user_id`、`request_id`、任意URL、完整Prompt等仍不应成为Metric label。
+任何采样都会改变“能看到哪些个案”。应记录策略版本和估算覆盖率，优先保留错误、高风险操作和极慢调用，并用不依赖 Trace 采样的Metric计算总体率。Trace 采样也不能解决Metric高基数：`user_id`、`request_id`、任意URL、完整Prompt、发布清单SHA-256和candidate gate完整SHA-256等仍不应成为Metric label；后两类可留在受控Trace或审计Log中用于证据交接。
 
 成本治理可以从预算表开始：每个信号的事件量、每条大小、保留期、索引字段、采样率、查询需要和所有者。只有能支持用户目标、发布决策或事件响应的字段才值得长期保留。
 
@@ -129,12 +133,12 @@ Trace 全量保存通常成本很高，常用两类采样：
 
 ## 参考资料
 
-- [OpenTelemetry Collector Architecture](https://opentelemetry.io/docs/collector/architecture/)（访问于2026-07-14）
-- [OpenTelemetry Collector components](https://opentelemetry.io/docs/collector/components/)（访问于2026-07-14）
-- [OpenTelemetry Collector internal telemetry](https://opentelemetry.io/docs/collector/internal-telemetry/)（访问于2026-07-14）
-- [OpenTelemetry Sampling](https://opentelemetry.io/docs/concepts/sampling/)（访问于2026-07-14）
-- [OpenTelemetry Handling sensitive data](https://opentelemetry.io/docs/security/handling-sensitive-data/)（访问于2026-07-14）
-- [OpenTelemetry Versioning and stability](https://opentelemetry.io/docs/specs/otel/versioning-and-stability/)（访问于2026-07-14；应按具体组件重新核对稳定性）
-- [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)（访问于2026-07-14；页面版本1.43.0）
-- [OpenTelemetry GenAI semantic conventions repository](https://github.com/open-telemetry/semantic-conventions-genai)（访问于2026-07-14；当前状态为Development）
-- [W3C Trace Context](https://www.w3.org/TR/trace-context/)（W3C Recommendation，2021-11-23；访问于2026-07-14）
+- [OpenTelemetry Collector Architecture](https://opentelemetry.io/docs/collector/architecture/)（访问于2026-07-21）
+- [OpenTelemetry Collector components](https://opentelemetry.io/docs/collector/components/)（访问于2026-07-21）
+- [OpenTelemetry Collector internal telemetry](https://opentelemetry.io/docs/collector/internal-telemetry/)（访问于2026-07-21）
+- [OpenTelemetry Sampling](https://opentelemetry.io/docs/concepts/sampling/)（访问于2026-07-21）
+- [OpenTelemetry Handling sensitive data](https://opentelemetry.io/docs/security/handling-sensitive-data/)（访问于2026-07-21）
+- [OpenTelemetry Versioning and stability](https://opentelemetry.io/docs/specs/otel/versioning-and-stability/)（访问于2026-07-21；应按具体组件重新核对稳定性）
+- [OpenTelemetry Generative AI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)（访问于2026-07-21；核心页面说明内容已迁移且旧位置不再维护）
+- [OpenTelemetry GenAI semantic conventions repository](https://github.com/open-telemetry/semantic-conventions-genai)（访问于2026-07-21；固定实际修订/schema URL，并按所用信号与组件核对稳定性）
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)（W3C Recommendation，2021-11-23；访问于2026-07-21）

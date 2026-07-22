@@ -177,6 +177,34 @@ class PersistenceTests(TemporaryStoreMixin, unittest.TestCase):
             ):
                 self.store()
 
+    def test_schema_v1_without_delete_fence_is_not_silently_migrated(self) -> None:
+        legacy = {
+            "schema_version": 1,
+            "store_revision": 2,
+            "contract": {
+                "space_id": "test-space",
+                "model": "hand-authored",
+                "embedding_revision": "embed-r1",
+                "dimension": 2,
+                "metric": "cosine",
+                "normalized": True,
+                "dtype": "float32",
+            },
+            "points": [],
+            "tombstones": [
+                {
+                    "point_id": "p1",
+                    "tenant_id": "alpha",
+                    "deleted_at_revision": 2,
+                }
+            ],
+        }
+        self.write_raw(
+            json.dumps(legacy, ensure_ascii=False, allow_nan=False) + "\n"
+        )
+        with self.assertRaisesRegex(lab.StoreError, "schema_version 1.*自动迁移"):
+            self.store()
+
     def test_contract_mismatch_is_rejected_when_opening_existing_store(self) -> None:
         store = self.store()
         store.upsert("p1", (1.0, 0.0), make_payload())
@@ -215,7 +243,9 @@ class PersistenceTests(TemporaryStoreMixin, unittest.TestCase):
                 {
                     "point_id": "p1",
                     "tenant_id": "alpha",
-                    "deleted_at_revision": 1,
+                    "deleted_source_revision": "source-r1",
+                    "delete_event_id": "delete-p1-r1",
+                    "deleted_at_store_revision": 1,
                 }
             ]
 
@@ -228,6 +258,59 @@ class PersistenceTests(TemporaryStoreMixin, unittest.TestCase):
         with patch.object(lab, "MAX_STORE_BYTES", 10):
             with self.assertRaisesRegex(lab.StoreError, "超过"):
                 self.store()
+
+    def test_record_limit_counts_tombstones_on_commit_and_load(self) -> None:
+        store = self.store()
+        with patch.object(lab, "MAX_RECORDS", 1):
+            self.assertTrue(
+                store.delete(
+                    "p1",
+                    tenant_id="alpha",
+                    expected_source_revision="r1",
+                    delete_event_id="delete-p1-r1",
+                )
+            )
+            with self.assertRaisesRegex(lab.StoreError, "records 超过"):
+                store.delete(
+                    "p2",
+                    tenant_id="alpha",
+                    expected_source_revision="r1",
+                    delete_event_id="delete-p2-r1",
+                )
+        self.assertEqual(store.snapshot_summary()["tombstone_ids"], ["p1"])
+        self.assertTrue(
+            store.delete(
+                "p2",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p2-r1",
+            )
+        )
+        with patch.object(lab, "MAX_RECORDS", 1):
+            with self.assertRaisesRegex(lab.StoreError, "records 超过"):
+                self.store()
+
+    def test_commit_limits_encoded_utf8_bytes_before_replace(self) -> None:
+        control_path = Path(self.temporary.name) / "control.json"
+        payload = make_payload(
+            tenant_id="租户",
+            document_id="文" * 100,
+            acl=("员工",),
+        )
+        control = lab.ToyVectorStore(control_path, self.contract)
+        control.upsert("点", (1.0, 0.0), payload)
+        character_count = len(control_path.read_text(encoding="utf-8"))
+        byte_count = len(control_path.read_bytes())
+        self.assertGreater(byte_count, character_count)
+
+        guarded = self.store()
+        with patch.object(lab, "MAX_STORE_BYTES", character_count):
+            with self.assertRaisesRegex(lab.StoreError, "UTF-8.*超过"):
+                guarded.upsert("点", (1.0, 0.0), payload)
+        self.assertFalse(self.path.exists())
+        self.assertEqual(guarded.store_revision, 0)
+        self.assertEqual(guarded.points, {})
+        self.assertEqual(guarded.tombstones, {})
 
     def test_atomic_save_leaves_no_temp_file_and_valid_lf_json(self) -> None:
         store = self.store()
@@ -256,11 +339,97 @@ class OperationTests(TemporaryStoreMixin, unittest.TestCase):
             "p1",
             (0.0, 1.0),
             make_payload(source_revision="r2", text="changed"),
+            expected_source_revision="r1",
         )
         self.assertEqual(outcome, "updated")
         self.assertEqual(store.store_revision, 2)
         self.assertEqual(len(store.points), 1)
         self.assertEqual(store.points["p1"].payload.source_revision, "r2")
+        self.assertEqual(
+            store.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="changed"),
+                expected_source_revision="r1",
+            ),
+            "unchanged",
+        )
+        self.assertEqual(store.store_revision, 2)
+
+    def test_stale_upsert_requires_expected_current_revision(self) -> None:
+        store = self.store()
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        with self.assertRaisesRegex(lab.WriteConflictError, "source revision"):
+            store.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="missing CAS"),
+            )
+        store.upsert(
+            "p1",
+            (0.0, 1.0),
+            make_payload(source_revision="r2", text="current"),
+            expected_source_revision="r1",
+        )
+
+        with self.assertRaisesRegex(lab.WriteConflictError, "source revision"):
+            store.upsert(
+                "p1",
+                (0.6, 0.8),
+                make_payload(source_revision="r3", text="stale writer"),
+                expected_source_revision="r1",
+            )
+
+        result = store.search(
+            (0.0, 1.0),
+            top_k=1,
+            tenant_id="alpha",
+            subject_groups=("employees",),
+        )
+        self.assertEqual(result[0].source_revision, "r2")
+
+    def test_source_revision_is_opaque_and_only_compared_by_identity(self) -> None:
+        store = self.store()
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r10"))
+        self.assertEqual(
+            store.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="opaque successor"),
+                expected_source_revision="r10",
+            ),
+            "updated",
+        )
+        self.assertEqual(store.points["p1"].payload.source_revision, "r2")
+
+    def test_same_source_revision_cannot_change_vector_payload_or_hash(self) -> None:
+        store = self.store()
+        original = make_payload(source_revision="r1")
+        store.upsert("p1", (1.0, 0.0), original)
+        revision = store.store_revision
+        conflicts = [
+            ((0.0, 1.0), original),
+            (
+                (1.0, 0.0),
+                make_payload(source_revision="r1", text="different hash"),
+            ),
+            (
+                (1.0, 0.0),
+                make_payload(source_revision="r1", acl=("platform",)),
+            ),
+        ]
+        for vector, payload in conflicts:
+            with self.subTest(payload=payload, vector=vector), self.assertRaisesRegex(
+                lab.WriteConflictError,
+                "same source revision",
+            ):
+                store.upsert(
+                    "p1",
+                    vector,
+                    payload,
+                    expected_source_revision="r1",
+                )
+        self.assertEqual(store.store_revision, revision)
 
     def test_same_point_id_cannot_move_between_tenants(self) -> None:
         store = self.store()
@@ -288,29 +457,214 @@ class OperationTests(TemporaryStoreMixin, unittest.TestCase):
             ):
                 store.upsert("p1", vector, make_payload())
 
-    def test_delete_creates_tombstone_and_is_idempotent_for_tenant(self) -> None:
+    def test_delete_requires_matching_current_source_revision(self) -> None:
         store = self.store()
-        store.upsert("p1", (1.0, 0.0), make_payload())
-        self.assertTrue(store.delete("p1", tenant_id="alpha"))
-        self.assertFalse(store.delete("p1", tenant_id="alpha"))
-        self.assertFalse(store.delete("p1", tenant_id="beta"))
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        store.upsert(
+            "p1",
+            (0.0, 1.0),
+            make_payload(source_revision="r2", text="current"),
+            expected_source_revision="r1",
+        )
+        with self.assertRaisesRegex(lab.WriteConflictError, "source revision"):
+            store.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+        self.assertIn("p1", store.points)
+        self.assertNotIn("p1", store.tombstones)
+
+    def test_delete_event_is_idempotent_only_for_identical_fence(self) -> None:
+        store = self.store()
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        self.assertTrue(
+            store.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+        )
+        revision = store.store_revision
+        self.assertFalse(
+            store.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+        )
+        conflicts = [
+            ("alpha", "r0", "delete-p1-r1"),
+            ("alpha", "r1", "delete-p1-other"),
+            ("beta", "r1", "delete-p1-r1"),
+        ]
+        for tenant_id, source_revision, event_id in conflicts:
+            with self.subTest(
+                tenant_id=tenant_id,
+                source_revision=source_revision,
+                event_id=event_id,
+            ), self.assertRaises(lab.WriteConflictError):
+                store.delete(
+                    "p1",
+                    tenant_id=tenant_id,
+                    expected_source_revision=source_revision,
+                    delete_event_id=event_id,
+                )
         self.assertNotIn("p1", store.points)
         self.assertEqual(store.tombstones["p1"].tenant_id, "alpha")
-        self.assertEqual(store.tombstones["p1"].deleted_at_revision, 2)
+        self.assertEqual(store.tombstones["p1"].deleted_at_store_revision, 2)
+        self.assertEqual(store.store_revision, revision)
 
-    def test_same_tenant_can_resurrect_but_other_tenant_cannot_reuse_id(self) -> None:
+    def test_delete_before_create_records_fence_and_blocks_late_upsert(self) -> None:
         store = self.store()
-        store.upsert("p1", (1.0, 0.0), make_payload())
-        store.delete("p1", tenant_id="alpha")
-        with self.assertRaisesRegex(lab.StoreError, "跨 tenant"):
-            store.upsert(
-                "p1", (1.0, 0.0), make_payload(tenant_id="beta")
+        self.assertTrue(
+            store.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+        )
+        self.assertEqual(store.snapshot_summary()["tombstone_ids"], ["p1"])
+        self.assertFalse(
+            store.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+        )
+        conflicts = [
+            ("alpha", "r0", "delete-p1-r1"),
+            ("alpha", "r1", "delete-p1-other"),
+            ("beta", "r1", "delete-p1-r1"),
+        ]
+        for tenant_id, source_revision, event_id in conflicts:
+            with self.subTest(
+                tenant_id=tenant_id,
+                source_revision=source_revision,
+                event_id=event_id,
+            ), self.assertRaises(lab.WriteConflictError):
+                store.delete(
+                    "p1",
+                    tenant_id=tenant_id,
+                    expected_source_revision=source_revision,
+                    delete_event_id=event_id,
+                )
+
+        reopened = self.store()
+        with self.assertRaisesRegex(lab.WriteConflictError, "resurrection token"):
+            reopened.upsert(
+                "p1",
+                (1.0, 0.0),
+                make_payload(source_revision="r1"),
+            )
+        with self.assertRaisesRegex(lab.WriteConflictError, "new source revision"):
+            reopened.upsert(
+                "p1",
+                (1.0, 0.0),
+                make_payload(source_revision="r1"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
             )
         self.assertEqual(
-            store.upsert("p1", (1.0, 0.0), make_payload()),
+            reopened.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="new"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+            ),
+            "resurrected",
+        )
+
+    def test_tombstone_requires_explicit_matching_resurrection_token(self) -> None:
+        store = self.store()
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        store.delete(
+            "p1",
+            tenant_id="alpha",
+            expected_source_revision="r1",
+            delete_event_id="delete-p1-r1",
+        )
+        with self.assertRaisesRegex(lab.StoreError, "跨 tenant"):
+            store.upsert(
+                "p1",
+                (1.0, 0.0),
+                make_payload(tenant_id="beta", source_revision="r2"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+            )
+        with self.assertRaisesRegex(lab.WriteConflictError, "resurrection token"):
+            store.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="new"),
+            )
+        invalid_tokens = [
+            lab.ResurrectionToken("r0", "delete-p1-r1"),
+            lab.ResurrectionToken("r1", "delete-p1-other"),
+        ]
+        for token in invalid_tokens:
+            with self.subTest(token=token), self.assertRaisesRegex(
+                lab.WriteConflictError,
+                "resurrection token",
+            ):
+                store.upsert(
+                    "p1",
+                    (0.0, 1.0),
+                    make_payload(source_revision="r2", text="new"),
+                    resurrect_from=token,
+                )
+        with self.assertRaisesRegex(lab.WriteConflictError, "new source revision"):
+            store.upsert(
+                "p1",
+                (1.0, 0.0),
+                make_payload(source_revision="r1"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+            )
+        self.assertEqual(
+            store.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="new"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+            ),
             "resurrected",
         )
         self.assertNotIn("p1", store.tombstones)
+
+    def test_resurrection_fence_survives_restart(self) -> None:
+        store = self.store()
+        store.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        store.delete(
+            "p1",
+            tenant_id="alpha",
+            expected_source_revision="r1",
+            delete_event_id="delete-p1-r1",
+        )
+
+        reopened = self.store()
+        tombstone = reopened.tombstones["p1"]
+        self.assertEqual(tombstone.deleted_source_revision, "r1")
+        self.assertEqual(tombstone.delete_event_id, "delete-p1-r1")
+        self.assertEqual(tombstone.deleted_at_store_revision, 2)
+        with self.assertRaisesRegex(lab.WriteConflictError, "resurrection token"):
+            reopened.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="new"),
+                resurrect_from=lab.ResurrectionToken("r1", "wrong-event"),
+            )
+        self.assertEqual(
+            reopened.upsert(
+                "p1",
+                (0.0, 1.0),
+                make_payload(source_revision="r2", text="new"),
+                resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+            ),
+            "resurrected",
+        )
 
     def test_search_filters_tenant_and_acl_before_scoring(self) -> None:
         store = self.store()
@@ -412,6 +766,90 @@ class OperationTests(TemporaryStoreMixin, unittest.TestCase):
                 make_payload(document_id="doc-2", text="second"),
             )
 
+    def test_stale_instance_cannot_report_identical_upsert_as_unchanged(self) -> None:
+        initial = self.store()
+        initial.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        stale = self.store()
+        current = self.store()
+        current.upsert(
+            "p1",
+            (0.0, 1.0),
+            make_payload(source_revision="r2", text="current"),
+            expected_source_revision="r1",
+        )
+
+        with self.assertRaises(lab.WriteConflictError):
+            stale.upsert(
+                "p1",
+                (1.0, 0.0),
+                make_payload(source_revision="r1"),
+            )
+
+    def test_stale_instance_cannot_accept_delete_replay_after_resurrection(self) -> None:
+        initial = self.store()
+        initial.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        initial.delete(
+            "p1",
+            tenant_id="alpha",
+            expected_source_revision="r1",
+            delete_event_id="delete-p1-r1",
+        )
+        stale = self.store()
+        current = self.store()
+        current.upsert(
+            "p1",
+            (0.0, 1.0),
+            make_payload(source_revision="r2", text="resurrected"),
+            resurrect_from=lab.ResurrectionToken("r1", "delete-p1-r1"),
+        )
+
+        with self.assertRaises(lab.WriteConflictError):
+            stale.delete(
+                "p1",
+                tenant_id="alpha",
+                expected_source_revision="r1",
+                delete_event_id="delete-p1-r1",
+            )
+
+    def test_stale_instance_search_fails_closed_after_acl_update(self) -> None:
+        initial = self.store()
+        initial.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        stale = self.store()
+        current = self.store()
+        current.upsert(
+            "p1",
+            (1.0, 0.0),
+            make_payload(
+                source_revision="r2",
+                acl=("platform",),
+                text="acl tightened",
+            ),
+            expected_source_revision="r1",
+        )
+
+        with self.assertRaises(lab.WriteConflictError):
+            stale.search(
+                (1.0, 0.0),
+                top_k=1,
+                tenant_id="alpha",
+                subject_groups=("employees",),
+            )
+
+    def test_stale_instance_snapshot_summary_fails_closed_after_delete(self) -> None:
+        initial = self.store()
+        initial.upsert("p1", (1.0, 0.0), make_payload(source_revision="r1"))
+        stale = self.store()
+        current = self.store()
+        current.delete(
+            "p1",
+            tenant_id="alpha",
+            expected_source_revision="r1",
+            delete_event_id="delete-p1-r1",
+        )
+
+        with self.assertRaises(lab.WriteConflictError):
+            stale.snapshot_summary()
+
     def test_snapshot_summary_contains_ids_not_vectors(self) -> None:
         store = self.store()
         store.upsert("p1", (1.0, 0.0), make_payload())
@@ -420,7 +858,12 @@ class OperationTests(TemporaryStoreMixin, unittest.TestCase):
             (0.0, 1.0),
             make_payload(document_id="doc-2", text="second"),
         )
-        store.delete("p1", tenant_id="alpha")
+        store.delete(
+            "p1",
+            tenant_id="alpha",
+            expected_source_revision="source-r1",
+            delete_event_id="delete-p1-source-r1",
+        )
         summary = store.snapshot_summary()
         self.assertEqual(summary["point_ids"], ["p2"])
         self.assertEqual(summary["tombstone_ids"], ["p1"])

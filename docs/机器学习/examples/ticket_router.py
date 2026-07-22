@@ -125,6 +125,8 @@ def split_dataset(
     rows = validate_samples(samples)
     if isinstance(random_state, bool) or not isinstance(random_state, int):
         raise ValueError("random_state 必须是整数")
+    if not 0 <= random_state <= 2**32 - 1:
+        raise ValueError("random_state 必须位于 [0, 2**32 - 1]")
     if isinstance(test_size, bool) or not isinstance(test_size, (int, float)):
         raise ValueError("test_size 必须是比例或正整数")
     if isinstance(test_size, float) and not 0.0 < test_size < 1.0:
@@ -165,7 +167,6 @@ def build_model() -> Pipeline:
             (
                 "classifier",
                 LogisticRegression(
-                    l1_ratio=0.0,
                     solver="lbfgs",
                     max_iter=1_000,
                     random_state=42,

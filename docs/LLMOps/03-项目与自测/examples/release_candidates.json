@@ -1,6 +1,7 @@
 {
   "policy": {
-    "version": "local-llmops-policy-v2",
+    "version": "local-llmops-policy-v6",
+    "decision_as_of": "2026-07-14T06:00:00Z",
     "required_tests": [
       "schema_contract",
       "retrieval_regression",
@@ -14,7 +15,11 @@
     "max_latency_increase_ratio": 0.2,
     "max_cost_increase_ratio": 0.1,
     "human_approval_required": true,
-    "online_min_samples": 100,
+    "online_min_eligible_samples": 100,
+    "online_min_label_coverage": 0.75,
+    "online_min_critical_labeled_samples": 25,
+    "online_min_safety_checked_samples": 50,
+    "online_max_label_age_hours": 48,
     "online_max_task_drop": 0.02,
     "online_max_critical_drop": 0.01,
     "online_max_provider_error_rate": 0.03,
@@ -24,6 +29,16 @@
   },
   "baseline": {
     "release_id": "release-baseline-v3",
+    "evaluation": {
+      "subject_release_id": "release-baseline-v3",
+      "suite_version": "support-regression-v8",
+      "dataset_version": "support-eval-data-2026-07-11",
+      "rubric_version": "support-rubric-v4",
+      "grader_version": "support-grader-v5",
+      "harness_version": "support-eval-harness-v2",
+      "artifact_sha256": "21df6d08d9295d65969d23b61ef8c78bc805a7240d5d446a98ac8a2226eae218",
+      "artifact_digest_format": "python-json-sorted-utf8-v1"
+    },
     "metrics": {
       "task_success_rate": 0.88,
       "critical_slice_success_rate": 0.84,
@@ -36,6 +51,8 @@
   "candidates": [
     {
       "release_id": "release-safe",
+      "gate_decided_at": "2026-07-13T23:50:00Z",
+      "promoted_at": "2026-07-14T00:00:00Z",
       "app": {
         "commit": "8b29f11"
       },
@@ -71,14 +88,22 @@
         "data_handling_version": "support-data-policy-v3"
       },
       "evaluation": {
+        "subject_release_id": "release-safe",
         "suite_version": "support-regression-v8",
         "dataset_version": "support-eval-data-2026-07-11",
         "rubric_version": "support-rubric-v4",
-        "grader_version": "support-grader-v5"
+        "grader_version": "support-grader-v5",
+        "harness_version": "support-eval-harness-v2",
+        "artifact_sha256": "334ad7dd93f5e8f19d614f215b9e59ca23f5432152a6a0c2cb06bd84b598f013",
+        "artifact_digest_format": "python-json-sorted-utf8-v1"
       },
       "routing": {
         "policy_version": "support-routing-v3",
-        "fallback_manifest": "fallback-release-v2"
+        "fallback_manifest": {
+          "release_id": "fallback-release-v2",
+          "manifest_sha256": "2f1d8b7403318138e654cfbd505734ddc7e4f6017f32b637d8b2b8c2568cf336",
+          "gate_evidence_sha256": "50de36f1d5c070ec782ee45f36b966055e1c745fb13d4ffc3619538f509218a4"
+        }
       },
       "pricing": {
         "policy_version": "local-price-snapshot-2026-07-12"
@@ -107,6 +132,8 @@
     },
     {
       "release_id": "release-regression",
+      "gate_decided_at": "2026-07-13T23:50:00Z",
+      "promoted_at": null,
       "app": {
         "commit": "1c04d7a"
       },
@@ -142,14 +169,22 @@
         "data_handling_version": "support-data-policy-v3"
       },
       "evaluation": {
-        "suite_version": "support-regression-v9",
-        "dataset_version": "support-eval-data-2026-07-13",
+        "subject_release_id": "release-regression",
+        "suite_version": "support-regression-v8",
+        "dataset_version": "support-eval-data-2026-07-11",
         "rubric_version": "support-rubric-v4",
-        "grader_version": "support-grader-v5"
+        "grader_version": "support-grader-v5",
+        "harness_version": "support-eval-harness-v2",
+        "artifact_sha256": "0fcfbbef8d50fef0b9128554f21058f68730288e22a4925470c2d386a4507477",
+        "artifact_digest_format": "python-json-sorted-utf8-v1"
       },
       "routing": {
         "policy_version": "support-routing-v4",
-        "fallback_manifest": "fallback-release-v2"
+        "fallback_manifest": {
+          "release_id": "fallback-release-v2",
+          "manifest_sha256": "2f1d8b7403318138e654cfbd505734ddc7e4f6017f32b637d8b2b8c2568cf336",
+          "gate_evidence_sha256": "50de36f1d5c070ec782ee45f36b966055e1c745fb13d4ffc3619538f509218a4"
+        }
       },
       "pricing": {
         "policy_version": "local-price-snapshot-2026-07-12"

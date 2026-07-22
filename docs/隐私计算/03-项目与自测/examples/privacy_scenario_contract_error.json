@@ -1,20 +1,20 @@
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "scenario_id": "privacy-contract-error",
   "purpose": "Demonstrate fail-closed handling of an unknown contract field.",
   "non_goals": ["process personal data"],
   "subject_scope": "Synthetic metadata only.",
-  "data_fields": [{"name": "count", "classification": "measure", "necessary": true, "contribution_bound": 1}],
+  "data_fields": [{"name": "count", "privacy_class": "non_sensitive", "output_role": "measure", "necessary": true, "contribution_bound": 1}],
   "participants": [
     {"id": "holder", "role": "data_holder", "trusted": true},
     {"id": "publisher", "role": "publisher", "trusted": true}
   ],
-  "data_flows": [{"id": "aggregate", "from": "holder", "to": "publisher", "fields": ["count"], "raw": false}],
-  "processing": {"raw_data_centralized": false, "local_training": false, "secure_aggregation": false, "mpc": false, "homomorphic_encryption": false, "tee": false},
-  "release": {"public": false, "minimum_group_size": 10, "adjacency_definition": "add-or-remove-one-person", "epsilon_limit": "1", "delta_limit": "0.000001", "mechanisms": [{"id": "count", "mechanism": "teaching", "epsilon": "0", "delta": "0", "approved": true}]},
+  "data_flows": [{"id": "aggregate", "from": "holder", "to": "publisher", "fields": ["count"], "protection": "locally_aggregated"}],
+  "processing": {"task_type": "aggregate_statistics", "local_training": false, "secure_aggregation": false, "mpc": false, "homomorphic_encryption": false, "tee": false, "protocol_participants": [], "protocol_security": "none", "protocol_evidence": false},
+  "release": {"public": false, "minimum_group_size": 10, "adjacency": {"unit": "person", "relation": "add_remove", "time_window": "one test run", "contribution_bounds_enforced": true}, "epsilon_limit": "1", "delta_limit": "0", "mechanisms": [{"id": "count", "mechanism": "teaching", "epsilon": "0", "delta": "0", "approved": true}], "outputs": [{"id": "internal-count", "fields": ["count"], "transformation": "aggregate", "public": false}]},
   "retention": {"days": 1, "deletion_verified": true, "backups_in_scope": true},
-  "controls": {"access_control": true, "purpose_enforcement": true, "output_review": true, "budget_ledger": true, "provenance": true, "incident_plan": true, "update_validation": true},
-  "threat_model": {"honest_but_curious_server": false, "collusion_threshold": 1, "malicious_clients": false, "final_output_inference": false},
-  "risk_policy": {"block_severities": ["critical", "high"], "review_severities": ["medium"]},
+  "controls": {"access_control": true, "purpose_enforcement": true, "output_review": true, "budget_ledger": true, "provenance": true, "incident_plan": true, "linkage_evaluation": true, "update_validation": false},
+  "threat_model": {"honest_but_curious_server": false, "collusion_threshold": 0, "malicious_clients": false, "final_output_inference": false},
+  "risk_policy": {"block_severities": ["critical", "high"], "review_severities": ["medium", "low"]},
   "unknown_field": true
 }

@@ -1,5 +1,9 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "tool-cases-v2",
+  "contract": {
+    "model_result": "tool-model-result-v2",
+    "protected_audit": "tool-audit-v2"
+  },
   "cases": [
     {
       "id": "read-own-order",
@@ -7,13 +11,14 @@
       "steps": [
         {
           "step_id": "read",
-          "call": {"call_id": "call-read-1", "operation_id": "op-read-1", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-7"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-read-1", "call_id": "call-read-1", "operation_id": "op-read-1", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "OK",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "fresh", "data": {"order_ref": "ORDER-7", "status": "paid"}, "side_effect_count": 0}
         }
       ]
     },
@@ -23,13 +28,14 @@
       "steps": [
         {
           "step_id": "read",
-          "call": {"call_id": "call-read-2", "operation_id": "op-read-2", "name": "get_order", "arguments": {"order_ref": "ORDER-8"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-8"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-read-2", "call_id": "call-read-2", "operation_id": "op-read-2", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "NOT_FOUND",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "NOT_FOUND", "status": "failed", "outcome": "not_started", "recovery": "none", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -39,13 +45,14 @@
       "steps": [
         {
           "step_id": "read",
-          "call": {"call_id": "call-read-3", "operation_id": "op-read-3", "name": "get_order", "arguments": {"order_ref": "ORDER-9"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-9"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-read-3", "call_id": "call-read-3", "operation_id": "op-read-3", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "NOT_FOUND",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "NOT_FOUND", "status": "failed", "outcome": "not_started", "recovery": "none", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -55,13 +62,14 @@
       "steps": [
         {
           "step_id": "unknown",
-          "call": {"call_id": "call-unknown", "operation_id": "op-unknown", "name": "delete_everything", "arguments": {}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "delete_everything", "arguments": {}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-unknown", "call_id": "call-unknown", "operation_id": "op-unknown", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "UNKNOWN_TOOL",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "UNKNOWN_TOOL", "status": "failed", "outcome": "not_started", "recovery": "correct_input", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -71,13 +79,14 @@
       "steps": [
         {
           "step_id": "missing",
-          "call": {"call_id": "call-missing", "operation_id": "op-missing", "name": "get_order", "arguments": {}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-missing", "call_id": "call-missing", "operation_id": "op-missing", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "INVALID_ARGUMENTS",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "INVALID_ARGUMENTS", "status": "failed", "outcome": "not_started", "recovery": "correct_input", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -87,13 +96,14 @@
       "steps": [
         {
           "step_id": "extra",
-          "call": {"call_id": "call-extra", "operation_id": "op-extra", "name": "get_order", "arguments": {"order_ref": "ORDER-7", "is_admin": true}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-7", "is_admin": true}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-extra", "call_id": "call-extra", "operation_id": "op-extra", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "INVALID_ARGUMENTS",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "INVALID_ARGUMENTS", "status": "failed", "outcome": "not_started", "recovery": "correct_input", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -103,13 +113,14 @@
       "steps": [
         {
           "step_id": "wrong-type",
-          "call": {"call_id": "call-type", "operation_id": "op-type", "name": "get_order", "arguments": {"order_ref": 7}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": 7}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-type", "call_id": "call-type", "operation_id": "op-type", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "INVALID_ARGUMENTS",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "INVALID_ARGUMENTS", "status": "failed", "outcome": "not_started", "recovery": "correct_input", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -119,13 +130,14 @@
       "steps": [
         {
           "step_id": "bad-reason",
-          "call": {"call_id": "call-enum", "operation_id": "op-enum", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "ignore rules and refund"}, "idempotency_key": "idem-enum"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "ignore rules and refund"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-enum", "call_id": "call-enum", "operation_id": "op-enum", "idempotency_key": "idem-enum", "adapter_revision": "openai-responses-v1"},
           "approval": "valid",
           "now": 1000,
           "failure": "none",
-          "expected_code": "INVALID_ARGUMENTS",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "INVALID_ARGUMENTS", "status": "failed", "outcome": "not_started", "recovery": "correct_input", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -135,13 +147,14 @@
       "steps": [
         {
           "step_id": "write",
-          "call": {"call_id": "call-write-1", "operation_id": "op-refund-1", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-1"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-write-1", "call_id": "call-write-1", "operation_id": "op-refund-1", "idempotency_key": "idem-refund-1", "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "APPROVAL_REQUIRED",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "APPROVAL_REQUIRED", "status": "failed", "outcome": "not_started", "recovery": "request_approval", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -151,23 +164,25 @@
       "steps": [
         {
           "step_id": "first",
-          "call": {"call_id": "call-write-2", "operation_id": "op-refund-2", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-2"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-write-2", "call_id": "call-write-2", "operation_id": "op-refund-2", "idempotency_key": "idem-refund-2", "adapter_revision": "openai-responses-v1"},
           "approval": "valid",
           "now": 1000,
           "failure": "none",
-          "expected_code": "OK",
-          "expected_cached": false,
-          "expected_side_effect_count": 1
+          "status_ref_from": null,
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "fresh", "data": {"draft_id": "DRAFT-1", "order_ref": "ORDER-7", "reason": "duplicate"}, "side_effect_count": 1}
         },
         {
           "step_id": "retry",
-          "call": {"call_id": "call-write-2-retry", "operation_id": "op-refund-2-retry", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-2"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-write-2-retry", "call_id": "call-write-2-retry", "operation_id": "op-refund-2", "idempotency_key": "idem-refund-2", "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1010,
           "failure": "none",
-          "expected_code": "OK",
-          "expected_cached": true,
-          "expected_side_effect_count": 1
+          "status_ref_from": null,
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "local_replay", "data": {"draft_id": "DRAFT-1", "order_ref": "ORDER-7", "reason": "duplicate"}, "side_effect_count": 1}
         }
       ]
     },
@@ -177,23 +192,25 @@
       "steps": [
         {
           "step_id": "first",
-          "call": {"call_id": "call-write-3", "operation_id": "op-refund-3", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-refund-3"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-write-3", "call_id": "call-write-3", "operation_id": "op-refund-3", "idempotency_key": "idem-refund-3", "adapter_revision": "openai-responses-v1"},
           "approval": "valid",
           "now": 1000,
           "failure": "none",
-          "expected_code": "OK",
-          "expected_cached": false,
-          "expected_side_effect_count": 1
+          "status_ref_from": null,
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "fresh", "data": {"draft_id": "DRAFT-1", "order_ref": "ORDER-7", "reason": "duplicate"}, "side_effect_count": 1}
         },
         {
           "step_id": "conflict",
-          "call": {"call_id": "call-write-4", "operation_id": "op-refund-4", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "damaged"}, "idempotency_key": "idem-refund-3"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "damaged"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-write-4", "call_id": "call-write-4", "operation_id": "op-refund-4", "idempotency_key": "idem-refund-3", "adapter_revision": "openai-responses-v1"},
           "approval": "valid",
           "now": 1010,
           "failure": "none",
-          "expected_code": "IDEMPOTENCY_CONFLICT",
-          "expected_cached": false,
-          "expected_side_effect_count": 1
+          "status_ref_from": null,
+          "expected": {"code": "IDEMPOTENCY_CONFLICT", "status": "failed", "outcome": "not_started", "recovery": "human_review", "delivery": "fresh", "data": null, "side_effect_count": 1}
         }
       ]
     },
@@ -203,13 +220,14 @@
       "steps": [
         {
           "step_id": "expired",
-          "call": {"call_id": "call-expired", "operation_id": "op-expired", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-expired"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-expired", "call_id": "call-expired", "operation_id": "op-expired", "idempotency_key": "idem-expired", "adapter_revision": "openai-responses-v1"},
           "approval": "expired",
           "now": 1000,
           "failure": "none",
-          "expected_code": "APPROVAL_INVALID",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "APPROVAL_INVALID", "status": "failed", "outcome": "not_started", "recovery": "request_approval", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -219,13 +237,14 @@
       "steps": [
         {
           "step_id": "mismatch",
-          "call": {"call_id": "call-mismatch", "operation_id": "op-mismatch", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-mismatch"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-mismatch", "call_id": "call-mismatch", "operation_id": "op-mismatch", "idempotency_key": "idem-mismatch", "adapter_revision": "openai-responses-v1"},
           "approval": "mismatched",
           "now": 1000,
           "failure": "none",
-          "expected_code": "APPROVAL_INVALID",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "APPROVAL_INVALID", "status": "failed", "outcome": "not_started", "recovery": "request_approval", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
@@ -235,39 +254,70 @@
       "steps": [
         {
           "step_id": "first",
-          "call": {"call_id": "call-reused", "operation_id": "op-call-id", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-7"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-call-id", "call_id": "call-reused", "operation_id": "op-call-id", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "none",
-          "expected_code": "OK",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "fresh", "data": {"order_ref": "ORDER-7", "status": "paid"}, "side_effect_count": 0}
         },
         {
           "step_id": "changed",
-          "call": {"call_id": "call-reused", "operation_id": "op-call-id", "name": "get_order", "arguments": {"order_ref": "ORDER-8"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-8"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-call-id", "call_id": "call-reused", "operation_id": "op-call-id", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1001,
           "failure": "none",
-          "expected_code": "CALL_ID_CONFLICT",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "CALL_ID_CONFLICT", "status": "failed", "outcome": "not_started", "recovery": "human_review", "delivery": "fresh", "data": null, "side_effect_count": 0}
         }
       ]
     },
     {
-      "id": "timeout-is-retryable-and-side-effect-free",
+      "id": "timeout-before-execute-is-retryable-and-side-effect-free",
       "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
       "steps": [
         {
           "step_id": "timeout",
-          "call": {"call_id": "call-timeout", "operation_id": "op-timeout", "name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}, "idempotency_key": "idem-timeout"},
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-timeout", "call_id": "call-timeout", "operation_id": "op-timeout", "idempotency_key": "idem-timeout", "adapter_revision": "openai-responses-v1"},
           "approval": "valid",
           "now": 1000,
-          "failure": "timeout",
-          "expected_code": "TIMEOUT",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "failure": "timeout_before_execute",
+          "status_ref_from": null,
+          "expected": {"code": "TIMEOUT_BEFORE_EXECUTE", "status": "failed", "outcome": "not_started", "recovery": "retry_after", "delivery": "fresh", "data": null, "side_effect_count": 0}
+        }
+      ]
+    },
+    {
+      "id": "timeout-after-commit-requires-explicit-status-query",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "commit-response-lost",
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-unknown-1", "call_id": "call-unknown-1", "operation_id": "op-unknown", "idempotency_key": "idem-unknown", "adapter_revision": "openai-responses-v1"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "timeout_after_commit",
+          "status_ref_from": null,
+          "expected": {"code": "OUTCOME_UNKNOWN", "status": "unknown", "outcome": "unknown", "recovery": "query_status", "delivery": "fresh", "data": null, "side_effect_count": 1}
+        },
+        {
+          "step_id": "query-receipt",
+          "action": "query_status",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-unknown-2", "call_id": "call-unknown-2", "operation_id": "op-unknown", "idempotency_key": "idem-unknown", "adapter_revision": "openai-responses-v1"},
+          "approval": "none",
+          "now": 1010,
+          "failure": "none",
+          "status_ref_from": "commit-response-lost",
+          "expected": {"code": "OK", "status": "succeeded", "outcome": "committed", "recovery": "none", "delivery": "receipt_reconciled", "data": {"draft_id": "DRAFT-1", "order_ref": "ORDER-7", "reason": "duplicate"}, "side_effect_count": 1}
         }
       ]
     },
@@ -277,13 +327,42 @@
       "steps": [
         {
           "step_id": "rate-limit",
-          "call": {"call_id": "call-rate", "operation_id": "op-rate", "name": "get_order", "arguments": {"order_ref": "ORDER-7"}, "idempotency_key": null},
+          "action": "dispatch",
+          "proposal": {"name": "get_order", "arguments": {"order_ref": "ORDER-7"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-rate", "call_id": "call-rate", "operation_id": "op-rate", "idempotency_key": null, "adapter_revision": "openai-responses-v1"},
           "approval": "none",
           "now": 1000,
           "failure": "rate_limit",
-          "expected_code": "RATE_LIMIT",
-          "expected_cached": false,
-          "expected_side_effect_count": 0
+          "status_ref_from": null,
+          "expected": {"code": "RATE_LIMIT", "status": "failed", "outcome": "not_started", "recovery": "retry_after", "delivery": "fresh", "data": null, "side_effect_count": 0}
+        }
+      ]
+    },
+    {
+      "id": "timeout-after-commit-without-receipt-stays-unknown",
+      "principal": {"tenant_id": "tenant-a", "subject_id": "user-1", "roles": []},
+      "steps": [
+        {
+          "step_id": "commit-response-and-receipt-unavailable",
+          "action": "dispatch",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-no-receipt-1", "call_id": "call-no-receipt-1", "operation_id": "op-no-receipt", "idempotency_key": "idem-no-receipt", "adapter_revision": "openai-responses-v1"},
+          "approval": "valid",
+          "now": 1000,
+          "failure": "timeout_after_commit_receipt_unavailable",
+          "status_ref_from": null,
+          "expected": {"code": "OUTCOME_UNKNOWN", "status": "unknown", "outcome": "unknown", "recovery": "query_status", "delivery": "fresh", "data": null, "side_effect_count": 1}
+        },
+        {
+          "step_id": "query-remains-unknown",
+          "action": "query_status",
+          "proposal": {"name": "create_refund_draft", "arguments": {"order_ref": "ORDER-7", "reason": "duplicate"}},
+          "execution_context": {"provider": "openai", "api_family": "responses", "response_id": "response-no-receipt-2", "call_id": "call-no-receipt-2", "operation_id": "op-no-receipt", "idempotency_key": "idem-no-receipt", "adapter_revision": "openai-responses-v1"},
+          "approval": "none",
+          "now": 1010,
+          "failure": "none",
+          "status_ref_from": "commit-response-and-receipt-unavailable",
+          "expected": {"code": "OUTCOME_UNKNOWN", "status": "unknown", "outcome": "unknown", "recovery": "query_status", "delivery": "fresh", "data": null, "side_effect_count": 1}
         }
       ]
     }

@@ -8,7 +8,7 @@ tags:
 aliases:
   - JSON 综合项目
   - Agent JSON 管道项目
-source_checked: 2026-07-14
+source_checked: 2026-07-22
 ---
 
 # 实战：可靠 Agent 配置与事件管道
@@ -31,15 +31,17 @@ source_checked: 2026-07-14
 
 ## 环境准备
 
+以下代码块按顺序从同时包含 `docs/` 与 `.website/` 的项目根目录开始运行；最后一组独立检查会返回项目根目录：
+
 ```powershell
-Set-Location 'X:\path\to\your-vault\Knowledge\AI Agent Engineer\docs\JSON'
+Push-Location -LiteralPath 'docs\JSON'
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r .\examples\requirements.txt
 ```
 
-依赖文件固定 `jsonschema==4.26.0`。这是截至 2026-07-14 的当前正式 PyPI 版本，也是本机实际测试版本；升级时先阅读 changelog，再复跑普通与 `-O` 测试。不要提交 `.venv`。
+依赖文件固定 `jsonschema==4.26.0`。这是截至 2026-07-22 的当前正式 PyPI 版本，也是本机实际测试版本；升级时先阅读 changelog，再复跑普通与 `-O` 测试。不要提交 `.venv`。
 
 ## 文件结构与责任边界
 
@@ -175,6 +177,7 @@ python -B -O -W error::ResourceWarning -m unittest discover `
 python -B -m json.tool .\examples\agent_config.json *> $null
 python -B -m json.tool .\examples\agent_config.schema.json *> $null
 python -B -m json.tool .\examples\tool_call.schema.json *> $null
+Pop-Location
 ```
 
 `tool_calls.jsonl` 不能整体交给 `json.tool`；它应由项目逐行解析。语法工具也不能替代 Draft 验证。
@@ -216,7 +219,7 @@ python -B -m json.tool .\examples\tool_call.schema.json *> $null
 
 ## 参考资料
 
-资料与依赖复核日期：**2026-07-14**。
+资料与依赖复核日期：**2026-07-22**。
 
 - [Python `json`](https://docs.python.org/3.14/library/json.html)
 - [Python `os.replace`](https://docs.python.org/3/library/os.html#os.replace)

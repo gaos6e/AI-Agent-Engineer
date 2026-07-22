@@ -278,6 +278,88 @@ class ChunkConstructionTests(unittest.TestCase):
             )[0].chunk_id,
         )
 
+    def test_index_entry_id_changes_when_title_context_changes(self) -> None:
+        element = make_element("e1", "alpha beta", section_path=("旧标题",))
+        changed = replace(element, section_path=("新标题",))
+        original_chunk = lab.structured_chunks([element], self.config)[0]
+        changed_chunk = lab.structured_chunks([changed], self.config)[0]
+
+        self.assertEqual(original_chunk.chunk_id, changed_chunk.chunk_id)
+        self.assertNotEqual(
+            original_chunk.retrieval_sha256, changed_chunk.retrieval_sha256
+        )
+        self.assertNotEqual(
+            lab.index_entry_id(original_chunk), lab.index_entry_id(changed_chunk)
+        )
+
+    def test_index_entry_id_changes_when_table_header_context_changes(self) -> None:
+        header = make_element(
+            "h1", "环境 | 副本数 | 审批", kind="table_header"
+        )
+        row = make_element("r1", "生产 | 4 | SRE", kind="table_row")
+        changed_header = replace(header, text="环境 | 副本数 | 审核人")
+        config = lab.ChunkConfig(max_units=10, overlap_units=0)
+        original = lab.structured_chunks([header, row], config)
+        changed = lab.structured_chunks([changed_header, row], config)
+        original_row = next(
+            chunk
+            for chunk in original
+            if any(span.element_id == "r1" for span in chunk.element_spans)
+        )
+        changed_row = next(
+            chunk
+            for chunk in changed
+            if any(span.element_id == "r1" for span in chunk.element_spans)
+        )
+
+        self.assertEqual(original_row.chunk_id, changed_row.chunk_id)
+        self.assertNotEqual(
+            original_row.retrieval_sha256, changed_row.retrieval_sha256
+        )
+        self.assertNotEqual(
+            lab.index_entry_id(original_row), lab.index_entry_id(changed_row)
+        )
+
+    def test_index_entry_id_binds_revision_acl_and_retrieval_output(self) -> None:
+        chunk = lab.structured_chunks(
+            [make_element("e1", "alpha beta")], self.config
+        )[0]
+        self.assertNotEqual(
+            lab.index_entry_id(chunk, index_revision="index-v1"),
+            lab.index_entry_id(chunk, index_revision="index-v2"),
+        )
+        self.assertNotEqual(
+            lab.index_entry_id(chunk),
+            lab.index_entry_id(replace(chunk, acl=("admins",))),
+        )
+        ranked = lab.retrieve(
+            "alpha", [chunk], subject_groups=["readers"], k=1
+        )
+        self.assertEqual(lab.index_entry_id(chunk), ranked[0].index_entry_id)
+        report = lab.evaluate(
+            [chunk],
+            [
+                lab.QueryCase(
+                    query_id="q1",
+                    query="alpha",
+                    subject_groups=("readers",),
+                    evidence=(),
+                )
+            ],
+        )
+        self.assertEqual(
+            [lab.index_entry_id(chunk)],
+            report["details"][0]["retrieved_index_entry_ids"],
+        )
+        with self.assertRaisesRegex(lab.ChunkingError, "index_revision"):
+            lab.retrieve(
+                "alpha",
+                [chunk],
+                subject_groups=["readers"],
+                k=1,
+                index_revision=" ",
+            )
+
     def test_fixed_baseline_can_cross_sections_but_not_security_boundaries(self) -> None:
         chunks = lab.fixed_window_chunks(self.elements, self.config)
         by_id = {element.element_id: element for element in self.elements}

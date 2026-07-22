@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "policy_version": "promotion-lab-v2",
+  "schema_version": 2,
+  "policy_version": "promotion-lab-v3",
   "policy": {
     "required_tests": ["unit", "data", "inference_smoke"],
     "max_overall_accuracy_drop": 0.0,
@@ -9,6 +9,9 @@
     "max_artifact_size_bytes": 1000000,
     "max_error_rate": 0.02,
     "drift_investigation_threshold": 0.2,
+    "min_observation_samples": 500,
+    "min_labeled_samples_for_quality_decision": 500,
+    "min_critical_labeled_samples_for_quality_decision": 100,
     "min_label_coverage_for_quality_decision": 0.6
   },
   "baseline": {
@@ -85,4 +88,3 @@
     }
   ]
 }
-

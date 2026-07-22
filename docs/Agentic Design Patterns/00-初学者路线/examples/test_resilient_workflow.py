@@ -90,13 +90,51 @@ class StateValidationTests(WorkflowTestCase):
         with self.assertRaises(workflow.WorkflowError):
             workflow.validate_state(state)
 
-    def test_approval_must_match_action(self) -> None:
-        state = workflow.new_state("task-1", "high")
+    def test_approval_must_match_checked_action_context(self) -> None:
+        state = self.run_workflow(risk="high")
         state["approval"] = {
             "decision": "approved",
-            "action_fingerprint": "0" * 64,
-            "based_on_revision": 0,
+            "approval_fingerprint": "0" * 64,
+            "based_on_revision": state["revision"],
         }
+        state["stage"] = "execute"
+        workflow.append_event(state, "approval:approved")
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.validate_state(state)
+
+    def test_approved_context_rejects_changed_check_evidence(self) -> None:
+        state = self.run_workflow(risk="high")
+        state["approval"] = {
+            "decision": "approved",
+            "approval_fingerprint": workflow.approval_fingerprint_for(state),
+            "based_on_revision": state["revision"],
+        }
+        state["stage"] = "execute"
+        workflow.append_event(state, "approval:approved")
+        workflow.validate_state(state)
+        state["checks"]["policy"]["evidence"] = "different policy evidence"
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.validate_state(state)
+
+    def test_awaiting_approval_requires_passed_checks(self) -> None:
+        state = workflow.new_state("task-1", "high")
+        state["stage"] = "awaiting_approval"
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.validate_state(state)
+
+    def test_approval_cannot_appear_before_execute(self) -> None:
+        state = self.run_workflow(risk="high")
+        state["approval"] = {
+            "decision": "approved",
+            "approval_fingerprint": workflow.approval_fingerprint_for(state),
+            "based_on_revision": state["revision"],
+        }
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.validate_state(state)
+
+    def test_unknown_policy_revision_is_rejected(self) -> None:
+        state = workflow.new_state("task-1", "low")
+        state["policy_revision"] = "old-policy"
         with self.assertRaises(workflow.WorkflowError):
             workflow.validate_state(state)
 
@@ -116,7 +154,7 @@ class StateValidationTests(WorkflowTestCase):
         state = workflow.new_state("task-1", "low")
         state["approval"] = {
             "decision": "approved",
-            "action_fingerprint": workflow.fingerprint(state["action"]),
+            "approval_fingerprint": workflow.approval_fingerprint_for(state),
             "based_on_revision": 0,
         }
         with self.assertRaises(workflow.WorkflowError):
@@ -141,6 +179,14 @@ class CheckpointTests(WorkflowTestCase):
 
     def test_invalid_json_is_rejected(self) -> None:
         self.checkpoint.write_text("{", encoding="utf-8")
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.load_state(self.checkpoint, "task-1", "low")
+
+    def test_duplicate_checkpoint_key_is_rejected(self) -> None:
+        self.checkpoint.write_text(
+            '{"format":"first","format":"second","state":{},"sha256":"x"}',
+            encoding="utf-8",
+        )
         with self.assertRaises(workflow.WorkflowError):
             workflow.load_state(self.checkpoint, "task-1", "low")
 
@@ -202,6 +248,12 @@ class PatternTests(WorkflowTestCase):
         with self.assertRaises(workflow.WorkflowError):
             workflow.run_parallel_checks(workflow.new_state("task-1", "low"), max_attempts=0)
 
+    def test_boolean_attempt_count_is_rejected(self) -> None:
+        state = workflow.new_state("task-1", "low")
+        state["attempts"] = {"policy": True}
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.run_parallel_checks(state)
+
     def test_evaluate_requires_all_branches(self) -> None:
         state = workflow.new_state("task-1", "low")
         state["checks"] = {
@@ -223,6 +275,12 @@ class EndToEndTests(WorkflowTestCase):
     def test_high_risk_workflow_pauses(self) -> None:
         state = self.run_workflow(risk="high")
         self.assertEqual(state["stage"], "awaiting_approval")
+        self.assertEqual(set(state["checks"]), {"input", "policy"})
+        self.assertTrue(all(result["ok"] for result in state["checks"].values()))
+        self.assertLess(
+            [event["name"] for event in state["events"]].index("parallel_checks:joined"),
+            [event["name"] for event in state["events"]].index("approval:requested_after_checks"),
+        )
         self.assertFalse(self.receipt.exists())
 
     def test_repeated_pause_is_stable(self) -> None:
@@ -235,6 +293,16 @@ class EndToEndTests(WorkflowTestCase):
         state = self.run_workflow(risk="high", decision="approve")
         self.assertEqual(state["stage"], "done")
         self.assertEqual(state["approval"]["decision"], "approved")
+        self.assertEqual(
+            state["approval"]["approval_fingerprint"],
+            workflow.approval_fingerprint_for(state),
+        )
+
+    def test_initial_decision_cannot_bypass_persisted_pause(self) -> None:
+        with self.assertRaises(workflow.WorkflowError):
+            self.run_workflow(risk="high", decision="approve")
+        self.assertFalse(self.checkpoint.exists())
+        self.assertFalse(self.receipt.exists())
 
     def test_rejection_is_terminal_without_receipt(self) -> None:
         self.run_workflow(risk="high")
@@ -246,6 +314,14 @@ class EndToEndTests(WorkflowTestCase):
         check = workflow.make_demo_check(False, True)
         state = self.run_workflow(check=check)
         self.assertEqual(state["stage"], "failed")
+        self.assertFalse(self.receipt.exists())
+
+    def test_high_risk_policy_failure_stops_before_approval(self) -> None:
+        check = workflow.make_demo_check(False, True)
+        state = self.run_workflow(risk="high", check=check)
+        self.assertEqual(state["stage"], "failed")
+        self.assertIsNone(state["approval"])
+        self.assertNotIn("paused_for_approval", [event["name"] for event in state["events"]])
         self.assertFalse(self.receipt.exists())
 
     def test_transient_policy_failure_recovers(self) -> None:
@@ -272,6 +348,14 @@ class EndToEndTests(WorkflowTestCase):
 
     def test_existing_receipt_for_other_task_is_rejected(self) -> None:
         self.receipt.write_text("{}", encoding="utf-8")
+        with self.assertRaises(workflow.WorkflowError):
+            self.run_workflow()
+
+    def test_duplicate_receipt_key_is_rejected(self) -> None:
+        self.receipt.write_text(
+            '{"action_id":"first","action_id":"second"}',
+            encoding="utf-8",
+        )
         with self.assertRaises(workflow.WorkflowError):
             self.run_workflow()
 
@@ -309,6 +393,11 @@ class CliTests(WorkflowTestCase):
         code, payload = self.call_main("--risk", "high")
         self.assertEqual(code, 3)
         self.assertEqual(payload["stage"], "awaiting_approval")
+
+    def test_cli_initial_approval_is_rejected(self) -> None:
+        code, payload = self.call_main("--risk", "high", "--decision", "approve")
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["stage"], "error")
 
     def test_cli_rejection_exit_code(self) -> None:
         self.call_main("--risk", "high")

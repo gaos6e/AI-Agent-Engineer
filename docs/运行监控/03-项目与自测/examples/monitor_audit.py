@@ -22,10 +22,37 @@ SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 TRACEPARENT_RE = re.compile(
     r"^00-([0-9a-f]{32})-([0-9a-f]{16})-(00|01)$"
 )
+EVENT_STATUSES = frozenset({"ok", "error"})
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_REGRESSION_HANDOFF_TRACE_REFS = 20
+# This names the exact local byte representation, rather than implying that
+# Python's JSON encoder implements a cross-language canonical JSON standard.
+EVIDENCE_DIGEST_FORMAT = "python-json-sorted-utf8-v1"
 
 
 class ContractError(ValueError):
     """输入 JSON 不符合本项目的严格契约。"""
+
+
+def reject_non_utf8_scalar_strings(value: object, context: str) -> None:
+    """Reject strings that cannot participate in deterministic UTF-8 evidence bytes."""
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ContractError(
+                f"{context} 含不能作为 UTF-8 规范化输入的 Unicode surrogate"
+            ) from exc
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            reject_non_utf8_scalar_strings(key, f"{context} 的字段名")
+            key_context = f"{context}.{key}" if isinstance(key, str) else context
+            reject_non_utf8_scalar_strings(item, key_context)
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            reject_non_utf8_scalar_strings(item, f"{context}[{index}]")
 
 
 @dataclass(frozen=True)
@@ -37,6 +64,9 @@ class Decision:
     reasons: tuple[str, ...]
     indicators: dict[str, float | int | None]
     evidence_fingerprint: str
+    evidence_sha256: str
+    regression_handoff: dict[str, object] | None
+    evidence_digest_format: str = EVIDENCE_DIGEST_FORMAT
 
     @property
     def passed(self) -> bool:
@@ -49,16 +79,56 @@ def load_json(path: Path) -> dict[str, Any]:
     def reject_nonstandard_number(value: str) -> None:
         raise ContractError(f"{path.name} 含 JSON 标准之外的数值: {value}")
 
-    with path.open("r", encoding="utf-8") as handle:
-        data = json.load(handle, parse_constant=reject_nonstandard_number)
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            reject_non_utf8_scalar_strings(key, "JSON 字段名")
+            if key in result:
+                raise ContractError(f"{path.name} 含重复 JSON 字段: {key}")
+            result[key] = value
+        return result
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(
+                handle,
+                parse_constant=reject_nonstandard_number,
+                object_pairs_hook=reject_duplicate_keys,
+            )
+    except UnicodeDecodeError as exc:
+        raise ContractError(f"{path.name} 必须是有效 UTF-8 JSON") from exc
     if not isinstance(data, dict):
         raise ContractError(f"{path.name} 顶层必须是对象")
+    reject_non_utf8_scalar_strings(data, path.name)
     return data
 
 
+def full_evidence_sha256(*values: object) -> str:
+    """Return this project's versioned, local evidence identifier.
+
+    The label fixes a Python byte profile for the teaching artifacts. It is
+    neither cross-language canonical JSON nor an authenticity mechanism.
+    """
+    reject_non_utf8_scalar_strings(values, "evidence")
+    try:
+        payload = json.dumps(
+            values,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        encoded = payload.encode("utf-8")
+    except (TypeError, UnicodeEncodeError, ValueError) as exc:
+        raise ContractError(
+            "evidence 必须是可按本项目 UTF-8 格式序列化的有限 JSON 值"
+        ) from exc
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def fingerprint(*values: object) -> str:
-    payload = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    """Return a display-only prefix of a durable monitoring evidence digest."""
+    return full_evidence_sha256(*values)[:16]
 
 
 def require_exact_keys(value: object, required: set[str], context: str) -> dict[str, Any]:
@@ -85,6 +155,21 @@ def require_bool(value: object, context: str) -> bool:
     return value
 
 
+def require_sha256(value: object, context: str) -> str:
+    if not isinstance(value, str) or SHA256_RE.fullmatch(value) is None:
+        raise ContractError(f"{context} 必须是 64 位小写十六进制 SHA-256")
+    return value
+
+
+def require_evidence_digest_format(value: object, context: str) -> str:
+    if value != EVIDENCE_DIGEST_FORMAT:
+        raise ContractError(
+            f"{context} 必须为受支持的证据摘要格式 "
+            f"{EVIDENCE_DIGEST_FORMAT!r}"
+        )
+    return EVIDENCE_DIGEST_FORMAT
+
+
 def require_number(
     value: object,
     context: str,
@@ -94,7 +179,10 @@ def require_number(
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContractError(f"{context} 必须是数值")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ContractError(f"{context} 必须可表示为有限数值") from exc
     if not math.isfinite(number):
         raise ContractError(f"{context} 必须是有限数值")
     if minimum is not None and number < minimum:
@@ -146,6 +234,7 @@ POLICY_KEYS = {
     "min_trace_completeness_rate",
     "max_collector_drop_rate",
     "max_export_age_seconds",
+    "max_event_age_seconds",
     "max_retention_days",
     "page_short_burn_rate",
     "page_long_burn_rate",
@@ -158,8 +247,10 @@ POLICY_KEYS = {
 SLO_KEYS = {"version", "target", "latency_objective_ms", "good_statuses"}
 SCENARIO_KEYS = {
     "name",
+    "release_evidence",
     "window_minutes",
     "short_window_minutes",
+    "window_end",
     "metric_label_keys",
     "telemetry_policy",
     "collector",
@@ -198,6 +289,27 @@ SPAN_KEYS = {
     "duration_ms",
     "attributes",
 }
+RELEASE_EVIDENCE_KEYS = {
+    "release_id",
+    "release_manifest_sha256",
+    "candidate_gate_evidence_sha256",
+    "candidate_gate_evidence_digest_format",
+}
+
+
+def validate_release_evidence(value: object, context: str) -> dict[str, Any]:
+    evidence = require_exact_keys(value, RELEASE_EVIDENCE_KEYS, context)
+    require_string(evidence["release_id"], f"{context}.release_id")
+    require_sha256(evidence["release_manifest_sha256"], f"{context}.release_manifest_sha256")
+    require_sha256(
+        evidence["candidate_gate_evidence_sha256"],
+        f"{context}.candidate_gate_evidence_sha256",
+    )
+    require_evidence_digest_format(
+        evidence["candidate_gate_evidence_digest_format"],
+        f"{context}.candidate_gate_evidence_digest_format",
+    )
+    return evidence
 
 
 def validate_policy(value: object) -> dict[str, Any]:
@@ -218,6 +330,7 @@ def validate_policy(value: object) -> dict[str, Any]:
         "max_p95_latency_ms",
         "max_average_estimated_cost_usd",
         "max_export_age_seconds",
+        "max_event_age_seconds",
         "page_short_burn_rate",
         "page_long_burn_rate",
         "ticket_long_burn_rate",
@@ -237,7 +350,13 @@ def validate_slo(value: object) -> dict[str, Any]:
     if target >= 1:
         raise ContractError("slo.target 必须小于 1，零容忍风险应使用独立控制")
     require_number(slo["latency_objective_ms"], "slo.latency_objective_ms", minimum=0)
-    require_string_list(slo["good_statuses"], "slo.good_statuses")
+    good_statuses = require_string_list(slo["good_statuses"], "slo.good_statuses")
+    unknown_statuses = set(good_statuses) - EVENT_STATUSES
+    if unknown_statuses:
+        raise ContractError(
+            "slo.good_statuses 含事件契约之外的状态: "
+            + ", ".join(sorted(unknown_statuses))
+        )
     return slo
 
 
@@ -317,7 +436,7 @@ def validate_event(value: object, context: str) -> dict[str, Any]:
     for key in ("request_id", "release", "service", "intent", "status", "model_provider", "model_snapshot"):
         require_string(event[key], f"{context}.{key}")
     parse_timestamp(event["timestamp"], f"{context}.timestamp")
-    if event["status"] not in {"ok", "error"}:
+    if event["status"] not in EVENT_STATUSES:
         raise ContractError(f"{context}.status 只能是 ok 或 error")
     for key in ("latency_ms", "estimated_cost_usd"):
         require_number(event[key], f"{context}.{key}", minimum=0)
@@ -338,12 +457,17 @@ def validate_scenario(value: object, index: int, policy: dict[str, Any]) -> dict
     context = f"scenarios[{index}]"
     scenario = require_exact_keys(value, SCENARIO_KEYS, context)
     require_string(scenario["name"], f"{context}.name")
+    release_evidence = validate_release_evidence(
+        scenario["release_evidence"], f"{context}.release_evidence"
+    )
     long_minutes = require_integer(scenario["window_minutes"], f"{context}.window_minutes", minimum=1)
     short_minutes = require_integer(
         scenario["short_window_minutes"], f"{context}.short_window_minutes", minimum=1
     )
     if short_minutes >= long_minutes:
         raise ContractError(f"{context}: short_window_minutes 必须小于 window_minutes")
+    window_end = parse_timestamp(scenario["window_end"], f"{context}.window_end")
+    window_start = window_end - timedelta(minutes=long_minutes)
 
     label_keys = require_string_list(scenario["metric_label_keys"], f"{context}.metric_label_keys")
     disallowed = set(label_keys) - set(policy["allowed_metric_labels"])
@@ -414,9 +538,14 @@ def validate_scenario(value: object, index: int, policy: dict[str, Any]) -> dict
     timestamps = [parse_timestamp(event["timestamp"], f"{context}.events.timestamp") for event in events]
     if timestamps != sorted(timestamps):
         raise ContractError(f"{context}.events 必须按 timestamp 升序")
-    if timestamps[-1] - timestamps[0] > timedelta(minutes=long_minutes):
-        raise ContractError(f"{context}.events 超出 window_minutes")
-    cutoff = timestamps[-1] - timedelta(minutes=short_minutes)
+    event_releases = {str(event["release"]) for event in events}
+    if event_releases != {str(release_evidence["release_id"])}:
+        raise ContractError(f"{context}.release_evidence 必须绑定全部事件的 release")
+    if timestamps[0] < window_start or timestamps[-1] > window_end:
+        raise ContractError(
+            f"{context}.events 必须位于 window_end 结束的 window_minutes 窗口内"
+        )
+    cutoff = window_end - timedelta(minutes=short_minutes)
     if not any(timestamp >= cutoff for timestamp in timestamps):
         raise ContractError(f"{context} 短窗口没有事件")
 
@@ -476,14 +605,18 @@ def is_good_event(event: dict[str, Any], slo: dict[str, Any]) -> bool:
     )
 
 
+def bad_event_fraction(events: list[dict[str, Any]], slo: dict[str, Any]) -> float:
+    return sum(not is_good_event(event, slo) for event in events) / len(events)
+
+
 def burn_rate(events: list[dict[str, Any]], slo: dict[str, Any]) -> float:
-    bad_fraction = sum(not is_good_event(event, slo) for event in events) / len(events)
+    bad_fraction = bad_event_fraction(events, slo)
     return bad_fraction / (1 - float(slo["target"]))
 
 
 def window_events(scenario: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     events = list(scenario["events"])
-    end = parse_timestamp(events[-1]["timestamp"], "events[-1].timestamp")
+    end = parse_timestamp(scenario["window_end"], "scenario.window_end")
     cutoff = end - timedelta(minutes=int(scenario["short_window_minutes"]))
     short = [
         event
@@ -497,6 +630,8 @@ def calculate_indicators(
     scenario: dict[str, Any], slo: dict[str, Any]
 ) -> dict[str, float | int | None]:
     events, short_events = window_events(scenario)
+    window_end = parse_timestamp(scenario["window_end"], "scenario.window_end")
+    newest_event = parse_timestamp(events[-1]["timestamp"], "events[-1].timestamp")
     labeled = [event for event in events if event["quality_pass"] is not None]
     safety_checked = [event for event in events if event["safety_checked"]]
     traces_present = [event for event in events if event["trace_id"] is not None]
@@ -528,9 +663,10 @@ def calculate_indicators(
         ),
         "sli_good_event_rate": sum(is_good_event(event, slo) for event in events)
         / len(events),
+        "slo_bad_event_fraction": bad_event_fraction(events, slo),
         "long_burn_rate": burn_rate(events, slo),
         "short_burn_rate": burn_rate(short_events, slo),
-        "error_budget_remaining_ratio": 1 - burn_rate(events, slo),
+        "event_data_age_seconds": (window_end - newest_event).total_seconds(),
         "quality_pass_rate": quality_rate,
         "label_coverage_rate": len(labeled) / len(events),
         "safety_violation_rate": safety_rate,
@@ -556,6 +692,47 @@ def calculate_indicators(
             int(event["input_tokens"]) + int(event["output_tokens"]) for event in events
         )
         / len(events),
+    }
+
+
+def regression_handoff(
+    scenario: dict[str, Any],
+    action: str,
+    monitor_evidence_sha256: str,
+) -> dict[str, object] | None:
+    """Create a bounded, content-free candidate for human regression triage.
+
+    A monitoring alert is evidence of a production condition, not an automatic
+    change to a frozen suite. The returned references therefore remain a
+    restricted audit artifact and explicitly require human review.
+    """
+    if action == "ok":
+        return None
+    release_evidence = scenario["release_evidence"]
+    trace_ids = sorted(
+        {
+            str(event["trace_id"])
+            for event in scenario["events"]
+            if event["trace_id"] is not None
+        }
+    )[:MAX_REGRESSION_HANDOFF_TRACE_REFS]
+    return {
+        "status": "needs_human_triage",
+        "release_id": release_evidence["release_id"],
+        "release_manifest_sha256": release_evidence["release_manifest_sha256"],
+        "candidate_gate_evidence_sha256": release_evidence[
+            "candidate_gate_evidence_sha256"
+        ],
+        "candidate_gate_evidence_digest_format": release_evidence[
+            "candidate_gate_evidence_digest_format"
+        ],
+        "monitor_evidence_sha256": monitor_evidence_sha256,
+        "monitor_evidence_digest_format": EVIDENCE_DIGEST_FORMAT,
+        "source_trace_ids": trace_ids,
+        "raw_content_included": False,
+        "dedupe_key": full_evidence_sha256(
+            "regression-candidate-v1", release_evidence, action, trace_ids
+        ),
     }
 
 
@@ -601,6 +778,10 @@ def evaluate_scenario(
         escalate("page", "Collector 拒收或导出失败比例超过本地策略")
     if float(collector["last_export_age_seconds"]) > float(policy["max_export_age_seconds"]):
         escalate("page", "Collector 导出数据过旧，监控可能失明")
+    if float(indicators["event_data_age_seconds"]) > float(
+        policy["max_event_age_seconds"]
+    ):
+        escalate("page", "最新业务事件距观察窗口结束过久，监控可能陈旧")
     if float(indicators["trace_completeness_rate"]) < float(
         policy["min_trace_completeness_rate"]
     ):
@@ -636,12 +817,15 @@ def evaluate_scenario(
     if int(resources["resource_error_count"]) > 0:
         escalate("ticket", "USE: 资源错误计数非零")
 
+    evidence_sha256 = full_evidence_sha256("monitor-audit-v3", scenario, policy, slo)
     return Decision(
         scenario_name=str(scenario["name"]),
         action=action,
         reasons=tuple(reasons),
         indicators=indicators,
-        evidence_fingerprint=fingerprint(scenario, policy, slo),
+        evidence_fingerprint=evidence_sha256[:16],
+        evidence_sha256=evidence_sha256,
+        regression_handoff=regression_handoff(scenario, action, evidence_sha256),
     )
 
 
@@ -664,6 +848,7 @@ def print_decisions(decisions: Iterable[Decision], policy_version: str, slo_vers
             "  - "
             f"policy={policy_version}, slo={slo_version}, evidence={decision.evidence_fingerprint}"
         )
+        print(f"  - evidence_digest_format={decision.evidence_digest_format}")
         print(
             "  - "
             f"RED rate={float(indicators['request_rate_per_minute']):.3f}/min, "
@@ -675,13 +860,20 @@ def print_decisions(decisions: Iterable[Decision], policy_version: str, slo_vers
             f"SLI={float(indicators['sli_good_event_rate']):.3f}, "
             f"burn(short/long)={float(indicators['short_burn_rate']):.2f}/"
             f"{float(indicators['long_burn_rate']):.2f}, "
-            f"trace={float(indicators['trace_completeness_rate']):.3f}"
+            f"trace={float(indicators['trace_completeness_rate']):.3f}, "
+            f"event_age={float(indicators['event_data_age_seconds']):.0f}s"
         )
         if decision.reasons:
             for reason in decision.reasons:
                 print(f"  - {reason}")
         else:
             print("  - 满足全部本地教学规则")
+        if decision.regression_handoff is not None:
+            trace_refs = decision.regression_handoff["source_trace_ids"]
+            print(
+                "  - regression_candidate=needs_human_triage; "
+                f"trace_refs={len(trace_refs)}; raw_content_included=false"
+            )
     return all_passed
 
 

@@ -27,7 +27,7 @@ source_checked: 2026-07-14
 
 ## 前置课程
 
-- [[Linux命令/00A-Linux环境与Shell基础|Linux 环境与 Shell 基础]]：Shell、退出状态、引用与实验边界。
+- [[00B-Linux环境与Shell基础|Linux 环境与 Shell 基础]]：Shell、退出状态、引用与实验边界。
 - [[Linux命令/05 搜索与查找|搜索与查找]]、[[Linux命令/06 文本处理|文本处理]]：限定范围并生成统计。
 - [[Linux命令/07 管道重定向与命令组合|管道与重定向]]：stdout、stderr、`pipefail` 和分段失败。
 - [[Linux命令/09 进程管理|进程管理]]：PID、owner、SIGTERM、`wait` 与停止核验。

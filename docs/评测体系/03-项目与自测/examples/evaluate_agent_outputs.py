@@ -18,6 +18,10 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_DATASET = HERE / "eval_dataset.json"
 DEFAULT_RUBRIC = HERE / "eval_rubric.json"
 DEFAULT_PREDICTIONS = HERE / "predictions_pass.json"
+EVALUATOR_VERSION = "offline-layered-evaluator-v3"
+# This names the exact local byte representation, rather than implying that
+# Python's JSON encoder implements a cross-language canonical JSON standard.
+EVIDENCE_DIGEST_FORMAT = "python-json-sorted-utf8-v1"
 
 SPLITS = {"train", "development", "test"}
 LABELS = {"positive", "negative"}
@@ -84,6 +88,7 @@ class Decision:
     primary_reason: str
     reasons: tuple[str, ...]
     evidence_fingerprint: str
+    evidence_sha256: str
     baseline_release: str
     candidate_release: str
     baseline_metrics: dict[str, Any]
@@ -104,13 +109,39 @@ def reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def reject_non_utf8_scalar_strings(value: object, context: str) -> None:
+    """Reject decoded strings that cannot join deterministic UTF-8 evidence."""
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ContractError(
+                f"{context} contains a Unicode surrogate that cannot encode as UTF-8"
+            ) from exc
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            reject_non_utf8_scalar_strings(key, f"{context} field name")
+            key_context = f"{context}.{key}" if isinstance(key, str) else context
+            reject_non_utf8_scalar_strings(item, key_context)
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            reject_non_utf8_scalar_strings(item, f"{context}[{index}]")
+
+
 def load_json(path: Path) -> object:
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(
-            handle,
-            parse_constant=reject_json_constant,
-            object_pairs_hook=reject_duplicate_json_keys,
-        )
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(
+                handle,
+                parse_constant=reject_json_constant,
+                object_pairs_hook=reject_duplicate_json_keys,
+            )
+    except UnicodeDecodeError as exc:
+        raise ContractError(f"{path.name} must be valid UTF-8 JSON") from exc
+    reject_non_utf8_scalar_strings(data, path.name)
+    return data
 
 
 def require_exact_dict(value: object, keys: set[str], context: str) -> dict[str, Any]:
@@ -147,7 +178,10 @@ def require_number(
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContractError(f"{context} must be a number, not boolean")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise ContractError(f"{context} must be representable as a finite number") from exc
     if not math.isfinite(number):
         raise ContractError(f"{context} must be finite")
     if minimum is not None and number < minimum:
@@ -459,9 +493,37 @@ def bootstrap_interval(
     return nearest_rank(estimates, tail), nearest_rank(estimates, 1.0 - tail)
 
 
+def full_evidence_sha256(*values: object) -> str:
+    """Return a digest for this evaluator's versioned local evidence encoding.
+
+    ``sort_keys=True`` and UTF-8 make this Python representation reproducible
+    for the validated teaching artifacts.  They do *not* implement a
+    cross-language canonical JSON standard, so another system must either
+    verify these exact bytes or agree on a separately specified canonicalizer.
+    The short fingerprint remains display-only; handoffs use the complete
+    digest together with :data:`EVIDENCE_DIGEST_FORMAT`. Non-finite values and
+    strings that cannot encode as UTF-8 are rejected as contract errors.
+    """
+    reject_non_utf8_scalar_strings(values, "evidence")
+    try:
+        payload = json.dumps(
+            values,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        encoded = payload.encode("utf-8")
+    except (TypeError, UnicodeEncodeError, ValueError) as exc:
+        raise ContractError(
+            "evidence payload must be finite JSON values serializable as UTF-8 by this evaluator"
+        ) from exc
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def fingerprint(*values: object) -> str:
-    payload = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    """Return a display-only prefix of :func:`full_evidence_sha256`."""
+    return full_evidence_sha256(*values)[:16]
 
 
 def metric_below(value: float | None, threshold: float) -> bool:
@@ -563,11 +625,15 @@ def evaluate(
     else:
         action = "PASS"
         reasons = ["all frozen teaching gates passed"]
+    evidence_sha256 = full_evidence_sha256(
+        EVALUATOR_VERSION, dataset, rubric, predictions, candidate_release
+    )
     return Decision(
         action=action,
         primary_reason=reasons[0],
         reasons=tuple(reasons),
-        evidence_fingerprint=fingerprint(dataset, rubric, predictions, candidate_release),
+        evidence_fingerprint=evidence_sha256[:16],
+        evidence_sha256=evidence_sha256,
         baseline_release=baseline_release,
         candidate_release=candidate_release,
         baseline_metrics=baseline_metrics,
@@ -582,6 +648,9 @@ def decision_to_dict(decision: Decision) -> dict[str, Any]:
         "primary_reason": decision.primary_reason,
         "reasons": list(decision.reasons),
         "evidence_fingerprint": decision.evidence_fingerprint,
+        "evidence_sha256": decision.evidence_sha256,
+        "evidence_digest_format": EVIDENCE_DIGEST_FORMAT,
+        "evaluator_version": EVALUATOR_VERSION,
         "baseline_release": decision.baseline_release,
         "candidate_release": decision.candidate_release,
         "baseline_metrics": decision.baseline_metrics,
@@ -591,6 +660,8 @@ def decision_to_dict(decision: Decision) -> dict[str, Any]:
             "Synthetic teaching cases are not a production performance estimate.",
             "Slice gaps from tiny samples are investigation signals, not fairness proof.",
             "Estimated cost is not a provider invoice.",
+            "Fixture observations are not trusted harness receipts or final environment state.",
+            "The local digest encoding is not cross-language canonical JSON or a signature.",
         ],
     }
 

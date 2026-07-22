@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 
-STATE_VERSION = 2
+STATE_VERSION = 3
 CHECKPOINT_FORMAT = "resilient-workflow-checkpoint"
+POLICY_REVISION = "teaching-policy-v1"
 BRANCHES = ("input", "policy")
 STAGES = {
     "start",
@@ -38,6 +39,10 @@ CheckFunction = Callable[[str, int], CheckResult]
 
 class WorkflowError(RuntimeError):
     """Raised when input, checkpoint, or recovery evidence is unsafe."""
+
+
+class DuplicateJsonKeyError(ValueError):
+    """Raised when a persisted JSON object tries to define one key twice."""
 
 
 class SimulatedCrash(RuntimeError):
@@ -66,6 +71,19 @@ def action_for(task_id: str) -> dict[str, str]:
     }
 
 
+def approval_fingerprint_for(state: Mapping[str, Any]) -> str:
+    """Bind a high-risk decision to its action and already verified evidence."""
+
+    return fingerprint(
+        {
+            "action": state["action"],
+            "checks": state["checks"],
+            "policy_revision": state["policy_revision"],
+            "risk": state["risk"],
+        }
+    )
+
+
 def new_state(task_id: str, risk: str) -> dict[str, Any]:
     if not TASK_ID_PATTERN.fullmatch(task_id):
         raise WorkflowError("task_id 只能使用 1–64 位 ASCII 字母、数字、点、下划线或连字符")
@@ -73,6 +91,7 @@ def new_state(task_id: str, risk: str) -> dict[str, Any]:
         raise WorkflowError("risk 必须是 low 或 high")
     return {
         "version": STATE_VERSION,
+        "policy_revision": POLICY_REVISION,
         "task_id": task_id,
         "risk": risk,
         "stage": "start",
@@ -115,6 +134,7 @@ def validate_state(state: Any) -> None:
         raise WorkflowError("state 必须是 JSON 对象")
     expected = {
         "version",
+        "policy_revision",
         "task_id",
         "risk",
         "stage",
@@ -130,6 +150,8 @@ def validate_state(state: Any) -> None:
 
     if state["version"] != STATE_VERSION:
         raise WorkflowError("检查点版本不受支持，拒绝猜测迁移")
+    if state["policy_revision"] != POLICY_REVISION:
+        raise WorkflowError("检查点 policy_revision 不受支持，拒绝猜测策略迁移")
     if not isinstance(state["task_id"], str) or not TASK_ID_PATTERN.fullmatch(
         state["task_id"]
     ):
@@ -149,44 +171,6 @@ def validate_state(state: Any) -> None:
     if state["action"] != action_for(state["task_id"]):
         raise WorkflowError("action 与 task_id 不一致，拒绝执行被篡改的动作")
 
-    approval = state["approval"]
-    if approval is not None:
-        if not isinstance(approval, dict):
-            raise WorkflowError("approval 必须是对象或 null")
-        _require_exact_keys(
-            approval,
-            {"decision", "action_fingerprint", "based_on_revision"},
-            "approval",
-        )
-        if approval["decision"] not in {"approved", "rejected"}:
-            raise WorkflowError("approval.decision 非法")
-        if approval["action_fingerprint"] != fingerprint(state["action"]):
-            raise WorkflowError("审批绑定的动作与当前动作不一致")
-        if isinstance(approval["based_on_revision"], bool) or not isinstance(
-            approval["based_on_revision"], int
-        ):
-            raise WorkflowError("approval.based_on_revision 必须是整数")
-        if not 0 <= approval["based_on_revision"] <= state["revision"]:
-            raise WorkflowError("approval.based_on_revision 超出状态历史")
-    if state["risk"] == "low" and approval is not None:
-        raise WorkflowError("低风险教学路径不应包含审批记录")
-    if state["stage"] == "awaiting_approval" and approval is not None:
-        raise WorkflowError("等待审批阶段不能预先包含审批决定")
-    if state["stage"] == "canceled":
-        if approval is None or approval["decision"] != "rejected":
-            raise WorkflowError("canceled 终态必须有 rejected 审批")
-    elif approval is not None and approval["decision"] == "rejected":
-        raise WorkflowError("rejected 审批只能对应 canceled 终态")
-    if state["risk"] == "high" and state["stage"] in {
-        "checks",
-        "evaluate",
-        "execute",
-        "done",
-        "failed",
-    }:
-        if approval is None or approval["decision"] != "approved":
-            raise WorkflowError("高风险路径越过了有效审批")
-
     if not isinstance(state["checks"], dict):
         raise WorkflowError("checks 必须是对象")
     if not set(state["checks"]).issubset(BRANCHES):
@@ -201,6 +185,50 @@ def validate_state(state: Any) -> None:
     for name, count in state["attempts"].items():
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
             raise WorkflowError(f"attempts.{name} 必须是正整数")
+
+    checks_complete = set(state["checks"]) == set(BRANCHES)
+    checks_passed = checks_complete and all(
+        result["ok"] is True for result in state["checks"].values()
+    )
+    approval = state["approval"]
+    if approval is not None:
+        if not isinstance(approval, dict):
+            raise WorkflowError("approval 必须是对象或 null")
+        _require_exact_keys(
+            approval,
+            {"decision", "approval_fingerprint", "based_on_revision"},
+            "approval",
+        )
+        if state["risk"] != "high":
+            raise WorkflowError("低风险教学路径不应包含审批记录")
+        if state["stage"] not in {"execute", "done", "canceled"}:
+            raise WorkflowError("审批决定只能出现在执行或终态检查点")
+        if approval["decision"] not in {"approved", "rejected"}:
+            raise WorkflowError("approval.decision 非法")
+        if not checks_passed:
+            raise WorkflowError("审批只能绑定完整且通过的只读检查结果")
+        if approval["approval_fingerprint"] != approval_fingerprint_for(state):
+            raise WorkflowError("审批绑定的动作、证据或策略版本与当前状态不一致")
+        if isinstance(approval["based_on_revision"], bool) or not isinstance(
+            approval["based_on_revision"], int
+        ):
+            raise WorkflowError("approval.based_on_revision 必须是整数")
+        if not 0 <= approval["based_on_revision"] <= state["revision"]:
+            raise WorkflowError("approval.based_on_revision 超出状态历史")
+
+    if state["stage"] == "awaiting_approval":
+        if state["risk"] != "high" or approval is not None:
+            raise WorkflowError("等待审批阶段必须是未决定的高风险路径")
+        if not checks_passed:
+            raise WorkflowError("等待审批前必须完成并通过只读检查")
+    if state["stage"] == "canceled":
+        if approval is None or approval["decision"] != "rejected":
+            raise WorkflowError("canceled 终态必须有 rejected 审批")
+    elif approval is not None and approval["decision"] == "rejected":
+        raise WorkflowError("rejected 审批只能对应 canceled 终态")
+    if state["risk"] == "high" and state["stage"] in {"execute", "done"}:
+        if approval is None or approval["decision"] != "approved":
+            raise WorkflowError("高风险动作越过了有效审批")
 
     receipt = state["receipt"]
     if receipt is not None:
@@ -229,10 +257,22 @@ def append_event(state: dict[str, Any], name: str) -> None:
     state["events"].append({"revision": state["revision"], "name": name})
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise DuplicateJsonKeyError(f"重复 JSON 键：{key}")
+        value[key] = item
+    return value
+
+
 def _read_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, DuplicateJsonKeyError) as exc:
         raise WorkflowError(f"无法读取{label}：{exc}") from exc
     if not isinstance(value, dict):
         raise WorkflowError(f"{label}顶层必须是 JSON 对象")
@@ -330,7 +370,20 @@ def run_parallel_checks(
         raise WorkflowError("max_attempts 必须是正整数")
     if max_attempts < 1:
         raise WorkflowError("max_attempts 必须是正整数")
-    starting = {name: int(state["attempts"].get(name, 0)) for name in BRANCHES}
+    raw_attempts = state.get("attempts")
+    if not isinstance(raw_attempts, Mapping):
+        raise WorkflowError("checks 输入必须包含 attempts 对象")
+    if not set(raw_attempts).issubset(BRANCHES):
+        raise WorkflowError("checks 输入包含未知 attempts 分支")
+    starting: dict[str, int] = {}
+    for name in BRANCHES:
+        if name not in raw_attempts:
+            starting[name] = 0
+            continue
+        count = raw_attempts[name]
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise WorkflowError(f"checks 输入 attempts.{name} 必须是正整数")
+        starting[name] = count
     with ThreadPoolExecutor(max_workers=len(BRANCHES)) as pool:
         futures = {
             name: pool.submit(_run_one_check, name, starting[name], check, max_attempts)
@@ -444,31 +497,13 @@ def run(
     state = load_state(checkpoint_path, task_id, risk)
     if state["stage"] in TERMINAL_STAGES:
         return state
+    if decision is not None and state["stage"] != "awaiting_approval":
+        raise WorkflowError("审批决定只能提交给已持久化的 awaiting_approval 检查点")
 
     if state["stage"] == "start":
         selected = route(state)
-        state["stage"] = "awaiting_approval" if selected == "approval" else "checks"
-        append_event(state, f"routed:{selected}")
-        save_state(checkpoint_path, state)
-
-    if state["stage"] == "awaiting_approval":
-        if decision is None:
-            if not state["events"] or state["events"][-1]["name"] != "paused_for_approval":
-                append_event(state, "paused_for_approval")
-                save_state(checkpoint_path, state)
-            return state
-        state["approval"] = {
-            "decision": "approved" if decision == "approve" else "rejected",
-            "action_fingerprint": fingerprint(state["action"]),
-            "based_on_revision": state["revision"],
-        }
-        if decision == "reject":
-            state["stage"] = "canceled"
-            append_event(state, "approval:rejected")
-            save_state(checkpoint_path, state)
-            return state
         state["stage"] = "checks"
-        append_event(state, "approval:approved")
+        append_event(state, f"routed:{selected}")
         save_state(checkpoint_path, state)
 
     if state["stage"] == "checks":
@@ -486,13 +521,31 @@ def run(
             save_state(checkpoint_path, state)
             return state
         if state["risk"] == "high":
-            approval = state["approval"]
-            if approval is None or approval["decision"] != "approved":
-                raise WorkflowError("高风险动作缺少有效批准")
-            if approval["action_fingerprint"] != fingerprint(state["action"]):
-                raise WorkflowError("动作在批准后发生变化，原批准已失效")
+            state["stage"] = "awaiting_approval"
+            append_event(state, "approval:requested_after_checks")
+        else:
+            state["stage"] = "execute"
+            append_event(state, "evaluation:passed")
+        save_state(checkpoint_path, state)
+
+    if state["stage"] == "awaiting_approval":
+        if decision is None:
+            if not state["events"] or state["events"][-1]["name"] != "paused_for_approval":
+                append_event(state, "paused_for_approval")
+                save_state(checkpoint_path, state)
+            return state
+        state["approval"] = {
+            "decision": "approved" if decision == "approve" else "rejected",
+            "approval_fingerprint": approval_fingerprint_for(state),
+            "based_on_revision": state["revision"],
+        }
+        if decision == "reject":
+            state["stage"] = "canceled"
+            append_event(state, "approval:rejected")
+            save_state(checkpoint_path, state)
+            return state
         state["stage"] = "execute"
-        append_event(state, "evaluation:passed")
+        append_event(state, "approval:approved")
         save_state(checkpoint_path, state)
 
     if state["stage"] == "execute":

@@ -168,10 +168,10 @@ class FlowTests(ProjectTestCase):
             list(range(1, len(state["events"]) + 1)),
         )
 
-    def test_run_id_is_deterministic_for_frozen_inputs(self) -> None:
+    def test_operation_id_is_deterministic_for_frozen_inputs(self) -> None:
         first = project.run_flow("Agent 可靠性", self.catalog)
         second = project.run_flow("Agent 可靠性", self.catalog)
-        self.assertEqual(first["run_id"], second["run_id"])
+        self.assertEqual(first["operation_id"], second["operation_id"])
 
     def test_state_unknown_field_is_rejected(self) -> None:
         state = project.run_flow("Agent 可靠性", self.catalog)
@@ -185,22 +185,28 @@ class FlowTests(ProjectTestCase):
         with self.assertRaises(project.FlowError):
             project.validate_state(state)
 
+    def test_state_rejects_unknown_research_source_against_catalog(self) -> None:
+        state = project.run_flow("Agent 可靠性", self.catalog)
+        state["result"]["research"]["claims"][0]["source_ids"] = ["missing"]
+        with self.assertRaises(project.FlowError):
+            project.validate_state(state, self.catalog)
+
 
 class PublicationTests(ProjectTestCase):
     def test_publish_writes_validated_draft(self) -> None:
         state = project.run_flow("Agent 可靠性", self.catalog)
         output = self.root / "brief.md"
-        project.publish_report(output, state)
+        project.publish_report(output, state, self.catalog)
         self.assertEqual(state["stage"], "published")
         self.assertEqual(output.read_text(encoding="utf-8"), state["result"]["draft"]["markdown"])
 
     def test_publish_is_idempotent_for_same_content(self) -> None:
         first = project.run_flow("Agent 可靠性", self.catalog)
         output = self.root / "brief.md"
-        project.publish_report(output, first)
+        project.publish_report(output, first, self.catalog)
         original = output.read_text(encoding="utf-8")
         second = project.run_flow("Agent 可靠性", self.catalog)
-        project.publish_report(output, second)
+        project.publish_report(output, second, self.catalog)
         self.assertTrue(second["publication"]["recovered"])
         self.assertEqual(output.read_text(encoding="utf-8"), original)
 
@@ -209,18 +215,41 @@ class PublicationTests(ProjectTestCase):
         output.write_text("other", encoding="utf-8")
         state = project.run_flow("Agent 可靠性", self.catalog)
         with self.assertRaises(project.FlowError):
-            project.publish_report(output, state)
+            project.publish_report(output, state, self.catalog)
 
     def test_human_review_cannot_publish(self) -> None:
         state = project.run_flow("Agent 可靠性", self.catalog, force_failure=True)
         with self.assertRaises(project.FlowError):
-            project.publish_report(self.root / "brief.md", state)
+            project.publish_report(self.root / "brief.md", state, self.catalog)
 
     def test_temporary_file_is_not_left_after_publish(self) -> None:
         output = self.root / "brief.md"
         state = project.run_flow("Agent 可靠性", self.catalog)
-        project.publish_report(output, state)
+        project.publish_report(output, state, self.catalog)
         self.assertFalse((self.root / "brief.md.tmp").exists())
+
+    def test_publish_rejects_catalog_changed_after_review(self) -> None:
+        state = project.run_flow("Agent 可靠性", self.catalog)
+        changed_catalog = copy.deepcopy(self.catalog)
+        changed_catalog["sources"][0]["title"] = "更新后的来源标题"
+        output = self.root / "brief.md"
+
+        with self.assertRaisesRegex(project.FlowError, "来源目录版本不一致"):
+            project.publish_report(output, state, changed_catalog)
+
+        self.assertFalse(output.exists())
+
+    def test_publish_rechecks_reviewer_before_effect(self) -> None:
+        state = project.run_flow("Agent 可靠性", self.catalog)
+        state["result"]["draft"]["markdown"] = state["result"]["draft"][
+            "markdown"
+        ].replace("[source-1]", "", 1)
+        output = self.root / "brief.md"
+
+        with self.assertRaisesRegex(project.FlowError, "可信 reviewer"):
+            project.publish_report(output, state, self.catalog)
+
+        self.assertFalse(output.exists())
 
 
 class CliTests(ProjectTestCase):

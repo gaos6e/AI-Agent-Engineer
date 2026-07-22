@@ -1,0 +1,194 @@
+{
+  "cases": [
+    {
+      "name": "valid-v1-contract",
+      "expectedValid": true,
+      "expectedErrors": [],
+      "agentCard": {
+        "name": "Research Brief Agent",
+        "description": "Produces source-bounded research briefs.",
+        "version": "2.3.1",
+        "supportedInterfaces": [
+          {
+            "url": "https://agents.example.com/research/a2a",
+            "protocolBinding": "HTTP+JSON",
+            "protocolVersion": "1.0",
+            "tenant": "research-workspace"
+          }
+        ],
+        "capabilities": {
+          "streaming": true,
+          "pushNotifications": false
+        },
+        "defaultInputModes": [
+          "text/plain",
+          "application/json"
+        ],
+        "defaultOutputModes": [
+          "application/json"
+        ],
+        "skills": [
+          {
+            "id": "research-brief",
+            "name": "Research brief",
+            "description": "Builds a cited brief from an approved source set.",
+            "tags": [
+              "research",
+              "citations"
+            ]
+          }
+        ]
+      },
+      "taskSnapshots": [
+        {
+          "id": "task-001",
+          "contextId": "context-001",
+          "status": {
+            "state": "TASK_STATE_WORKING",
+            "timestamp": "2026-07-21T08:00:00.000Z"
+          }
+        },
+        {
+          "id": "task-001",
+          "contextId": "context-001",
+          "status": {
+            "state": "TASK_STATE_COMPLETED",
+            "timestamp": "2026-07-21T08:00:03.000Z"
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-001",
+              "name": "brief",
+              "parts": [
+                {
+                  "data": {
+                    "claim": "A2A contract fixture completed",
+                    "sources": 2
+                  },
+                  "mediaType": "application/json"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reject-v03-shape",
+      "expectedValid": false,
+      "expectedErrors": [
+        "supportedInterfaces",
+        "TASK_STATE_*",
+        "v0.3 discriminator"
+      ],
+      "agentCard": {
+        "name": "Legacy Agent",
+        "description": "Uses a v0.3-style card.",
+        "version": "1.4.0",
+        "url": "https://agents.example.com/legacy",
+        "protocolVersion": "1.0",
+        "preferredTransport": "JSONRPC",
+        "capabilities": {},
+        "defaultInputModes": [
+          "text/plain"
+        ],
+        "defaultOutputModes": [
+          "text/plain"
+        ],
+        "skills": [
+          {
+            "id": "legacy",
+            "name": "Legacy",
+            "description": "Legacy fixture skill.",
+            "tags": [
+              "legacy"
+            ]
+          }
+        ]
+      },
+      "taskSnapshots": [
+        {
+          "id": "task-legacy",
+          "contextId": "context-legacy",
+          "status": {
+            "state": "completed"
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-legacy",
+              "parts": [
+                {
+                  "kind": "text",
+                  "text": "legacy"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reject-terminal-regression",
+      "expectedValid": false,
+      "expectedErrors": [
+        "cannot transition away from terminal state"
+      ],
+      "taskSnapshots": [
+        {
+          "id": "task-terminal",
+          "contextId": "context-terminal",
+          "status": {
+            "state": "TASK_STATE_COMPLETED"
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-terminal",
+              "parts": [
+                {
+                  "text": "done",
+                  "mediaType": "text/plain"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "task-terminal",
+          "contextId": "context-terminal",
+          "status": {
+            "state": "TASK_STATE_WORKING"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reject-ambiguous-part",
+      "expectedValid": false,
+      "expectedErrors": [
+        "exactly one of text/raw/url/data"
+      ],
+      "taskSnapshots": [
+        {
+          "id": "task-part",
+          "contextId": "context-part",
+          "status": {
+            "state": "TASK_STATE_COMPLETED"
+          },
+          "artifacts": [
+            {
+              "artifactId": "artifact-part",
+              "parts": [
+                {
+                  "text": "ambiguous",
+                  "data": {
+                    "also": "present"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

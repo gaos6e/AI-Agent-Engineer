@@ -5,7 +5,12 @@ aliases:
   - 自定义 RAG 代理
 source: https://docs.langchain.com/oss/python/langgraph/agentic-rag
 source_md: https://docs.langchain.com/oss/python/langgraph/agentic-rag.md
+source_url: https://docs.langchain.com/oss/python/langgraph/agentic-rag
 retrieved: 2026-05-07
+source_checked: 2026-07-21
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
 tags:
   - langchain
   - python
@@ -14,6 +19,9 @@ license: MIT
 ---
 
 # 自定义 RAG 代理
+
+> [!warning] 冻结参考：图代码只用于理解拓扑
+> 这是 2026-05-07 的来源快照，示例会联网下载资料、要求 provider 凭据并依赖当时的 LangChain/LangGraph 集成 API。它不能证明当前图定义、检索质量、引用可追溯性、租户过滤或恢复策略正确。先用 [[LangChain/00-初学者路线/04-Retrieval与RAG组件|当前 RAG 组件课程]] 建立检索合同；只有确实需要显式分支/状态时，再按 [[LangChain/00-初学者路线/06-LangGraph边界审批恢复与评测|LangGraph 边界]] 和本页 `source` 的当前版本重建。
 
 ## 概述
 
@@ -457,7 +465,7 @@ from IPython.display import Image, display
 
 display(Image(graph.get_graph().draw_mermaid_png()))
 ```
-<img src="LangChain/attachments/oss/images/agentic-rag-output.png" alt="SQL agent graph" style="height: 800px;" width="1245" height="1395" data-path="oss/images/agentic-rag-output.png" data-source="https://docs.langchain.com/oss/images/agentic-rag-output.png" />
+<img src="LangChain/attachments/oss/images/agentic-rag-output.png" alt="Agentic RAG output" style="height: 800px;" width="1245" height="1395" data-path="oss/images/agentic-rag-output.png" data-source="https://docs.langchain.com/oss/images/agentic-rag-output.png" />
 
 ## 8. 运行代理 RAG
 

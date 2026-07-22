@@ -21,7 +21,7 @@ from typing import Any, Mapping, Sequence
 import unicodedata
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_FIXTURE_BYTES = 2 * 1024 * 1024
 MAX_CANDIDATES = 10_000
 ALLOWED_STATUSES = {"draft", "published", "archived"}
@@ -29,6 +29,8 @@ FAILURE_MODES = {"none", "timeout", "error", "empty", "malformed"}
 DEFAULT_FIXTURE = Path(__file__).with_name("reranker-fixture.json")
 SEGMENT_PATTERN = re.compile(r"[a-z0-9]+|[\u3400-\u4dbf\u4e00-\u9fff]+")
 MODEL_REVISION = "transparent-rule-r1"
+AUDIT_VISIBILITY = "protected_audit"
+EVIDENCE_SCHEMA_VERSION = "reranker-evidence-v1"
 
 
 class RerankerError(ValueError):
@@ -53,6 +55,7 @@ class Query:
     text: str
     tenant_id: str
     subject_groups: tuple[str, ...]
+    authorization_revision: str
     as_of: date
 
 
@@ -123,6 +126,23 @@ def _positive_integer(name: str, value: Any) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise RerankerError(f"{name} 必须是正整数")
     return value
+
+
+def _finite_float(
+    value: Any,
+    message: str,
+    *,
+    error_type: type[RerankerError] = RerankerError,
+) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise error_type(message)
+    try:
+        parsed = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise error_type(message) from exc
+    if not isfinite(parsed):
+        raise error_type(message)
+    return parsed
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -200,7 +220,14 @@ def _parse_query(value: Any) -> Query:
         raise RerankerError("query 必须是 object")
     _require_fields(
         value,
-        {"id", "text", "tenant_id", "subject_groups", "as_of"},
+        {
+            "id",
+            "text",
+            "tenant_id",
+            "subject_groups",
+            "authorization_revision",
+            "as_of",
+        },
         "query",
     )
     as_of = _parse_date("query.as_of", value["as_of"])
@@ -214,6 +241,9 @@ def _parse_query(value: Any) -> Query:
             value["subject_groups"],
             "query.subject_groups",
             allow_empty=True,
+        ),
+        authorization_revision=_clean_token(
+            "query.authorization_revision", value["authorization_revision"]
         ),
         as_of=as_of,
     )
@@ -280,13 +310,9 @@ def _parse_candidate(value: Any, index: int) -> Candidate:
         raise RerankerError(f"{label}.effective_from 不得为空")
     if effective_to is not None and effective_to <= effective_from:
         raise RerankerError(f"{label} 的有效期必须满足 from < to")
-    first_score = value["first_score"]
-    if (
-        not isinstance(first_score, (int, float))
-        or isinstance(first_score, bool)
-        or not isfinite(float(first_score))
-    ):
-        raise RerankerError(f"{label}.first_score 必须是有限数值")
+    first_score = _finite_float(
+        value["first_score"], f"{label}.first_score 必须是有限数值"
+    )
     return Candidate(
         candidate_id=_clean_token(f"{label}.id", value["id"]),
         canonical_document_id=_clean_token(
@@ -303,7 +329,7 @@ def _parse_candidate(value: Any, index: int) -> Candidate:
             f"{label}.source_revision", value["source_revision"]
         ),
         first_rank=_positive_integer(f"{label}.first_rank", value["first_rank"]),
-        first_score=float(first_score),
+        first_score=first_score,
     )
 
 
@@ -401,41 +427,41 @@ def load_fixture(path: Path) -> Fixture:
 
 
 def analyze(text: str) -> tuple[str, ...]:
-    normalised = unicodedata.normalize("NFKC", text).casefold()
-    tokens: list[str] = []
-    for match in SEGMENT_PATTERN.finditer(normalised):
-        segment = match.group(0)
-        if segment.isascii():
-            tokens.append(segment)
-        elif len(segment) == 1:
-            tokens.append(segment)
-        else:
-            tokens.extend(
-                segment[index : index + 2]
-                for index in range(len(segment) - 1)
+    normalised = unicodedata.normalize("NFKC", text).casefold()  # 统一全角/兼容字符并忽略大小写，减少表面写法差异。
+    tokens: list[str] = []  # 保存透明规则要比较的词项或中文二字符片段。
+    for match in SEGMENT_PATTERN.finditer(normalised):  # 依次读取 ASCII 词或连续中文片段。
+        segment = match.group(0)  # 取出当前正则匹配到的原始片段。
+        if segment.isascii():  # 英文、数字等 ASCII 片段可作为一个完整词项。
+            tokens.append(segment)  # 保留完整 ASCII token，方便精确词面重叠。
+        elif len(segment) == 1:  # 单个汉字无法再切出长度为 2 的 n-gram。
+            tokens.append(segment)  # 直接把它作为一个可检索词项。
+        else:  # 连续中文片段使用相邻二字符来获得最小的词序上下文。
+            tokens.extend(  # 把每个二字符片段追加进 token 列表。
+                segment[index : index + 2]  # 取 index 与下一字符组成的滑动窗口。
+                for index in range(len(segment) - 1)  # 最后一个起点是倒数第二个字符。
             )
-    return tuple(tokens)
+    return tuple(tokens)  # 返回不可变 token 序列，确保相同输入的评分可重放。
 
 
 def transparent_rule_score(query: Query, candidate: Candidate) -> ModelResult:
-    query_terms = set(analyze(query.text))
-    title_terms = set(analyze(candidate.title))
-    body_terms = set(analyze(candidate.text))
-    denominator = max(1, len(query_terms))
-    title_coverage = len(query_terms.intersection(title_terms)) / denominator
-    body_coverage = len(query_terms.intersection(body_terms)) / denominator
-    exact_query = unicodedata.normalize("NFKC", query.text).casefold()
-    combined = unicodedata.normalize(
-        "NFKC", f"{candidate.title} {candidate.text}"
-    ).casefold()
-    exact_phrase = 1.0 if exact_query in combined else 0.0
-    score = 2.0 * title_coverage + body_coverage + exact_phrase
-    features = (
-        ("body_coverage", round(body_coverage, 9)),
-        ("exact_phrase", exact_phrase),
-        ("title_coverage", round(title_coverage, 9)),
+    query_terms = set(analyze(query.text))  # 把 query 变成去重后的透明词项集合。
+    title_terms = set(analyze(candidate.title))  # 单独分析标题，因为标题匹配在本教学规则中权重更高。
+    body_terms = set(analyze(candidate.text))  # 单独分析正文，避免和标题特征混在一起。
+    denominator = max(1, len(query_terms))  # 空 query 也不会出现除以 0；上游已负责更严格的文本校验。
+    title_coverage = len(query_terms.intersection(title_terms)) / denominator  # 计算 query 词项有多少出现在标题中。
+    body_coverage = len(query_terms.intersection(body_terms)) / denominator  # 计算 query 词项有多少出现在正文中。
+    exact_query = unicodedata.normalize("NFKC", query.text).casefold()  # 为短语匹配准备同样规范化的 query。
+    combined = unicodedata.normalize(  # 把标题和正文合成一个只用于短语判断的字符串。
+        "NFKC", f"{candidate.title} {candidate.text}"  # 用空格分隔，避免两个字段首尾无意粘连。
+    ).casefold()  # 再忽略大小写，使比较与上面的 token 化一致。
+    exact_phrase = 1.0 if exact_query in combined else 0.0  # 完整 query 出现时给予一个可解释的 bonus。
+    score = 2.0 * title_coverage + body_coverage + exact_phrase  # 这是教学权重，不是可迁移的模型分数。
+    features = (  # 将每个组成特征随结果输出，便于审计为何候选升降。
+        ("body_coverage", round(body_coverage, 9)),  # 记录正文词项覆盖率并固定展示精度。
+        ("exact_phrase", exact_phrase),  # 记录是否命中了完整 query 短语。
+        ("title_coverage", round(title_coverage, 9)),  # 记录标题词项覆盖率。
     )
-    return ModelResult(candidate.candidate_id, score, features)
+    return ModelResult(candidate.candidate_id, score, features)  # 返回 ID、总分与可审计特征，而不修改候选对象。
 
 
 def simulate_provider(
@@ -444,18 +470,18 @@ def simulate_provider(
     *,
     failure_mode: str,
 ) -> list[ModelResult]:
-    if failure_mode not in FAILURE_MODES:
-        raise RerankerError(f"未知 failure_mode：{failure_mode}")
-    if failure_mode == "timeout":
-        raise RerankerTimeout("simulated_timeout")
-    if failure_mode == "error":
-        raise RerankerProviderError("simulated_provider_error")
-    if failure_mode == "empty":
-        return []
-    results = [transparent_rule_score(query, candidate) for candidate in candidates]
-    if failure_mode == "malformed" and results:
-        return [results[0], results[0]]
-    return results
+    if failure_mode not in FAILURE_MODES:  # CLI 以外的调用也必须遵守允许的故障枚举。
+        raise RerankerError(f"未知 failure_mode：{failure_mode}")  # 不把未知字符串当成正常 provider 状态。
+    if failure_mode == "timeout":  # 模拟服务在截止时间内没有返回。
+        raise RerankerTimeout("simulated_timeout")  # 外层捕获后切换到安全 fallback。
+    if failure_mode == "error":  # 模拟可识别的 provider/server 失败。
+        raise RerankerProviderError("simulated_provider_error")  # 外层同样应给出受控报告。
+    if failure_mode == "empty":  # 模拟模型返回了语法合法但没有任何候选的响应。
+        return []  # 由输出契约层判为无效，不能解释为“都不相关”。
+    results = [transparent_rule_score(query, candidate) for candidate in candidates]  # 正常路径为窗口中每个候选生成一个透明结果。
+    if failure_mode == "malformed" and results:  # 构造重复 ID 的畸形输出，测试 exact-set 校验。
+        return [results[0], results[0]]  # 故意漏掉其余候选，验证 fallback 不信任半截结果。
+    return results  # 只有完整正常的列表才会进入后续模型输出校验。
 
 
 def validate_model_output(
@@ -473,22 +499,21 @@ def validate_model_output(
             raise OutputContractError(f"模型返回未知 candidate：{item.candidate_id}")
         if item.candidate_id in parsed:
             raise OutputContractError(f"模型重复返回 candidate：{item.candidate_id}")
-        if (
-            not isinstance(item.score, (int, float))
-            or isinstance(item.score, bool)
-            or not isfinite(float(item.score))
-        ):
-            raise OutputContractError(f"模型分数非有限：{item.candidate_id}")
+        _finite_float(
+            item.score,
+            f"模型分数非有限：{item.candidate_id}",
+            error_type=OutputContractError,
+        )
         feature_names: set[str] = set()
         for name, value in item.features:
             _clean_token("feature.name", name)
-            if (
-                name in feature_names
-                or not isinstance(value, (int, float))
-                or isinstance(value, bool)
-                or not isfinite(float(value))
-            ):
+            if name in feature_names:
                 raise OutputContractError(f"feature 非法：{item.candidate_id}/{name}")
+            _finite_float(
+                value,
+                f"feature 非法：{item.candidate_id}/{name}",
+                error_type=OutputContractError,
+            )
             feature_names.add(name)
         parsed[item.candidate_id] = item
     missing = expected.difference(parsed)
@@ -550,13 +575,7 @@ def select_with_canonical_cap(
     return selected
 
 
-def _fixture_signature(fixture: Fixture) -> str:
-    payload = {
-        "query_id": fixture.query.query_id,
-        "candidate_ids": [candidate.candidate_id for candidate in fixture.candidates],
-        "qrels": fixture.qrels_map(),
-        "must_not_return": list(fixture.must_not_return),
-    }
+def _canonical_sha256(payload: Mapping[str, Any]) -> str:
     canonical = json.dumps(
         payload,
         ensure_ascii=False,
@@ -565,6 +584,77 @@ def _fixture_signature(fixture: Fixture) -> str:
         separators=(",", ":"),
     )
     return sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _fixture_payload(fixture: Fixture) -> dict[str, Any]:
+    """Return every normalized field that can affect scoring or authorization."""
+
+    candidates = sorted(
+        fixture.candidates,
+        key=lambda candidate: (candidate.first_rank, candidate.candidate_id),
+    )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "query": {
+            "id": fixture.query.query_id,
+            "text": fixture.query.text,
+            "tenant_id": fixture.query.tenant_id,
+            "subject_groups": list(fixture.query.subject_groups),
+            "authorization_revision": fixture.query.authorization_revision,
+            "as_of": fixture.query.as_of.isoformat(),
+        },
+        "settings": {
+            "candidate_window": fixture.settings.candidate_window,
+            "output_top_n": fixture.settings.output_top_n,
+            "max_per_canonical": fixture.settings.max_per_canonical,
+        },
+        "candidates": [
+            {
+                "id": candidate.candidate_id,
+                "canonical_document_id": candidate.canonical_document_id,
+                "title": candidate.title,
+                "text": candidate.text,
+                "tenant_id": candidate.tenant_id,
+                "acl": list(candidate.acl),
+                "status": candidate.status,
+                "effective_from": candidate.effective_from.isoformat(),
+                "effective_to": (
+                    candidate.effective_to.isoformat()
+                    if candidate.effective_to is not None
+                    else None
+                ),
+                "source_revision": candidate.source_revision,
+                "first_rank": candidate.first_rank,
+                "first_score": candidate.first_score,
+            }
+            for candidate in candidates
+        ],
+        "qrels": fixture.qrels_map(),
+        "must_not_return": list(fixture.must_not_return),
+    }
+
+
+def _fixture_signature(fixture: Fixture) -> str:
+    return _canonical_sha256(_fixture_payload(fixture))
+
+
+def _evidence_signature(
+    fixture: Fixture,
+    *,
+    execution: Mapping[str, Any],
+    decision: Mapping[str, Any],
+) -> str:
+    return _canonical_sha256(
+        {
+            "envelope": {
+                "visibility": AUDIT_VISIBILITY,
+                "evidence_schema_version": EVIDENCE_SCHEMA_VERSION,
+            },
+            "normalized_input": _fixture_payload(fixture),
+            "execution": dict(execution),
+            "decision": dict(decision),
+        }
+    )
 
 
 def _serialise_ranking(
@@ -598,6 +688,9 @@ def run_pipeline(
     output_top_n: int | None = None,
     max_per_canonical: int | None = None,
 ) -> dict[str, Any]:
+    _clean_token(
+        "query.authorization_revision", fixture.query.authorization_revision
+    )
     window_size = _positive_integer(
         "candidate_window",
         (
@@ -686,42 +779,60 @@ def run_pipeline(
     security_violations = sorted(
         forbidden.intersection(window_ids).union(forbidden.intersection(final_output))
     )
-    return {
-        "notice": (
-            "transparent rule reranker for orchestration teaching; "
-            "not a cross-encoder or LLM quality claim"
+    execution = {
+        "candidate_window": window_size,
+        "output_top_n": top_n,
+        "max_per_canonical": canonical_cap,
+        "failure_mode": failure_mode,
+        "model_revision": MODEL_REVISION,
+    }
+    first_stage = {
+        "ranking": _serialise_ranking(first_output, candidate_map, None),
+        "metrics": ranking_metrics(first_output, qrels, top_n=top_n),
+    }
+    final = {
+        "ranking": _serialise_ranking(
+            final_output,
+            candidate_map,
+            model_results if applied else None,
         ),
-        "fixture": {
-            "schema_version": SCHEMA_VERSION,
-            "signature": _fixture_signature(fixture),
-            "candidate_count": len(fixture.candidates),
-            "eligible_count": len(eligible),
-        },
-        "settings": {
-            "candidate_window": window_size,
-            "output_top_n": top_n,
-            "max_per_canonical": canonical_cap,
-            "failure_mode": failure_mode,
-            "model_revision": MODEL_REVISION,
-        },
+        "metrics": ranking_metrics(final_output, qrels, top_n=top_n),
+    }
+    decision = {
         "candidate_recall_at_window": round(candidate_recall, 6),
         "filtered_out": filtered_out,
         "window_candidate_ids": window_ids,
         "rerank_applied": applied,
         "fallback_reason": fallback_reason,
-        "first_stage": {
-            "ranking": _serialise_ranking(first_output, candidate_map, None),
-            "metrics": ranking_metrics(first_output, qrels, top_n=top_n),
-        },
-        "final": {
-            "ranking": _serialise_ranking(
-                final_output,
-                candidate_map,
-                model_results if applied else None,
-            ),
-            "metrics": ranking_metrics(final_output, qrels, top_n=top_n),
-        },
+        "first_stage": first_stage,
+        "final": final,
         "security_violations": security_violations,
+    }
+    fixture_sha256 = _fixture_signature(fixture)
+    return {
+        "visibility": AUDIT_VISIBILITY,
+        "notice": (
+            "protected teaching/audit envelope, not a public response; "
+            "transparent rule reranker is not a cross-encoder or LLM quality claim"
+        ),
+        "evidence": {
+            "schema_version": EVIDENCE_SCHEMA_VERSION,
+            "authorization_revision": fixture.query.authorization_revision,
+            "fixture_sha256": fixture_sha256,
+            "evidence_sha256": _evidence_signature(
+                fixture,
+                execution=execution,
+                decision=decision,
+            ),
+        },
+        "fixture": {
+            "schema_version": SCHEMA_VERSION,
+            "signature": fixture_sha256,
+            "candidate_count": len(fixture.candidates),
+            "eligible_count": len(eligible),
+        },
+        "settings": execution,
+        **decision,
     }
 
 

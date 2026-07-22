@@ -289,6 +289,7 @@ class ContractAndCliTests(unittest.TestCase):
         self.assertIn("synthetic", notes)
         self.assertIn("no media file", notes)
         self.assertIn("no network", notes)
+        self.assertIn("trusted policy record", notes)
 
     def test_45_cli_ready_returns_zero(self) -> None:
         path = self.write_manifest(self.manifest())
@@ -327,11 +328,23 @@ class ContractAndCliTests(unittest.TestCase):
         self.assertEqual(json.loads(written), json.loads(stdout))
         self.assertEqual(stderr, "")
 
-    def test_49_production_code_has_no_assert_statement(self) -> None:
+    def test_49_cli_output_error_returns_two_without_partial_report(self) -> None:
+        manifest_path = self.write_manifest(self.manifest())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            occupied_path = Path(temp_dir) / "occupied-parent"
+            occupied_path.write_text("not a directory", encoding="utf-8")
+            code, stdout, stderr = self.run_main(
+                str(manifest_path), "--output", str(occupied_path / "plan.json")
+            )
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("output error", stderr)
+
+    def test_50_production_code_has_no_assert_statement(self) -> None:
         tree = ast.parse(Path(app.__file__).read_text(encoding="utf-8"))
         self.assertFalse(any(isinstance(node, ast.Assert) for node in ast.walk(tree)))
 
-    def test_50_report_is_json_serializable(self) -> None:
+    def test_51_report_is_json_serializable(self) -> None:
         report = app.MultimodalRouter(self.manifest()).build_plan()
         self.assertEqual(json.loads(json.dumps(report)), report)
 

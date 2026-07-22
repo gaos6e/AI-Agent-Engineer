@@ -78,6 +78,7 @@ class ContractAndMathTests(unittest.TestCase):
             ((1.0,), (1.0, 2.0), "cosine"),
             ((0.0, 0.0), (1.0, 0.0), "cosine"),
             ((math.inf,), (1.0,), "dot"),
+            ((10**400,), (1.0,), "dot"),
             ((1.0,), (1.0,), "unknown"),
         ]
         for left, right, metric in calls:
@@ -100,6 +101,17 @@ class ContractAndMathTests(unittest.TestCase):
             lab.ranking_metrics([], {}, top_k=3),
             {"recall": None, "mrr": None, "ndcg": None},
         )
+
+    def test_ranking_metrics_reject_duplicate_ids_and_invalid_qrels(self) -> None:
+        with self.assertRaisesRegex(lab.SemanticSearchError, "重复"):
+            lab.ranking_metrics(
+                ["d1", "d1"], {"d1": 3, "d2": 2}, top_k=2
+            )
+        for qrels in ({"d1": True}, {"d1": 0}, {"d1": 4}):
+            with self.subTest(qrels=qrels), self.assertRaisesRegex(
+                lab.SemanticSearchError, "1..3"
+            ):
+                lab.ranking_metrics(["d1"], qrels, top_k=1)
 
     def test_rrf_uses_rank_not_raw_channel_score(self) -> None:
         first = [lab.ScoredHit("a", 1000.0), lab.ScoredHit("b", 1.0)]
@@ -175,6 +187,7 @@ class FixtureValidationTests(TemporaryFixtureMixin, unittest.TestCase):
         vectors = [
             [1, 0],
             [True, 0, 0, 0, 0, 0, 0],
+            [10**400, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 0, 0, 0],
             [2, 0, 0, 0, 0, 0, 0],
         ]
@@ -342,6 +355,10 @@ class EvaluationAndCliTests(unittest.TestCase):
         report = lab.evaluate(
             self.fixture, top_k=3, rank_window=5, rrf_constant=60
         )
+        self.assertEqual(
+            report["report_schema_version"], "semantic-search-offline-audit-v1"
+        )
+        self.assertEqual(report["visibility"], "protected_audit")
         self.assertEqual(report["fixture"]["document_count"], 10)
         self.assertEqual(report["fixture"]["query_count"], 7)
         self.assertEqual(report["security_violations"], [])
@@ -350,6 +367,43 @@ class EvaluationAndCliTests(unittest.TestCase):
             report["macro_metrics"]["hybrid_rrf"]["ndcg"],
             report["macro_metrics"]["dense"]["ndcg"],
         )
+
+    def test_security_gate_checks_entire_candidate_window(self) -> None:
+        original = lab.rank_dense
+
+        def inject_forbidden_candidate(
+            query: lab.Query,
+            documents: tuple[lab.Document, ...],
+            contract: lab.RepresentationContract,
+            *,
+            limit: int,
+        ) -> list[lab.ScoredHit]:
+            ranking = original(query, documents, contract, limit=limit)
+            if query.query_id != "q-double-charge":
+                return ranking
+            return (
+                ranking[:1]
+                + [lab.ScoredHit("d-09-beta-private", -1.0)]
+                + ranking[1 : max(1, limit - 1)]
+            )
+
+        with mock.patch.object(
+            lab, "rank_dense", side_effect=inject_forbidden_candidate
+        ):
+            report = lab.evaluate(
+                self.fixture, top_k=1, rank_window=5, rrf_constant=60
+            )
+
+        violation = next(
+            item
+            for item in report["security_violations"]
+            if item["query_id"] == "q-double-charge"
+            and item["channel"] == "dense"
+            and item["document_id"] == "d-09-beta-private"
+        )
+        self.assertEqual(violation["rank"], 2)
+        self.assertEqual(violation["stage"], "candidate_window")
+        self.assertEqual(violation["reason"], "must_not_return")
 
     def test_report_excludes_no_answer_query_from_macro_and_returns_empty(self) -> None:
         report = lab.evaluate(
@@ -405,27 +459,34 @@ class EvaluationAndCliTests(unittest.TestCase):
         self.assertIn("不是训练过的 Embedding", report["notice"])
 
     def test_cli_returns_controlled_error_for_invalid_fixture(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "bad.json"
-            path.write_text("{}\n", encoding="utf-8")
-            process = subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    str(SCRIPT),
-                    "--fixture",
-                    str(path),
-                ],
-                cwd=HERE,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-        self.assertEqual(process.returncode, 2)
-        self.assertEqual(process.stdout, b"")
-        self.assertIn(b"error:", process.stderr)
-        self.assertNotIn(b"Traceback", process.stderr)
+        overflow = raw_fixture()
+        overflow["documents"][0]["vector"] = [10**400, 0, 0, 0, 0, 0, 0]
+        cases = {
+            "missing-fields": "{}\n",
+            "overflowing-vector": json.dumps(overflow, ensure_ascii=False),
+        }
+        for label, content in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "bad.json"
+                path.write_text(content, encoding="utf-8")
+                process = subprocess.run(
+                    [
+                        sys.executable,
+                        "-B",
+                        str(SCRIPT),
+                        "--fixture",
+                        str(path),
+                    ],
+                    cwd=HERE,
+                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                self.assertEqual(process.returncode, 2)
+                self.assertEqual(process.stdout, b"")
+                self.assertIn(b"error:", process.stderr)
+                self.assertNotIn(b"Traceback", process.stderr)
 
 
 if __name__ == "__main__":

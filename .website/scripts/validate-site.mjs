@@ -40,7 +40,7 @@ const FORBIDDEN_EXTENSIONS = new Set([
   ".dll",
   ".pyc",
 ])
-const TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".json", ".xml", ".txt", ".py", ".csv", ".jsonl", ".sh"])
+const TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs", ".json", ".xml", ".txt", ".py", ".csv", ".jsonl", ".sh"])
 const SECRET_PATTERNS = HIGH_CONFIDENCE_SECRET_PATTERNS
 const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 const vaultRoot = path.resolve(DOCS_ROOT, "..", "..", "..")
@@ -145,6 +145,16 @@ function targetExists(target, files) {
   return candidates.some((candidate) => files.has(candidate))
 }
 
+export function countKatexErrorSpans(html) {
+  let count = 0
+  for (const match of html.matchAll(/<span\b[^>]*>/gi)) {
+    const classAttribute = match[0].match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
+    const classNames = (classAttribute?.[1] ?? classAttribute?.[2] ?? "").split(/\s+/)
+    if (classNames.includes("katex-error")) count += 1
+  }
+  return count
+}
+
 export async function validateSite() {
   const publicStat = await stat(PUBLIC_ROOT)
   if (!publicStat.isDirectory()) throw new Error("Public build directory does not exist")
@@ -155,7 +165,13 @@ export async function validateSite() {
   const fileSet = new Set(relativeFiles)
   const errors = []
 
-  for (const required of ["index.html", "static/contentIndex.json", ".nojekyll", "robots.txt"]) {
+  for (const required of [
+    "index.html",
+    "static/contentIndex.json",
+    "static/mermaid.esm.min.mjs",
+    ".nojekyll",
+    "robots.txt",
+  ]) {
     if (!fileSet.has(required)) errors.push(`Missing required build artifact: ${required}`)
   }
 
@@ -172,34 +188,47 @@ export async function validateSite() {
     const segments = file.split("/")
     return segments.length === 2 && segments[1] === "00-目录.html"
   })
-  if (courseIndexes.length !== 53) {
-    errors.push(`Expected 53 top-level course index pages, found ${courseIndexes.length}`)
+  const expectedCourseCount = manifest.courses.length
+  if (courseIndexes.length !== expectedCourseCount) {
+    errors.push(`Expected ${expectedCourseCount} top-level course index pages, found ${courseIndexes.length}`)
   }
 
   const expectedCourseIndexes = manifest.courses.map((course) =>
     `${slugifyPublishedPath(course.name)}/00-目录.html`)
   const missingCourseIndexes = expectedCourseIndexes.filter((file) => !fileSet.has(file))
-  if (new Set(expectedCourseIndexes).size !== 53 || missingCourseIndexes.length > 0) {
+  if (new Set(expectedCourseIndexes).size !== expectedCourseCount || missingCourseIndexes.length > 0) {
     errors.push(`Missing or colliding course indexes: ${missingCourseIndexes.slice(0, 20).join(", ")}`)
   }
 
-  const navigationProbe = "RAG/00-目录.html"
-  let navigationStages = 0
+  const expectedDomainCount = new Set(manifest.courses.map((course) => course.domain)).size
+  const expectedRoleTrackCount = new Set(
+    manifest.courses.flatMap((course) => Object.keys(course.tracks ?? {})),
+  ).size
+  const navigationProbe = expectedCourseIndexes[0]
+  let navigationDomains = 0
+  let navigationRoleTracks = 0
   let navigationCourses = 0
   let navigationFolders = 0
-  if (fileSet.has(navigationProbe)) {
+  if (navigationProbe && fileSet.has(navigationProbe)) {
     const html = await readFile(path.join(PUBLIC_ROOT, ...navigationProbe.split("/")), "utf8")
-    navigationStages = (html.match(/data-nav-stage=/g) ?? []).length
+    navigationDomains = (html.match(/data-nav-domain=/g) ?? []).length
+    navigationRoleTracks = (html.match(/data-nav-track=/g) ?? []).length
     navigationCourses = (html.match(/data-nav-course=/g) ?? []).length
     navigationFolders = (html.match(/data-nav-folder=/g) ?? []).length
-    if (navigationStages !== 8 || navigationCourses !== 53 || navigationFolders === 0) {
+    if (
+      navigationDomains !== expectedDomainCount ||
+      navigationRoleTracks !== expectedRoleTrackCount ||
+      navigationCourses !== expectedCourseCount ||
+      navigationFolders === 0
+    ) {
       errors.push(
-        `Invalid learning navigation: ${navigationStages} stages, ${navigationCourses} courses, ${navigationFolders} folders`,
+        `Invalid v2 learning navigation: ${navigationDomains} domains, ` +
+        `${navigationRoleTracks} role tracks, ${navigationCourses} courses, ${navigationFolders} folders`,
       )
     }
     if (html.includes("Folder:")) errors.push("Virtual folder titles leaked into the learning navigation")
   } else {
-    errors.push(`Missing navigation probe page: ${navigationProbe}`)
+    errors.push(`Missing navigation probe page: ${navigationProbe ?? "<no course index>"}`)
   }
 
   if (fileSet.has("index.html")) {
@@ -252,14 +281,64 @@ export async function validateSite() {
     errors.push(`Published assets changed during build: ${changedAssets.slice(0, 20).join(", ")}`)
   }
 
+  const packageMermaidRoot = path.join(WEBSITE_ROOT, "node_modules", "mermaid", "dist")
+  const packageMermaidChunks = path.join(packageMermaidRoot, "chunks", "mermaid.esm.min")
+  const chunkNames = (await readdir(packageMermaidChunks, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
+    .map((entry) => entry.name)
+    .sort()
+  const mermaidModules = [
+    {
+      source: path.join(packageMermaidRoot, "mermaid.esm.min.mjs"),
+      publicPath: "static/mermaid.esm.min.mjs",
+    },
+    ...chunkNames.map((name) => ({
+      source: path.join(packageMermaidChunks, name),
+      publicPath: `static/chunks/mermaid.esm.min/${name}`,
+    })),
+  ]
+  const expectedMermaidFiles = new Set(mermaidModules.map(({ publicPath }) => publicPath))
+  const actualMermaidFiles = relativeFiles.filter((file) =>
+    file === "static/mermaid.esm.min.mjs" || file.startsWith("static/chunks/mermaid.esm.min/"))
+  const missingMermaidFiles = [...expectedMermaidFiles].filter((file) => !fileSet.has(file))
+  const unexpectedMermaidFiles = actualMermaidFiles.filter((file) => !expectedMermaidFiles.has(file))
+  if (missingMermaidFiles.length > 0 || unexpectedMermaidFiles.length > 0) {
+    errors.push(
+      `Invalid published Mermaid module graph: missing ${missingMermaidFiles.length}, ` +
+      `unexpected ${unexpectedMermaidFiles.length}`,
+    )
+  }
+  const changedMermaidFiles = []
+  for (const module of mermaidModules) {
+    if (!fileSet.has(module.publicPath)) continue
+    const [packageBytes, publicBytes] = await Promise.all([
+      readFile(module.source),
+      readFile(path.join(PUBLIC_ROOT, ...module.publicPath.split("/"))),
+    ])
+    if (sha256(packageBytes) !== sha256(publicBytes)) changedMermaidFiles.push(module.publicPath)
+  }
+  if (changedMermaidFiles.length > 0) {
+    errors.push(
+      `Published Mermaid modules do not match the lockfile-installed package: ` +
+      changedMermaidFiles.slice(0, 20).join(", "),
+    )
+  }
+
   const broken = new Set()
   const unsupportedSchemes = new Set()
   const outsideBase = new Set()
   const selfRedirects = new Set()
   const tableWikilinkLeaks = new Set()
   const interactiveCheckboxes = new Set()
+  const katexErrorPages = new Map()
+  const remoteMermaidLoaders = new Set()
   for (const relativeHtml of htmlFiles) {
     const html = await readFile(path.join(PUBLIC_ROOT, ...relativeHtml.split("/")), "utf8")
+    if (/https:\/\/cdnjs\.cloudflare\.com/i.test(html)) {
+      remoteMermaidLoaders.add(relativeHtml)
+    }
+    const katexErrorCount = countKatexErrorSpans(html)
+    if (katexErrorCount > 0) katexErrorPages.set(relativeHtml, katexErrorCount)
     for (const match of html.matchAll(/<t[dh]\b[^>]*>[\s\S]*?<\/t[dh]>/gi)) {
       const nonCodeCell = match[0].replace(/<code\b[^>]*>[\s\S]*?<\/code>/gi, "")
       if (/\[\[[\s\S]*?\]\]/.test(nonCodeCell)) tableWikilinkLeaks.add(relativeHtml)
@@ -293,6 +372,12 @@ export async function validateSite() {
       if (!targetExists(resolved.target, fileSet)) broken.add(`${relativeHtml} -> ${raw}`)
     }
   }
+  if (remoteMermaidLoaders.size > 0) {
+    errors.push(
+      `Remote cdnjs references remain in HTML (${remoteMermaidLoaders.size}): ` +
+      [...remoteMermaidLoaders].slice(0, 20).join(", "),
+    )
+  }
   if (unsupportedSchemes.size > 0) {
     errors.push(`Unsupported public URL schemes:\n${[...unsupportedSchemes].slice(0, 20).join("\n")}`)
   }
@@ -310,6 +395,11 @@ export async function validateSite() {
   }
   if (interactiveCheckboxes.size > 0) {
     errors.push(`Interactive learning checkboxes are present (${interactiveCheckboxes.size}):\n${[...interactiveCheckboxes].slice(0, 20).join("\n")}`)
+  }
+  if (katexErrorPages.size > 0) {
+    const total = [...katexErrorPages.values()].reduce((sum, count) => sum + count, 0)
+    const details = [...katexErrorPages].slice(0, 30).map(([file, count]) => `${file}: ${count}`)
+    errors.push(`KaTeX render errors (${total} across ${katexErrorPages.size} pages):\n${details.join("\n")}`)
   }
 
   const sensitiveLeaks = []
@@ -350,7 +440,9 @@ export async function validateSite() {
     tableWikilinkLeaks: 0,
     checkboxProgressRuntimeLeaks: 0,
     interactiveCheckboxes: 0,
-    navigationStages,
+    katexErrors: 0,
+    navigationDomains,
+    navigationRoleTracks,
     navigationCourses,
     navigationFolders,
   }

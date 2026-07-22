@@ -145,6 +145,48 @@ class ContextBudgetTests(unittest.TestCase):
                     self.write_fixture(Path(temporary), raw)
                 )
 
+    def test_dedupe_group_cannot_cross_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = copy.deepcopy(self.raw)
+            mirror = next(
+                item for item in raw["chunks"] if item["id"] == "mirror-refund-policy"
+            )
+            mirror["section"] = "current-input"
+            with self.assertRaisesRegex(
+                context_budget.ContextPackError, "section"
+            ):
+                context_budget.load_fixture(
+                    self.write_fixture(Path(temporary), raw)
+                )
+
+    def test_dedupe_group_cannot_cross_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = copy.deepcopy(self.raw)
+            mirror = next(
+                item for item in raw["chunks"] if item["id"] == "mirror-refund-policy"
+            )
+            mirror["required_permission"] = "public-read"
+            with self.assertRaisesRegex(
+                context_budget.ContextPackError, "required_permission"
+            ):
+                context_budget.load_fixture(
+                    self.write_fixture(Path(temporary), raw)
+                )
+
+    def test_dedupe_group_cannot_cross_trust_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = copy.deepcopy(self.raw)
+            mirror = next(
+                item for item in raw["chunks"] if item["id"] == "mirror-refund-policy"
+            )
+            mirror["trust"] = "user-input"
+            with self.assertRaisesRegex(
+                context_budget.ContextPackError, "trust"
+            ):
+                context_budget.load_fixture(
+                    self.write_fixture(Path(temporary), raw)
+                )
+
     def test_all_optional_exclusion_reasons_are_visible(self) -> None:
         fixture = context_budget.load_fixture(self.fixture_path)
         pack = context_budget.build_context_pack(fixture)

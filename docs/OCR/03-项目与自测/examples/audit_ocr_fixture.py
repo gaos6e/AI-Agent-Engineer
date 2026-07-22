@@ -205,12 +205,12 @@ def edit_distance(reference: list[str], hypothesis: list[str]) -> int:
     return previous[-1]
 
 
-def error_rate(reference: Iterable[str], hypothesis: Iterable[str]) -> float:
-    """Calculate edit errors divided by reference length."""
+def error_rate(reference: Iterable[str], hypothesis: Iterable[str]) -> float | None:
+    """Return edit errors / reference length, or None for an empty denominator."""
     ref = list(reference)
     hyp = list(hypothesis)
     if not ref:
-        return 0.0 if not hyp else 1.0
+        return 0.0 if not hyp else None
     return edit_distance(ref, hyp) / len(ref)
 
 
@@ -261,11 +261,13 @@ def audit(payload: dict[str, Any]) -> dict[str, Any]:
 
     reference_text = "\n".join(references)
     predicted_text = "\n".join(predictions)
+    cer = error_rate(reference_text, predicted_text)
+    wer = error_rate(reference_text.split(), predicted_text.split())
     return {
         "document_id": payload["document_id"],
         "block_count": block_count,
-        "cer": round(error_rate(reference_text, predicted_text), 6),
-        "wer": round(error_rate(reference_text.split(), predicted_text.split()), 6),
+        "cer": round(cer, 6) if cer is not None else None,
+        "wer": round(wer, 6) if wer is not None else None,
         "order_valid": order_valid,
         "table_structure_match": all(table_checks) if table_checks else None,
         "review_queue": reviews,
@@ -273,6 +275,11 @@ def audit(payload: dict[str, Any]) -> dict[str, Any]:
         "notes": [
             "fixture and cost-free standard-library audit only",
             "no image, OCR engine, network, or model was used",
+            (
+                "cer or wer is null when the reference sequence is empty but "
+                "the prediction is non-empty; inspect that unexpected-output slice "
+                "instead of treating it as a rate"
+            ),
         ],
     }
 
@@ -281,7 +288,7 @@ def run_self_test() -> None:
     """Run a tiny smoke check without relying on removable assert statements."""
     if edit_distance(list("ABC"), list("ADCX")) != 2:
         raise RuntimeError("edit-distance self-test failed")
-    if error_rate([], []) != 0.0 or error_rate([], ["extra"]) != 1.0:
+    if error_rate([], []) != 0.0 or error_rate([], ["extra"]) is not None:
         raise RuntimeError("error-rate self-test failed")
     fixture = {
         "schema_version": "1.0",

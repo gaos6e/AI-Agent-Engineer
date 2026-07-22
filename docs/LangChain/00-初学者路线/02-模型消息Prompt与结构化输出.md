@@ -69,6 +69,14 @@ LangChain 提供跨提供商的标准消息类型。常见角色包括 system、
 }
 ```
 
+字段阅读：
+
+- `category` 是有限业务分类，后续应按允许枚举校验，而不是接受任意标签。
+- `urgency` 表示模型给出的紧急程度；高风险场景仍要由业务规则复核。
+- `summary` 是供人工或下游理解的短摘要，不应替代原始证据。
+- `needs_human` 显式表达是否需要人工接管，不能把它当作授权结论。
+- `evidence_ids` 把输出关联到可复查的输入片段，必须检查这些 ID 真实存在且当前调用者有权访问。
+
 在 LangChain 当前 Agent API 中，`create_agent(..., response_format=...)` 可接收 schema。官方文档区分 `ProviderStrategy`（使用提供商原生结构化输出）与 `ToolStrategy`（通过工具调用获得结构），直接传入 schema 类型时会依据模型能力选择策略；最终验证后的结果位于 Agent 状态的 `structured_response`。这一行为依赖当前包与模型 profile，必须在锁定版本上测试。
 
 结构化只保证**形状**，不保证**事实**。`evidence_ids` 可能指向不存在的片段，金额可能抄错，分类也可能错误。下游还需枚举、范围、外键、权限和来源校验。

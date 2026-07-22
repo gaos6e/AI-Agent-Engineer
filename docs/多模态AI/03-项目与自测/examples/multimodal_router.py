@@ -320,6 +320,10 @@ class MultimodalRouter:
                 "cost_units are synthetic teaching estimates",
                 "no media file was opened",
                 "no network or model call was made",
+                (
+                    "asset privacy labels are synthetic teaching inputs; production "
+                    "must resolve classification from a trusted policy record"
+                ),
             ],
         }
 
@@ -337,13 +341,18 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         report = MultimodalRouter(load_manifest(args.manifest)).build_plan()
-        rendered = json.dumps(report, ensure_ascii=False, indent=2)
-        if args.output is not None:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(rendered + "\n", encoding="utf-8")
+        rendered = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False)
     except ManifestError as exc:
         print(f"manifest error: {exc}", file=sys.stderr)
         return 2
+
+    if args.output is not None:
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+        except OSError as exc:
+            print(f"output error: {exc}", file=sys.stderr)
+            return 2
     print(rendered)
     return 0 if report["status"] == "ready" else 1
 

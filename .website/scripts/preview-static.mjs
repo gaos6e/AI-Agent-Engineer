@@ -69,11 +69,11 @@ export function resolvePreviewPath(publicRoot, basePath, pathname) {
     candidates.push(path.join(candidate, "index.html"))
   } else {
     candidates.push(candidate)
-    if (!path.extname(candidate)) {
-      candidates.push(`${candidate}.html`, path.join(candidate, "index.html"))
-    } else if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-      candidates.push(path.join(candidate, "index.html"))
-    }
+    // Quartz routes omit `.html`, while authored lesson names may contain
+    // dots such as `04-02.3-线性代数`. `path.extname()` cannot distinguish
+    // that numbering punctuation from a real extension. Exact assets remain
+    // first, then the two Quartz route forms are tried for every safe path.
+    candidates.push(`${candidate}.html`, path.join(candidate, "index.html"))
   }
 
   return candidates.find(isFile) || null

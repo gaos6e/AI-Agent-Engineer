@@ -152,6 +152,30 @@ class SyntheticDatasetTests(unittest.TestCase):
         candidate["provenance"]["contains_real_data"] = True
         self.assertIn("provenance-source-mismatch", app.candidate_errors(candidate, self.spec))
 
+    def test_candidate_stale_generator_version_is_rejected(self) -> None:
+        candidate = app.generate_candidates(self.spec)[0]
+        candidate["provenance"]["generator_version"] = "template-pipeline-1.0.0"
+        self.assertIn(
+            "provenance-generator-version-mismatch",
+            app.candidate_errors(candidate, self.spec),
+        )
+
+    def test_candidate_cross_condition_template_lineage_is_rejected(self) -> None:
+        candidate = app.generate_candidates(self.spec)[0]
+        candidate["provenance"]["template_id"] = "en/write-request/1"
+        self.assertIn(
+            "provenance-template-id-mismatch",
+            app.candidate_errors(candidate, self.spec),
+        )
+
+    def test_candidate_empty_provenance_variables_are_rejected(self) -> None:
+        candidate = app.generate_candidates(self.spec)[0]
+        candidate["provenance"]["variables"] = {}
+        self.assertIn(
+            "provenance-variables-invalid",
+            app.candidate_errors(candidate, self.spec),
+        )
+
     def test_possible_email_is_rejected(self) -> None:
         candidate = app.generate_candidates(self.spec)[0]
         candidate["input"] = "Email real.person@example.com"
@@ -180,11 +204,11 @@ class SyntheticDatasetTests(unittest.TestCase):
         self.assertEqual(len(report["coverage"]), 6)
         self.assertEqual(set(report["coverage"].values()), {2})
 
-    def test_records_have_stable_ids_and_explicit_provenance(self) -> None:
+    def test_records_have_stable_ids_and_matching_provenance(self) -> None:
         report = app.build_dataset(self.spec)
         self.assertTrue(all(item["id"].startswith("syn-") for item in report["records"]))
         self.assertTrue(
-            all(set(item["provenance"]) == app.PROVENANCE_FIELDS for item in report["records"])
+            report["integrity"]["provenance_matches_generator_contract"]
         )
 
     def test_default_report_passes(self) -> None:

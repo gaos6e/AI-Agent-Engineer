@@ -6,6 +6,7 @@ tags:
   - project
 aliases:
   - 可靠 API 客户端项目
+source_checked: 2026-07-22
 ---
 
 # 实战：可靠 API 客户端
@@ -19,7 +20,7 @@ aliases:
 3. 服务端已经创建、首次响应却失败时，用同一幂等键恢复且不重复创建；
 4. 将 3xx、404、409、无效 JSON、错误 content type 和 schema 错误分类；
 5. 对重复 cursor、最大页数、重试耗尽和 `Retry-After` 等边界强制停止；
-6. 运行 28 个不需要互联网和真实密钥的 unit + loopback integration 测试。
+6. 运行 29 个不需要互联网和真实密钥的可靠客户端 unit + loopback integration 测试，以及 6 个离线 OpenAI 参考页 Markdown 合同测试。
 
 项目代码位于 `Knowledge/AI Agent Engineer/docs/API/examples/`。它是教学实现，不是可直接上线的通用 SDK；生产客户端还要结合目标 API 契约、日志/指标、deadline、认证和 schema 工具。
 
@@ -32,7 +33,8 @@ examples/
 ├── reliable_client.py        # endpoint 方法、内部重试循环与错误分类
 ├── demo.py                   # 人工演示入口
 ├── test_reliable_client_unit.py        # 脚本化 Session 的确定性单元测试
-└── test_reliable_client_integration.py # 真实 loopback HTTP 集成测试
+├── test_reliable_client_integration.py # 真实 loopback HTTP 集成测试
+└── test_openai_api_markdown.py          # 参考页 Python 片段与安全合同的静态测试
 ```
 
 ### 服务端故障场景
@@ -54,10 +56,10 @@ examples/
 从 vault 根目录执行：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r '.\Knowledge\AI Agent Engineer\docs\API\examples\requirements.txt'
+python -m venv .venv  # 在 vault 根目录旁建立只属于本机的隔离环境。
+.\.venv\Scripts\Activate.ps1  # 在当前 PowerShell 会话激活该环境。
+python -m pip install --upgrade pip  # 更新当前环境的安装工具。
+python -m pip install -r '.\Knowledge\AI Agent Engineer\docs\API\examples\requirements.txt'  # 按项目锁定的最小依赖清单安装 Requests。
 ```
 
 `.venv` 只属于本机，不应加入 vault 或 Git。若你已有隔离环境，也可直接安装 requirements。
@@ -67,7 +69,7 @@ python -m pip install -r '.\Knowledge\AI Agent Engineer\docs\API\examples\requir
 终端 A：
 
 ```powershell
-python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\mock_api_server.py'
+python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\mock_api_server.py'  # 在终端 A 启动仅绑定 127.0.0.1 的本地教学服务。
 ```
 
 应看到：
@@ -84,7 +86,7 @@ python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\mock_api_server.py'
 终端 B：
 
 ```powershell
-python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\demo.py'
+python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\demo.py'  # 在终端 B 运行分页、重试和幂等创建的人工演示。
 ```
 
 检查三件事：
@@ -98,13 +100,10 @@ python -B '.\Knowledge\AI Agent Engineer\docs\API\examples\demo.py'
 测试会自行在随机空闲端口启动/关闭服务，不需要先运行终端 A：
 
 ```powershell
-python -B -W error::ResourceWarning -m unittest discover `
-  -s '.\Knowledge\AI Agent Engineer\docs\API\examples' `
-  -p 'test_*.py' `
-  -v
+python -B -W error::ResourceWarning -m unittest discover -s '.\Knowledge\AI Agent Engineer\docs\API\examples' -p 'test_*.py' -v  # 将 ResourceWarning 升级为错误后发现并详细运行所有本地单元与 loopback 测试。
 ```
 
-通过标准：28 个测试全部 `ok`，进程退出码为 0；测试结束后 server、thread 与客户端自行创建的 Session 都已关闭。
+通过标准：35 个测试全部 `ok`，进程退出码为 0；其中 29 个验证可靠客户端的 unit + loopback 行为，6 个只静态检查 OpenAI 参考页的代码片段和安全合同。测试结束后 server、thread 与客户端自行创建的 Session 都已关闭。
 
 ## 读懂客户端的关键决策
 
@@ -144,11 +143,13 @@ python -B -W error::ResourceWarning -m unittest discover `
 | --- | --- |
 | 分页 | 正常两页、重复 cursor、最大页数、items/cursor 类型错误 |
 | 传输与超时 | timeout tuple、`ReadTimeout` 有限重试、其他 `RequestException` 归一化 |
+| TLS | `SSLError` 虽继承 `ConnectionError`，仍在第一次失败后停止，避免重试掩盖证书身份验证问题 |
 | HTTP | 204、302 不跟随、404、409、503 恢复与耗尽 |
 | `Retry-After` | 秒数、HTTP 日期、过去日期、负数、任意文本、非 ASCII 数字、超长 ASCII 数字、超等待预算 |
 | 幂等 | 同 key 同 payload、同 key 不同 payload、写入后首次响应失败 |
 | 表示 | `application/json`、`application/problem+json`、错误 media type、无效 JSON |
 | 配置与资源 | base URL、timeout/jitter/页边界、key 的 ASCII/空格/控制字符、Session 所有权与线程退出 |
+| 参考页静态合同 | OpenAI 参考页的 Python fenced code 可解析，存储、文件清理、流终态和工具循环防护不被回归删除 |
 
 ## 必做实验
 
@@ -175,7 +176,7 @@ python -B -W error::ResourceWarning -m unittest discover `
 确认当前终端已激活正确 `.venv`，并运行：
 
 ```powershell
-python -c "import sys, requests; print(sys.executable); print(requests.__version__)"
+python -c "import sys, requests; print(sys.executable); print(requests.__version__)"  # 输出当前解释器路径与库版本，帮助确认虚拟环境是否真的已激活。
 ```
 
 这里只输出解释器路径和库版本，不涉及凭据。
@@ -195,7 +196,7 @@ python -c "import sys, requests; print(sys.executable); print(requests.__version
 ## 项目验收清单
 
 - [ ] 我能从空环境安装依赖并运行测试。
-- [ ] 我能把 28 个测试归入测试矩阵，并任选 8 个解释其失败时意味着哪项契约回归。
+- [ ] 我能把 29 个可靠客户端测试与 6 个参考页静态合同分别归入测试矩阵，并任选 8 个解释其失败时意味着哪项契约回归。
 - [ ] 我能修改重试次数并预测 `/flaky` 结果。
 - [ ] 我能证明同 key 同 payload 不重复创建，同 key 不同 payload 返回冲突。
 - [ ] 我能解释为什么 404 与无效 JSON 使用不同异常。
@@ -215,4 +216,4 @@ python -c "import sys, requests; print(sys.executable); print(requests.__version
 - [Python `unittest`](https://docs.python.org/3/library/unittest.html)
 - [Requests 官方文档](https://docs.python-requests.org/en/stable/)
 
-获取日期：2026-07-14。完成项目后进入 [[API/08-练习自测与掌握标准|练习、自测与掌握标准]]。
+获取日期：2026-07-22。完成项目后进入 [[API/08-练习自测与掌握标准|练习、自测与掌握标准]]。

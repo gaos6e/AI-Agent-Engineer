@@ -52,6 +52,7 @@
     "allowed_groups": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 128,
       "uniqueItems": true,
       "items": {
         "type": "string",

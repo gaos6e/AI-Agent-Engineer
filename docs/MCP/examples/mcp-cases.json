@@ -1,6 +1,135 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "protocol_version": "2025-11-25",
+  "transport_context_defaults": {
+    "transport": "streamable_http",
+    "token_active": true,
+    "token_audience": "https://mcp.example.test/mcp",
+    "resource": "https://mcp.example.test/mcp"
+  },
+  "authorization": {
+    "protected_resource": "https://mcp.example.test/mcp",
+    "initial_revision": "authz-v1",
+    "revisions": {
+      "authz-v1": {
+        "principals": {
+          "alice": {
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list",
+              "resources:read",
+              "resources:subscribe"
+            ]
+          },
+          "reader": {
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list",
+              "resources:read"
+            ]
+          },
+          "mallory": {
+            "tenant": "tenant-b",
+            "scopes": [
+              "resources:list",
+              "resources:read",
+              "resources:subscribe"
+            ]
+          }
+        },
+        "resources": [
+          {
+            "uri": "kb://tenant-a/handbook",
+            "tenant": "tenant-a",
+            "children": [
+              "kb://tenant-a/handbook/chapter-1"
+            ]
+          },
+          {
+            "uri": "kb://tenant-a/handbook/chapter-1",
+            "tenant": "tenant-a"
+          },
+          {
+            "uri": "kb://tenant-a/handbookish",
+            "tenant": "tenant-a"
+          },
+          {
+            "uri": "kb://tenant-b/secret",
+            "tenant": "tenant-b"
+          }
+        ],
+        "resourceTemplates": [
+          {
+            "uriTemplate": "kb://tenant-a/docs/{doc_id}",
+            "tenant": "tenant-a"
+          },
+          {
+            "uriTemplate": "kb://tenant-b/docs/{doc_id}",
+            "tenant": "tenant-b"
+          }
+        ]
+      },
+      "authz-v2": {
+        "principals": {
+          "alice": {
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list",
+              "resources:read",
+              "resources:subscribe"
+            ],
+            "enabled": false
+          },
+          "reader": {
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list",
+              "resources:read"
+            ]
+          },
+          "mallory": {
+            "tenant": "tenant-b",
+            "scopes": [
+              "resources:list",
+              "resources:read",
+              "resources:subscribe"
+            ]
+          }
+        },
+        "resources": [
+          {
+            "uri": "kb://tenant-a/handbook",
+            "tenant": "tenant-a",
+            "children": [
+              "kb://tenant-a/handbook/chapter-1"
+            ]
+          },
+          {
+            "uri": "kb://tenant-a/handbook/chapter-1",
+            "tenant": "tenant-a"
+          },
+          {
+            "uri": "kb://tenant-a/handbookish",
+            "tenant": "tenant-a"
+          },
+          {
+            "uri": "kb://tenant-b/secret",
+            "tenant": "tenant-b"
+          }
+        ],
+        "resourceTemplates": [
+          {
+            "uriTemplate": "kb://tenant-a/docs/{doc_id}",
+            "tenant": "tenant-a"
+          },
+          {
+            "uriTemplate": "kb://tenant-b/docs/{doc_id}",
+            "tenant": "tenant-b"
+          }
+        ]
+      }
+    }
+  },
   "client": {
     "info": {
       "name": "offline-course-client",
@@ -782,6 +911,14 @@
         },
         {
           "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
           "message": {
             "jsonrpc": "2.0",
             "id": 23,
@@ -1003,6 +1140,843 @@
                 "version": "1.0.0"
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_resources_list_with_descriptor_and_cursor",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 40,
+            "method": "resources/list",
+            "params": {
+              "cursor": "page-1"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 40,
+            "result": {
+              "resources": [
+                {
+                  "uri": "kb://tenant-a/handbook",
+                  "name": "handbook",
+                  "title": "Course handbook",
+                  "description": "Offline course resource.",
+                  "mimeType": "text/markdown",
+                  "size": 42
+                }
+              ],
+              "nextCursor": "page-2"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_resource_templates_list",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "resources/templates/list"
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "result": {
+              "resourceTemplates": [
+                {
+                  "uriTemplate": "kb://tenant-a/docs/{doc_id}",
+                  "name": "tenant-doc",
+                  "mimeType": "text/markdown"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_resource_read_text_blob_and_child",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": {
+              "contents": [
+                {
+                  "uri": "kb://tenant-a/handbook",
+                  "mimeType": "text/markdown",
+                  "text": "# Handbook"
+                },
+                {
+                  "uri": "kb://tenant-a/handbook/chapter-1",
+                  "mimeType": "application/octet-stream",
+                  "blob": "aGVsbG8="
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_resources_list_changed_notification",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/list_changed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid_resource_subscription_update_reread_and_unsubscribe",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read",
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 43,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 43,
+            "result": {}
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {
+              "uri": "kb://tenant-a/handbook/chapter-1"
+            }
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 44,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook/chapter-1"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 44,
+            "result": {
+              "contents": [
+                {
+                  "uri": "kb://tenant-a/handbook/chapter-1",
+                  "text": "Fresh chapter"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 45,
+            "method": "resources/unsubscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 45,
+            "result": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "failed_unsubscribe_preserves_active_subscription",
+      "expect": "pass",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 46,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 46,
+            "result": {}
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 47,
+            "method": "resources/unsubscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 47,
+            "error": {
+              "code": -32603,
+              "message": "temporary failure"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "failed_subscribe_does_not_authorize_updates",
+      "expect": "fail",
+      "error_contains": "no active subscription",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 48,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 48,
+            "error": {
+              "code": -32002,
+              "message": "resource not available"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_descriptor_exceeds_profile_size_gate",
+      "expect": "fail",
+      "error_contains": "size limit",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 49,
+            "method": "resources/list"
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 49,
+            "result": {
+              "resources": [
+                {
+                  "uri": "kb://tenant-a/handbook",
+                  "name": "oversized",
+                  "size": 65537
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_read_rejects_invalid_base64",
+      "expect": "fail",
+      "error_contains": "valid base64",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 50,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 50,
+            "result": {
+              "contents": [
+                {
+                  "uri": "kb://tenant-a/handbook",
+                  "blob": "not base64!"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_subscribe_without_subcapability",
+      "expect": "fail",
+      "error_contains": "resources.subscribe",
+      "server_capabilities": {
+        "resources": {
+          "listChanged": true
+        }
+      },
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 51,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_list_changed_without_subcapability",
+      "expect": "fail",
+      "error_contains": "resources.listChanged",
+      "server_capabilities": {
+        "resources": {
+          "subscribe": true
+        }
+      },
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/list_changed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_read_rejects_cross_tenant_uri",
+      "expect": "fail",
+      "error_contains": "resource tenant",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "mallory",
+            "tenant": "tenant-b",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 52,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_read_requires_scope",
+      "expect": "fail",
+      "error_contains": "resources:read",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "reader",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 53,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_read_rejects_stale_authorization_revision",
+      "expect": "fail",
+      "error_contains": "authorization revision",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v0"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 54,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_read_rejects_principal_tenant_misbinding",
+      "expect": "fail",
+      "error_contains": "principal binding",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-b",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 55,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-b/secret"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_update_rejects_uri_prefix_collision",
+      "expect": "fail",
+      "error_contains": "no active subscription",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 56,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 56,
+            "result": {}
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {
+              "uri": "kb://tenant-a/handbookish"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authorization_revision_change_invalidates_subscription_and_stale_reread",
+      "expect": "fail",
+      "error_contains": "authorization revision",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:subscribe"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 57,
+            "method": "resources/subscribe",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        },
+        {
+          "direction": "server_to_client",
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 57,
+            "result": {}
+          }
+        },
+        {
+          "control_event": {
+            "type": "activate_authorization_revision",
+            "revision": "authz-v2"
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:read"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 58,
+            "method": "resources/read",
+            "params": {
+              "uri": "kb://tenant-a/handbook"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_list_rejects_wrong_token_audience",
+      "expect": "fail",
+      "error_contains": "token audience",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "token_audience": "https://other.example.test/mcp",
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 59,
+            "method": "resources/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_list_rejects_wrong_resource_indicator",
+      "expect": "fail",
+      "error_contains": "resource indicator",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "resource": "https://other.example.test/mcp",
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 60,
+            "method": "resources/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource_list_rejects_inactive_token",
+      "expect": "fail",
+      "error_contains": "active access token",
+      "steps": [
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "token_active": false,
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v1"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 61,
+            "method": "resources/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "authorization_revision_rejects_revoked_principal",
+      "expect": "fail",
+      "error_contains": "principal is revoked",
+      "steps": [
+        {
+          "control_event": {
+            "type": "activate_authorization_revision",
+            "revision": "authz-v2"
+          }
+        },
+        {
+          "direction": "client_to_server",
+          "transport_context": {
+            "subject": "alice",
+            "tenant": "tenant-a",
+            "scopes": [
+              "resources:list"
+            ],
+            "authorization_revision": "authz-v2"
+          },
+          "message": {
+            "jsonrpc": "2.0",
+            "id": 62,
+            "method": "resources/list"
           }
         }
       ]

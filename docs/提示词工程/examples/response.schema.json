@@ -1,8 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/ai-agent-engineer/ticket-routing-response.schema.json",
+  "x-contract-version": "ticket-routing-response-1.0.0",
   "title": "Ticket routing response",
-  "description": "Offline teaching contract; validate business semantics in code after schema validation.",
+  "description": "Offline teaching contract; runtime verifies this subset matches its hand-written validator, then applies business semantics.",
   "type": "object",
   "properties": {
     "label": {

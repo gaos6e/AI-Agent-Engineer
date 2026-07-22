@@ -6,7 +6,7 @@ tags:
   - project
 aliases:
   - OCR 审计项目
-source_checked: 2026-07-14
+source_checked: 2026-07-22
 ---
 
 # 项目：结构化 OCR 结果审计
@@ -23,18 +23,19 @@ source_checked: 2026-07-14
 
 ## 运行
 
-在 PowerShell 7 中：
+在 PowerShell 7 中，从同时包含 `docs/` 与 `.website/` 的项目根目录运行：
 
 ```powershell
-Set-Location 'X:\path\to\your-vault\Knowledge\AI Agent Engineer\docs\OCR\03-项目与自测\examples'
+Push-Location -LiteralPath 'docs\OCR\03-项目与自测\examples'
 python -B .\audit_ocr_fixture.py .\ocr_fixture.json
 python -B .\audit_ocr_fixture.py --self-test
 python -B -m unittest discover -s . -p 'test_*.py'
 python -B -O -m unittest discover -s . -p 'test_*.py'
 python -B -W error -m unittest discover -s . -p 'test_*.py'
+Pop-Location
 ```
 
-`-B` 禁止生成 `__pycache__`/`.pyc`。程序只读取夹具并把报告写到标准输出，不修改文件。当前回归集共 **73 项**；普通模式、`-O` 和 warnings-as-errors 三种运行都应通过。
+`-B` 禁止生成 `__pycache__`/`.pyc`。程序只读取夹具并把报告写到标准输出，不修改文件。当前回归集共 **74 项**；普通模式、`-O` 和 warnings-as-errors 三种运行都应通过。
 
 ## 输入与退出码合同
 
@@ -46,7 +47,7 @@ python -B -W error -m unittest discover -s . -p 'test_*.py'
 
 ## 你要读懂的报告
 
-- `cer`/`wer`：基于参考文本的编辑错误率。
+- `cer`/`wer`：基于参考文本的编辑错误率；参考序列为空而预测非空时为 `null`，因为没有可用分母，需作为 unexpected-output 切片单独复核。
 - `order_valid`：同页块顺序是否唯一且递增。
 - `table_structure_match`：参考与预测的行列数是否一致。
 - `review_queue`：低于阈值或关键字段校验失败的块。
@@ -65,7 +66,7 @@ python -B -W error -m unittest discover -s . -p 'test_*.py'
 - [ ] 能说出脚本没有验证哪些真实 OCR 能力：成像、检测框和模型推理均未执行。
 - [ ] 能为新字段补 schema 校验和一个失败用例。
 - [ ] 默认夹具退出码为 `0`，人为制造审计错误时为 `1`，破坏合同字段时为 `2`。
-- [ ] 73 项测试在普通、`-O` 和 warnings-as-errors 三种模式均通过，且工作区没有缓存或输出文件。
+- [ ] 74 项测试在普通、`-O` 和 warnings-as-errors 三种模式均通过，且工作区没有缓存或输出文件。
 
 ## 常见问题
 

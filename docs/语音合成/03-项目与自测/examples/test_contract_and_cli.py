@@ -50,12 +50,12 @@ class TemporaryFileCase(unittest.TestCase):
 
 class StrictJsonTests(TemporaryFileCase):
     def test_loads_valid_fixture(self) -> None:
-        self.assertEqual(load_fixture(FIXTURE)["schema_version"], "1.0")
+        self.assertEqual(load_fixture(FIXTURE)["schema_version"], "1.1")
 
     def test_rejects_duplicate_key(self) -> None:
         raw = FIXTURE.read_text(encoding="utf-8").replace(
-            '"schema_version": "1.0",',
-            '"schema_version": "1.0", "schema_version": "1.0",',
+            '"schema_version": "1.1",',
+            '"schema_version": "1.1", "schema_version": "1.1",',
             1,
         )
         with self.assertRaisesRegex(FixtureError, "duplicate JSON key"):
@@ -137,10 +137,22 @@ class TopAndPolicyContractTests(unittest.TestCase):
         payload["policy"]["max_characters"] = 0
         self.assert_invalid(payload, "positive integer")
 
-    def test_allowlist_must_be_array(self) -> None:
+    def test_voice_catalog_must_be_array(self) -> None:
         payload = valid_payload()
-        payload["policy"]["allowed_voices"] = "demo"
+        payload["policy"]["voice_catalog"] = "demo"
         self.assert_invalid(payload, "non-empty array")
+
+    def test_voice_catalog_rejects_duplicate_voice_id(self) -> None:
+        payload = valid_payload()
+        payload["policy"]["voice_catalog"].append(
+            payload["policy"]["voice_catalog"][0].copy()
+        )
+        self.assert_invalid(payload, "voice_id values must be unique")
+
+    def test_voice_catalog_rejects_invalid_supported_locale(self) -> None:
+        payload = valid_payload()
+        payload["policy"]["voice_catalog"][0]["supported_locales"] = ["zh_CN"]
+        self.assert_invalid(payload, "supported_locales")
 
     def test_allowlist_must_not_be_empty(self) -> None:
         payload = valid_payload()
@@ -156,6 +168,16 @@ class TopAndPolicyContractTests(unittest.TestCase):
         payload = valid_payload()
         payload["policy"]["allowed_rates"] = ["medium", "medium"]
         self.assert_invalid(payload, "unique")
+
+    def test_policy_revision_must_be_non_empty(self) -> None:
+        payload = valid_payload()
+        payload["policy"]["policy_revision"] = " "
+        self.assert_invalid(payload, "policy_revision")
+
+    def test_disclosure_required_must_be_boolean(self) -> None:
+        payload = valid_payload()
+        payload["policy"]["disclosure_required"] = "yes"
+        self.assert_invalid(payload, "disclosure_required")
 
     def test_requests_must_be_array(self) -> None:
         payload = valid_payload()
@@ -307,11 +329,59 @@ class PlanTests(unittest.TestCase):
         expected = hashlib.sha256(payload["requests"][0]["source_text"].encode("utf-8")).hexdigest()
         self.assertEqual(plan["items"][0]["source_text_sha256"], expected)
 
+    def test_plan_carries_governance_revisions_without_raw_text_or_ssml(self) -> None:
+        payload = valid_payload()
+        plan, _ = build_plan(payload)
+        item = plan["items"][0]
+        self.assertEqual(item["source_revision"], "synthetic-script-zh-v1")
+        self.assertEqual(item["acl_reference"], "synthetic-training-audience")
+        self.assertEqual(item["policy_revision"], "synthetic-voice-policy-v1")
+        self.assertTrue(item["disclosure_required"])
+        self.assertNotIn("ssml", set(item))
+        self.assertEqual(
+            item["ssml_sha256"],
+            hashlib.sha256(build_ssml(payload["requests"][0]).encode("utf-8")).hexdigest(),
+        )
+        rendered_plan = json.dumps(plan, ensure_ascii=False)
+        self.assertNotIn(payload["requests"][0]["source_text"], rendered_plan)
+        self.assertFalse(plan["source_text_exposed"])
+
+    def test_acl_reference_is_structural_only_in_the_offline_project(self) -> None:
+        payload = valid_payload()
+        payload["requests"][0]["acl_reference"] = "external-object-acl-not-checked"
+        plan, errors = build_plan(payload)
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            plan["items"][0]["acl_reference"], "external-object-acl-not-checked"
+        )
+        self.assertIn("object authorization was not evaluated", " ".join(plan["notes"]))
+
     def test_unknown_voice_is_policy_error(self) -> None:
         payload = valid_payload()
         payload["requests"][0]["voice_id"] = "not-allowed"
         plan, errors = build_plan(payload)
         self.assertIn("voice_id is not allowed", " ".join(errors))
+        self.assertFalse(plan["items"][0]["plan_valid"])
+
+    def test_mismatched_voice_locale_is_policy_error(self) -> None:
+        payload = valid_payload()
+        payload["requests"][0]["locale"] = "en-US"
+        plan, errors = build_plan(payload)
+        self.assertIn("locale is not supported", " ".join(errors))
+        self.assertFalse(plan["items"][0]["plan_valid"])
+
+    def test_disallowed_voice_purpose_is_policy_error(self) -> None:
+        payload = valid_payload()
+        payload["requests"][0]["purpose"] = "advertising"
+        plan, errors = build_plan(payload)
+        self.assertIn("purpose is not allowed", " ".join(errors))
+        self.assertFalse(plan["items"][0]["plan_valid"])
+
+    def test_authorization_reference_must_match_voice_policy(self) -> None:
+        payload = valid_payload()
+        payload["requests"][0]["authorization_reference"] = "unverified-reference"
+        plan, errors = build_plan(payload)
+        self.assertIn("authorization_reference does not match", " ".join(errors))
         self.assertFalse(plan["items"][0]["plan_valid"])
 
     def test_unknown_rate_is_policy_error(self) -> None:
@@ -335,12 +405,18 @@ class PlanTests(unittest.TestCase):
         self.assertIn("exceeds max_characters", " ".join(errors))
         self.assertFalse(plan["items"][0]["plan_valid"])
 
-    def test_duplicate_request_id_is_policy_error(self) -> None:
+    def test_duplicate_operation_id_is_policy_error(self) -> None:
         payload = valid_payload()
-        payload["requests"][1]["request_id"] = payload["requests"][0]["request_id"]
+        payload["requests"][1]["operation_id"] = payload["requests"][0]["operation_id"]
         plan, errors = build_plan(payload)
-        self.assertIn("duplicate request_id", " ".join(errors))
+        self.assertIn("duplicate operation_id", " ".join(errors))
         self.assertFalse(plan["items"][1]["plan_valid"])
+
+    def test_provider_request_id_is_not_a_local_contract_field(self) -> None:
+        payload = valid_payload()
+        payload["requests"][0]["provider_request_id"] = "provider-trace-123"
+        with self.assertRaisesRegex(FixtureError, "unknown fields"):
+            validate_fixture(payload)
 
     def test_one_invalid_item_does_not_mark_next_item_invalid(self) -> None:
         payload = valid_payload()
@@ -360,6 +436,8 @@ class PlanTests(unittest.TestCase):
         notes = " ".join(plan["notes"])
         self.assertIn("no audio", notes)
         self.assertIn("network", notes)
+        self.assertIn("no raw source text", notes)
+        self.assertIn("object authorization was not evaluated", notes)
 
 
 class CliTests(TemporaryFileCase):
@@ -376,7 +454,9 @@ class CliTests(TemporaryFileCase):
     def test_valid_fixture_exit_zero(self) -> None:
         result = self.run_cli(str(FIXTURE))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["errors"], [])
+        report = json.loads(result.stdout)
+        self.assertEqual(report["errors"], [])
+        self.assertNotIn("欢迎使用 A&B <测试> 助手。", result.stdout)
 
     def test_policy_error_exit_one(self) -> None:
         payload = valid_payload()

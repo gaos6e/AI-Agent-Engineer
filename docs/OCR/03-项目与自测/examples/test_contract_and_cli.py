@@ -326,10 +326,19 @@ class MetricAndAuditTests(unittest.TestCase):
         self.assertEqual(error_rate([], []), 0.0)
 
     def test_empty_reference_with_hypothesis(self) -> None:
-        self.assertEqual(error_rate([], ["extra"]), 1.0)
+        self.assertIsNone(error_rate([], ["extra"]))
 
     def test_error_rate_can_exceed_one(self) -> None:
         self.assertEqual(error_rate(["a"], ["a", "b", "c"]), 2.0)
+
+    def test_empty_document_reference_reports_undefined_error_rates(self) -> None:
+        payload = valid_payload()
+        payload["pages"][0]["blocks"] = payload["pages"][0]["blocks"][:1]
+        payload["pages"][0]["blocks"][0]["reference_text"] = ""
+        payload["pages"][0]["blocks"][0]["predicted_text"] = "unexpected"
+        report = audit(payload)
+        self.assertIsNone(report["cer"])
+        self.assertIsNone(report["wer"])
 
     def test_fixture_report_is_successful(self) -> None:
         report = audit(valid_payload())

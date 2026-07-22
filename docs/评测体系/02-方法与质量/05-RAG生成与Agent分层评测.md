@@ -7,6 +7,8 @@ tags:
   - RAG
   - Agent
 source_checked: 2026-07-14
+content_origin: original
+content_status: dynamic
 ---
 
 # RAG、生成与 Agent 分层评测
@@ -38,6 +40,8 @@ source_checked: 2026-07-14
 - 格式、语言与用户任务是否满足。
 
 仅看最终答案无法区分“没检到”与“检到了但没用”。RAGAS 原始论文提出无参考的自动化维度，但模型指标仍需与领域人工判断校准，不能当绝对真值。
+
+还要分开“答案正确”与“引用忠实”：一个答案可能碰巧正确却引用错来源，也可能 claims/citations 结构合法但用户可见答案额外加入无证据事实。[[RAG/08-项目-离线可引用问答|RAG 离线项目]] 的 `evaluate` 子命令实际输出 retrieval/context/citation fact recall、status accuracy、关键切片与 non-disclosure 门；它同时让 answer 由已验证 claims 渲染，并把公共响应与受保护 audit trace 分成两个 schema。
 
 ## Agent 的更多层
 

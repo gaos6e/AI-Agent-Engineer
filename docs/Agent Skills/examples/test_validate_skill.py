@@ -66,6 +66,18 @@ class TextStatisticsUnitTests(unittest.TestCase):
             path.write_text("你好", encoding="utf-8")
             self.assertEqual(text_stats.read_utf8_file(path), "你好")
 
+    def test_read_utf8_file_rejects_more_than_one_mib(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "large.txt"
+            path.write_bytes(b"x" * (text_stats.MAX_INPUT_BYTES + 1))
+            with self.assertRaisesRegex(ValueError, "exceeds"):
+                text_stats.read_utf8_file(path)
+
+    def test_text_argument_limit_counts_utf8_bytes(self) -> None:
+        oversized = "界" * (text_stats.MAX_INPUT_BYTES // len("界".encode("utf-8")) + 1)
+        with self.assertRaisesRegex(ValueError, "--text exceeds"):
+            text_stats.require_bounded_utf8_text(oversized, source="--text")
+
 
 class TextStatisticsCliTests(unittest.TestCase):
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -127,6 +139,24 @@ class TextStatisticsCliTests(unittest.TestCase):
             result = self.run_script("--input", str(path))
         self.assertEqual(result.returncode, 2)
         self.assertIn("exceeds", result.stderr)
+
+    def test_oversized_text_fails_with_controlled_cli_error(self) -> None:
+        code = (
+            "import runpy, sys; "
+            "module = runpy.run_path(sys.argv[1]); "
+            "count = module['MAX_INPUT_BYTES'] // len('界'.encode('utf-8')) + 1; "
+            "raise SystemExit(module['main'](['--text', '界' * count]))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", code, str(SCRIPT_PATH)],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("--text exceeds", result.stderr)
 
     def test_help_is_noninteractive(self) -> None:
         result = self.run_script("--help")
@@ -266,7 +296,12 @@ class ValidatorTests(unittest.TestCase):
 
     def test_resource_traversal_fails(self) -> None:
         self.replace_skill_text("scripts/text_stats.py", "scripts/../../outside.py")
-        with self.assertRaisesRegex(ValueError, "escapes skill root"):
+        with self.assertRaisesRegex(ValueError, "canonical relative POSIX"):
+            validator.validate_skill(self.skill)
+
+    def test_noncanonical_resource_path_fails_even_when_it_stays_within_root(self) -> None:
+        self.replace_skill_text("scripts/text_stats.py", "scripts/../SKILL.md")
+        with self.assertRaisesRegex(ValueError, "canonical relative POSIX"):
             validator.validate_skill(self.skill)
 
     def test_invalid_python_script_fails(self) -> None:
@@ -349,6 +384,32 @@ class ValidatorTests(unittest.TestCase):
             stream.write("\n" + "\n".join(f"line {index}" for index in range(510)))
         result = validator.validate_skill(self.skill)
         self.assertTrue(any("under 500" in warning for warning in result["warnings"]))
+
+
+class ValidatorCliTests(unittest.TestCase):
+    def test_noncanonical_resource_path_is_a_controlled_cli_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp) / "text-statistics"
+            shutil.copytree(SKILL_ROOT, skill)
+            skill_file = skill / "SKILL.md"
+            skill_file.write_text(
+                skill_file.read_text(encoding="utf-8").replace(
+                    "scripts/text_stats.py", "scripts/../SKILL.md", 1
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [sys.executable, "-B", str(VALIDATOR_PATH), str(skill)],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        error = json.loads(result.stderr)
+        self.assertEqual(error["status"], "error")
+        self.assertIn("canonical relative POSIX", error["message"])
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ tags:
   - ocr
 aliases:
   - OCR pipeline
-source_checked: 2026-07-14
+source_checked: 2026-07-22
 ---
 
 # OCR 全流程与输入契约
@@ -42,11 +42,18 @@ source_checked: 2026-07-14
   "order": 3,
   "text": "合计 128.00 元",
   "confidence": 0.93,
-  "source": {"engine": "record-at-runtime", "model": "record-at-runtime"}
+  "source": {
+    "asset_id": "original-sample-001",
+    "asset_sha256": "record-at-runtime",
+    "coordinate_space": "page_pixels",
+    "transform_id": "record-at-runtime",
+    "engine": "record-at-runtime",
+    "model": "record-at-runtime"
+  }
 }
 ```
 
-`bbox` 只是坐标约定，必须同时记录它是像素还是归一化坐标，以及顺序为 `[left, top, right, bottom]` 还是别的格式。`confidence` 是模型分数，不是“正确概率”；不同引擎的分数不可直接横比，阈值要在自己的验证集上校准。
+`bbox` 只是坐标约定，必须同时记录它是像素还是归一化坐标，以及顺序为 `[left, top, right, bottom]` 还是别的格式。`asset_sha256`、`transform_id` 和坐标空间把文字框绑定到某个原始 revision 与派生图；裁剪、旋转或重跑 OCR 后不得复用旧框。`confidence` 是模型分数，不是“正确概率”；不同引擎的分数不可直接横比，阈值要在自己的验证集上校准。
 
 ## 失败边界
 
@@ -54,6 +61,10 @@ source_checked: 2026-07-14
 - 只保留平均置信度会掩盖金额、编号等关键字段错误。
 - 预处理覆盖原图会让错误不可复现；原件应只读保存，衍生图记录参数。
 - 把文件名当身份标识会在重名或移动后失效；应使用稳定文档 ID 和内容摘要。
+
+## 进入 RAG 前的证据与权限边界
+
+把块导出为 chunk 时，至少携带 `document_id`、page、block/table-cell ID、source revision、坐标/阅读顺序、分类与有效的对象级授权/ACL。chunk、Embedding、向量投影和检索缓存只是原文的派生物：来源撤权、到期或修订后应立即在在线候选中过滤，再按 [[知识库构建/03-版本删除与权限|版本、删除与权限]] 做撤权/删除传播。仅把 OCR `text` 写入向量库会丢失可引用证据，也可能让已撤权的内容继续被召回。
 
 ## 练习与自测
 
@@ -67,4 +78,4 @@ source_checked: 2026-07-14
 
 ## 下一步与参考
 
-下一步学习 [[OCR/01-基础与数据/02-成像原理与预处理|成像原理与预处理]]。参考 [Tesseract User Manual（当前 5.x 主线）](https://tesseract-ocr.github.io/tessdoc/) 与 [PaddleOCR PP-StructureV3 输出结构（version3.x）](https://www.paddleocr.ai/main/en/version3.x/pipeline_usage/PP-StructureV3.html)（获取日期：2026-07-14）。
+下一步学习 [[OCR/01-基础与数据/02-成像原理与预处理|成像原理与预处理]]。参考 [Tesseract User Manual（当前 5.x 主线）](https://tesseract-ocr.github.io/tessdoc/) 与 [PaddleOCR PP-StructureV3 输出结构（latest/version3.x）](https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PP-StructureV3.html)（获取日期：2026-07-22）。

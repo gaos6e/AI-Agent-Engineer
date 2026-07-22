@@ -1,7 +1,7 @@
 ---
 title: Agent 工具函数设计
-tags: [ai-agent-engineer, Python, tools, agent]
-aliases: [Python Agent 工具契约, Tool 函数设计]
+tags: [ ai-agent-engineer, Python, tools, agent ]
+aliases: [ Python Agent 工具契约, Tool 函数设计 ]
 ---
 
 # Agent 工具函数设计

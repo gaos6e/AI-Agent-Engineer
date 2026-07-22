@@ -148,9 +148,9 @@ class ThreatReviewTests(unittest.TestCase):
         value["tools"][0]["mode"] = "think"
         self.expect_contract_error(value)
 
-    def test_22_invalid_tool_destination_rejected(self) -> None:
+    def test_22_invalid_tool_destination_class_rejected(self) -> None:
         value = self.valid()
-        value["tools"][0]["destination"] = "internet-ish"
+        value["tools"][0]["destination_class"] = "internet-ish"
         self.expect_contract_error(value)
 
     def test_23_tool_boolean_must_be_bool(self) -> None:
@@ -173,9 +173,9 @@ class ThreatReviewTests(unittest.TestCase):
         value["controls"]["tool_allowlist"] = ["missing"]
         self.expect_contract_error(value)
 
-    def test_27_invalid_destination_allowlist_rejected(self) -> None:
+    def test_27_unknown_endpoint_allowlist_entry_rejected(self) -> None:
         value = self.valid()
-        value["controls"]["destination_allowlist"] = ["partner"]
+        value["controls"]["endpoint_allowlist"] = ["partner-api"]
         self.expect_contract_error(value)
 
     def test_28_unknown_approval_tool_rejected(self) -> None:
@@ -198,9 +198,9 @@ class ThreatReviewTests(unittest.TestCase):
         value["controls"]["sandbox"]["enabled"] = "true"
         self.expect_contract_error(value)
 
-    def test_32_dependency_boolean_must_be_bool(self) -> None:
+    def test_32_dependency_provenance_must_be_bool(self) -> None:
         value = self.valid()
-        value["dependencies"][0]["pinned"] = 1
+        value["dependencies"][0]["provenance_verified"] = 1
         self.expect_contract_error(value)
 
     def test_33_duplicate_dependency_name_rejected(self) -> None:
@@ -243,7 +243,7 @@ class ThreatReviewTests(unittest.TestCase):
 
     def test_40_medium_only_scenario_requires_review(self) -> None:
         value = self.valid()
-        value["dependencies"][0]["pinned"] = False
+        value["dependencies"][0]["artifact_digest"] = None
         report = app.build_report(app.validate_scenario(value))
         self.assertEqual(report["action"], "REVIEW")
         self.assertEqual([item["id"] for item in report["findings"]], ["AS-007"])
@@ -306,8 +306,219 @@ class ThreatReviewTests(unittest.TestCase):
         self.assertFalse(any(isinstance(node, ast.Assert) for node in ast.walk(tree)))
 
     def test_50_declared_non_goals_survive_report(self) -> None:
-        validated = app.validate_scenario(self.valid())
-        self.assertIn("send messages", validated["non_goals"])
+        report = app.build_report(app.validate_scenario(self.valid()))
+        self.assertEqual(
+            report["non_goals"],
+            ["send messages", "modify mailbox state", "persist email content to memory"],
+        )
+
+    def test_51_unsupported_schema_version_rejected(self) -> None:
+        value = self.valid()
+        value["schema_version"] = "999"
+        self.expect_contract_error(value)
+
+    def test_52_write_mode_cannot_deny_side_effect(self) -> None:
+        value = self.valid()
+        value["tools"][0]["mode"] = "write"
+        value["tools"][0]["side_effect"] = False
+        self.expect_contract_error(value)
+
+    def test_53_read_mode_cannot_claim_side_effect(self) -> None:
+        value = self.valid()
+        value["tools"][0]["side_effect"] = True
+        self.expect_contract_error(value)
+
+    def test_54_tool_identity_must_exist(self) -> None:
+        value = self.valid()
+        value["tools"][0]["identity_id"] = "missing"
+        self.expect_contract_error(value)
+
+    def test_55_tool_scope_is_bound_to_its_identity(self) -> None:
+        value = self.valid()
+        value["identities"].append(
+            {
+                "id": "unrelated-admin",
+                "shared": False,
+                "ttl_minutes": 5,
+                "scopes": ["mail.admin"],
+            }
+        )
+        value["tools"][0]["required_scopes"] = ["mail.admin"]
+        self.expect_contract_error(value)
+
+    def test_56_unknown_egress_asset_rejected(self) -> None:
+        value = self.valid()
+        value["tools"][0]["egress_assets"] = ["missing"]
+        self.expect_contract_error(value)
+
+    def test_57_required_tool_must_be_allowlisted(self) -> None:
+        value = self.valid()
+        value["controls"]["tool_allowlist"] = []
+        self.expect_contract_error(value)
+
+    def test_58_unknown_resource_allowlist_entry_rejected(self) -> None:
+        value = self.valid()
+        value["controls"]["resource_allowlist"] = ["mailbox:other"]
+        self.expect_contract_error(value)
+
+    def test_59_approval_cannot_reference_disabled_tool(self) -> None:
+        value = self.valid()
+        optional = copy.deepcopy(value["tools"][0])
+        optional["name"] = "optional_mail_read"
+        optional["required_for_purpose"] = False
+        value["tools"].append(optional)
+        value["controls"]["approval"]["required_for_tools"] = [
+            "optional_mail_read"
+        ]
+        self.expect_contract_error(value)
+
+    def test_60_disabled_memory_cannot_declare_write_source(self) -> None:
+        value = self.valid()
+        value["memory"]["write_sources"] = ["email_body"]
+        self.expect_contract_error(value)
+
+    def test_61_disabled_memory_marks_validation_not_applicable(self) -> None:
+        value = self.valid()
+        value["controls"]["memory_write_validation"] = True
+        self.expect_contract_error(value)
+
+    def test_62_enabled_memory_requires_declared_flow(self) -> None:
+        value = self.valid()
+        value["memory"]["enabled"] = True
+        self.expect_contract_error(value)
+
+    def test_63_memory_source_must_exist(self) -> None:
+        value = self.valid()
+        value["memory"] = {
+            "enabled": True,
+            "write_sources": ["missing"],
+            "write_assets": [],
+        }
+        self.expect_contract_error(value)
+
+    def test_64_memory_asset_must_exist(self) -> None:
+        value = self.valid()
+        value["memory"] = {
+            "enabled": True,
+            "write_sources": [],
+            "write_assets": ["missing"],
+        }
+        self.expect_contract_error(value)
+
+    def test_65_conditional_sources_remain_non_authoritative(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        for source in value["untrusted_sources"]:
+            source["trust_level"] = "conditional"
+        report = app.build_report(app.validate_scenario(value))
+        ids = {item["id"] for item in report["findings"]}
+        self.assertIn("AS-001", ids)
+        self.assertIn("AS-010", ids)
+
+    def test_66_external_read_with_sensitive_egress_is_checked(self) -> None:
+        value = self.valid()
+        value["tools"][0]["destination_class"] = "external"
+        value["tools"][0]["egress_assets"] = ["private_mail"]
+        report = app.build_report(app.validate_scenario(value))
+        self.assertEqual([item["id"] for item in report["findings"]], ["AS-006"])
+        self.assertEqual(report["action"], "BLOCK")
+
+    def test_67_weak_internal_write_approval_is_checked(self) -> None:
+        value = self.valid()
+        value["tools"][0]["mode"] = "write"
+        value["tools"][0]["side_effect"] = True
+        value["controls"]["approval"] = {
+            "required_for_tools": ["read_mail"],
+            "binds_parameters": False,
+            "expires_minutes": 60,
+        }
+        report = app.build_report(app.validate_scenario(value))
+        self.assertEqual([item["id"] for item in report["findings"]], ["AS-004"])
+
+    def test_68_missing_endpoint_policy_is_a_finding(self) -> None:
+        value = self.valid()
+        value["controls"]["endpoint_allowlist"] = []
+        report = app.build_report(app.validate_scenario(value))
+        self.assertEqual([item["id"] for item in report["findings"]], ["AS-005"])
+
+    def test_69_missing_resource_policy_is_a_finding(self) -> None:
+        value = self.valid()
+        value["controls"]["resource_allowlist"] = []
+        report = app.build_report(app.validate_scenario(value))
+        self.assertEqual([item["id"] for item in report["findings"]], ["AS-005"])
+
+    def test_70_mutable_version_is_a_supply_chain_finding(self) -> None:
+        value = self.valid()
+        value["dependencies"][0]["version"] = "latest"
+        report = app.build_report(app.validate_scenario(value))
+        self.assertEqual([item["id"] for item in report["findings"]], ["AS-007"])
+        self.assertEqual(report["action"], "REVIEW")
+
+    def test_71_invalid_artifact_digest_rejected(self) -> None:
+        value = self.valid()
+        value["dependencies"][0]["artifact_digest"] = "sha256:not-a-digest"
+        self.expect_contract_error(value)
+
+    def test_72_risk_policy_must_cover_every_severity(self) -> None:
+        value = self.valid()
+        value["risk_policy"]["accept_severities"] = []
+        self.expect_contract_error(value)
+
+    def test_73_risk_policy_must_block_critical(self) -> None:
+        value = self.valid()
+        value["risk_policy"] = {
+            "block_severities": ["high"],
+            "review_severities": ["critical", "medium"],
+            "accept_severities": ["low"],
+        }
+        self.expect_contract_error(value)
+
+    def test_74_risk_policy_cannot_accept_high(self) -> None:
+        value = self.valid()
+        value["risk_policy"] = {
+            "block_severities": ["critical"],
+            "review_severities": ["medium"],
+            "accept_severities": ["high", "low"],
+        }
+        self.expect_contract_error(value)
+
+    def test_75_original_fail_open_policy_is_rejected(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        value["risk_policy"] = {
+            "block_severities": ["low"],
+            "review_severities": [],
+            "accept_severities": ["critical", "high", "medium"],
+        }
+        self.expect_contract_error(value)
+
+    def test_76_decision_fails_closed_on_unhandled_severity(self) -> None:
+        action, reasons = app.decision(
+            self.valid(), [{"id": "AS-X", "severity": "unexpected"}]
+        )
+        self.assertEqual(action, "BLOCK")
+        self.assertIn("unhandled", reasons[0])
+
+    def test_77_explicit_low_acceptance_is_visible(self) -> None:
+        action, reasons = app.decision(
+            self.valid(), [{"id": "AS-LOW", "severity": "low"}]
+        )
+        self.assertEqual(action, "PASS")
+        self.assertIn("explicitly accepted", reasons[0])
+
+    def test_78_no_memory_does_not_require_memory_validation(self) -> None:
+        value = self.valid()
+        self.assertFalse(value["memory"]["enabled"])
+        self.assertFalse(value["controls"]["memory_write_validation"])
+        self.assertEqual(app.build_report(app.validate_scenario(value))["action"], "PASS")
+
+    def test_79_wildcard_resource_is_not_a_concrete_policy_target(self) -> None:
+        value = self.valid()
+        value["tools"][0]["resources"] = ["mailbox:*"]
+        value["controls"]["resource_allowlist"] = ["mailbox:*"]
+        self.expect_contract_error(value)
+
+    def test_80_report_identifies_contract_version(self) -> None:
+        report = app.build_report(app.validate_scenario(self.valid()))
+        self.assertEqual(report["schema_version"], app.SUPPORTED_SCHEMA_VERSION)
 
 
 if __name__ == "__main__":

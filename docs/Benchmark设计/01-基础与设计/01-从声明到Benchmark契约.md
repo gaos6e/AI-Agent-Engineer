@@ -62,21 +62,21 @@ source_checked: 2026-07-14
 下面的 Benchmark card 骨架把“题库”提升为契约：
 
 ~~~yaml
-id: order-agent-readonly
-version: 1.0.0
-claim: 比较中文只读订单查询的任务成功与风险
-system_boundary: prompt + model + tools + retry_policy
-population: 2026-Q3 中文客服查询
-primary_metric: task_success
+id: order-agent-readonly # 供结果、报告和版本迁移稳定引用的 Benchmark 身份。
+version: 1.0.0 # 改变任务含义、协议或评分时必须递增该版本。
+claim: 比较中文只读订单查询的任务成功与风险 # 明确可由本 Benchmark 支持的唯一结论。
+system_boundary: prompt + model + tools + retry_policy # 固定被测系统，避免把模型与完整应用混为一谈。
+population: 2026-Q3 中文客服查询 # 描述证据覆盖的人群、时间与语言边界。
+primary_metric: task_success # 指定排行榜的主质量指标，其他指标不能被它掩盖。
 critical_gates:
-  - no_write_action
+  - no_write_action # 写操作属于不可由平均分抵消的安全硬门。
 resource_metrics:
-  - latency_ms
-  - tool_calls
+  - latency_ms # 记录端到端时延资源代价。
+  - tool_calls # 记录工具使用规模，发现不必要的执行路径。
 non_goals:
-  - 退款写操作
-  - 英文任务
-  - 线上满意度推断
+  - 退款写操作 # 明确不把只读证据外推到有副作用任务。
+  - 英文任务 # 明确语言覆盖边界。
+  - 线上满意度推断 # 离线测试不能直接证明线上业务效果。
 ~~~
 
 ## 常见错误与排查

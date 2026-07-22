@@ -31,6 +31,8 @@ NORMALIZED_ABS_TOLERANCE = 1e-6
 SCHEMA_VERSION = 1
 DEFAULT_FIXTURE = Path(__file__).with_name("semantic-search-fixture.json")
 SEGMENT_PATTERN = re.compile(r"[a-z0-9]+|[\u3400-\u4dbf\u4e00-\u9fff]+")
+AUDIT_VISIBILITY = "protected_audit"
+REPORT_SCHEMA_VERSION = "semantic-search-offline-audit-v1"
 
 
 class SemanticSearchError(ValueError):
@@ -192,6 +194,18 @@ def _parse_string_list(
     return parsed
 
 
+def _finite_float(value: Any, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise SemanticSearchError(f"{label} 必须是有限数值")
+    try:
+        parsed = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise SemanticSearchError(f"{label} 必须是有限数值") from exc
+    if not isfinite(parsed):
+        raise SemanticSearchError(f"{label} 必须是有限数值")
+    return parsed
+
+
 def _parse_vector(
     value: Any,
     contract: RepresentationContract,
@@ -204,13 +218,7 @@ def _parse_vector(
         )
     parsed: list[float] = []
     for index, item in enumerate(value):
-        if (
-            not isinstance(item, (int, float))
-            or isinstance(item, bool)
-            or not isfinite(float(item))
-        ):
-            raise SemanticSearchError(f"{label}[{index}] 必须是有限数值")
-        parsed.append(float(item))
+        parsed.append(_finite_float(item, f"{label}[{index}]"))
     norm = sqrt(sum(item * item for item in parsed))
     if norm == 0.0 or not isfinite(norm):
         raise SemanticSearchError(f"{label} 不得是零向量")
@@ -540,17 +548,21 @@ def vector_score(
         raise SemanticSearchError(f"不支持的 metric：{metric}")
     if not left or len(left) != len(right):
         raise SemanticSearchError("向量必须非空且维度相同")
-    if not all(isfinite(float(value)) for value in (*left, *right)):
-        raise SemanticSearchError("向量包含 NaN/Inf")
+    left_values = tuple(
+        _finite_float(value, f"left[{index}]") for index, value in enumerate(left)
+    )
+    right_values = tuple(
+        _finite_float(value, f"right[{index}]") for index, value in enumerate(right)
+    )
     if metric == "dot":
-        return sum(a * b for a, b in zip(left, right))
+        return sum(a * b for a, b in zip(left_values, right_values))
     if metric == "euclidean":
-        return -sqrt(sum((a - b) ** 2 for a, b in zip(left, right)))
-    left_norm = sqrt(sum(value * value for value in left))
-    right_norm = sqrt(sum(value * value for value in right))
+        return -sqrt(sum((a - b) ** 2 for a, b in zip(left_values, right_values)))
+    left_norm = sqrt(sum(value * value for value in left_values))
+    right_norm = sqrt(sum(value * value for value in right_values))
     if left_norm == 0.0 or right_norm == 0.0:
         raise SemanticSearchError("零向量没有 cosine 方向")
-    return sum(a * b for a, b in zip(left, right)) / (
+    return sum(a * b for a, b in zip(left_values, right_values)) / (
         left_norm * right_norm
     )
 
@@ -606,9 +618,27 @@ def ranking_metrics(
     top_k: int,
 ) -> dict[str, float | None]:
     _validate_limit("top_k", top_k)
+    if isinstance(ranking, (str, bytes)):
+        raise SemanticSearchError("ranking 必须是按排名排列的 ID 序列")
+    identifiers = [
+        _clean_token(f"ranking[{index}]", document_id)
+        for index, document_id in enumerate(ranking)
+    ]
+    if len(identifiers) != len(set(identifiers)):
+        raise SemanticSearchError("ranking 含重复 document_id")
+    if not isinstance(qrels, Mapping):
+        raise SemanticSearchError("qrels 必须是 object")
+    for document_id, grade in qrels.items():
+        _clean_token("qrels document_id", document_id)
+        if (
+            not isinstance(grade, int)
+            or isinstance(grade, bool)
+            or not 1 <= grade <= 3
+        ):
+            raise SemanticSearchError("qrels grade 必须是 1..3 的整数")
     if not qrels:
         return {"recall": None, "mrr": None, "ndcg": None}
-    top = list(ranking[:top_k])
+    top = identifiers[:top_k]
     relevant = set(qrels)
     recall = len(relevant.intersection(top)) / len(relevant)
     reciprocal_rank = 0.0
@@ -626,10 +656,12 @@ def ranking_metrics(
         for rank, grade in enumerate(ideal_grades, start=1)
     )
     ndcg = dcg / ideal_dcg if ideal_dcg else 0.0
+    if not isfinite(ndcg) or not 0.0 <= ndcg <= 1.0 + 1e-12:
+        raise SemanticSearchError("nDCG 超出 0..1，ranking 或 qrels 合同不合法")
     return {
         "recall": round(recall, 6),
         "mrr": round(reciprocal_rank, 6),
-        "ndcg": round(ndcg, 6),
+        "ndcg": round(min(1.0, ndcg), 6),
     }
 
 
@@ -680,9 +712,10 @@ def evaluate(
         "hybrid_rrf": [],
     }
     query_reports: list[dict[str, Any]] = []
-    security_violations: list[dict[str, str]] = []
+    security_violations: list[dict[str, Any]] = []
     for query in fixture.queries:
         eligible = eligible_documents(fixture, query)
+        eligible_ids = {document.document_id for document in eligible}
         bm25 = rank_bm25(query, eligible, limit=rank_window)
         dense = rank_dense(
             query,
@@ -707,13 +740,22 @@ def evaluate(
             identifiers = [hit.document_id for hit in ranking]
             metrics[channel] = ranking_metrics(identifiers, qrels, top_k=top_k)
             channel_metrics[channel].append(metrics[channel])
-            for forbidden in query.must_not_return:
-                if forbidden in identifiers[:top_k]:
+            forbidden_ids = set(query.must_not_return)
+            for rank, document_id in enumerate(identifiers, start=1):
+                reason: str | None = None
+                if document_id in forbidden_ids:
+                    reason = "must_not_return"
+                elif document_id not in eligible_ids:
+                    reason = "ineligible_candidate"
+                if reason is not None:
                     security_violations.append(
                         {
                             "query_id": query.query_id,
                             "channel": channel,
-                            "document_id": forbidden,
+                            "stage": "candidate_window",
+                            "rank": rank,
+                            "document_id": document_id,
+                            "reason": reason,
                         }
                     )
         source_ranks = {name: _rank_map(hits) for name, hits in source_channels.items()}
@@ -752,6 +794,8 @@ def evaluate(
                 round(sum(values) / len(values), 6) if values else None
             )
     return {
+        "report_schema_version": REPORT_SCHEMA_VERSION,
+        "visibility": AUDIT_VISIBILITY,
         "notice": fixture.representation.notice,
         "fixture": {
             "schema_version": SCHEMA_VERSION,

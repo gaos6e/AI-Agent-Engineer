@@ -1,6 +1,26 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "session_id": "synthetic-meeting-001",
+  "source_audio": {
+    "asset_id": "synthetic-meeting-audio-001",
+    "source_revision": "synthetic-audio-contract-v1",
+    "timestamp_reference": "asset_start",
+    "capture_format": {
+      "container": "WAV",
+      "codec": "PCM_S16LE",
+      "sample_rate_hz": 48000,
+      "channels": 2
+    },
+    "analysis_format": {
+      "container": "RAW",
+      "codec": "PCM_S16LE",
+      "sample_rate_hz": 16000,
+      "channels": 1
+    },
+    "audio_available": false
+  },
+  "transcript_revision": "synthetic-transcript-v1",
+  "transcript_state": "committed",
   "normalization": "nfkc-casefold-remove-punctuation-v1",
   "segments": [
     {

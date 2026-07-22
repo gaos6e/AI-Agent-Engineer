@@ -54,7 +54,7 @@ class StrictJsonTests(TemporaryFileCase):
 
     def test_rejects_duplicate_key(self) -> None:
         path = self.write_text(
-            '{"schema_version":"1.0","session_id":"x",'
+            '{"schema_version":"1.1","session_id":"x",'
             '"normalization":"nfkc-casefold-remove-punctuation-v1",'
             '"segments":[],"segments":[]}'
         )
@@ -95,7 +95,7 @@ class TopLevelContractTests(unittest.TestCase):
             validate_fixture(payload)
 
     def test_accepts_valid_payload(self) -> None:
-        self.assertEqual(validate_fixture(valid_payload())["schema_version"], "1.0")
+        self.assertEqual(validate_fixture(valid_payload())["schema_version"], "1.1")
 
     def test_missing_field(self) -> None:
         payload = valid_payload()
@@ -111,6 +111,31 @@ class TopLevelContractTests(unittest.TestCase):
         payload = valid_payload()
         payload["schema_version"] = "2.0"
         self.assert_invalid(payload, "schema_version")
+
+    def test_source_audio_requires_a_stable_asset_and_revision(self) -> None:
+        payload = valid_payload()
+        payload["source_audio"]["asset_id"] = " "
+        self.assert_invalid(payload, "source_audio.asset_id")
+
+    def test_source_audio_requires_asset_start_timebase(self) -> None:
+        payload = valid_payload()
+        payload["source_audio"]["timestamp_reference"] = "wall_clock"
+        self.assert_invalid(payload, "timestamp_reference")
+
+    def test_offline_fixture_rejects_an_audio_claim(self) -> None:
+        payload = valid_payload()
+        payload["source_audio"]["audio_available"] = True
+        self.assert_invalid(payload, "audio_available")
+
+    def test_audio_format_rejects_boolean_sample_rate(self) -> None:
+        payload = valid_payload()
+        payload["source_audio"]["analysis_format"]["sample_rate_hz"] = True
+        self.assert_invalid(payload, "sample_rate_hz")
+
+    def test_transcript_state_must_be_committed(self) -> None:
+        payload = valid_payload()
+        payload["transcript_state"] = "partial"
+        self.assert_invalid(payload, "transcript_state")
 
     def test_empty_session_id(self) -> None:
         payload = valid_payload()
@@ -242,12 +267,21 @@ class NormalizationAndMetricTests(unittest.TestCase):
 
     def test_score_pairs_micro_averages(self) -> None:
         score = score_pairs([("a b", "a x"), ("c", "c")], tokens_for_wer)
-        self.assertEqual(score, {"errors": 1, "reference_units": 3, "rate": 0.333333})
+        self.assertEqual(
+            score,
+            {
+                "errors": 1,
+                "reference_units": 3,
+                "rate": 0.333333,
+                "rate_status": "defined",
+            },
+        )
 
     def test_score_pairs_empty_reference_is_undefined(self) -> None:
         score = score_pairs([("", "extra")], tokens_for_wer)
         self.assertEqual(score["errors"], 1)
         self.assertIsNone(score["rate"])
+        self.assertEqual(score["rate_status"], "undefined_no_reference_units")
 
 
 class EvaluationTests(unittest.TestCase):
@@ -258,6 +292,14 @@ class EvaluationTests(unittest.TestCase):
 
     def test_report_records_normalization(self) -> None:
         self.assertEqual(evaluate(valid_payload())["normalization"], NORMALIZATION_NAME)
+
+    def test_report_preserves_audio_and_revision_contract(self) -> None:
+        report = evaluate(valid_payload())
+        self.assertEqual(
+            report["source_audio"]["source_revision"], "synthetic-audio-contract-v1"
+        )
+        self.assertEqual(report["transcript_revision"], "synthetic-transcript-v1")
+        self.assertEqual(report["transcript_state"], "committed")
 
     def test_report_counts_segments(self) -> None:
         self.assertEqual(evaluate(valid_payload())["segments"], 3)

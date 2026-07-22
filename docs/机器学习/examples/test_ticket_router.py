@@ -6,6 +6,7 @@ from collections import Counter
 from contextlib import redirect_stdout
 from io import StringIO
 import unittest
+import warnings
 
 from ticket_router import (
     SAMPLES,
@@ -63,6 +64,13 @@ class TicketRouterTests(unittest.TestCase):
         second = evaluate()
         self.assertEqual(first, second)
 
+    def test_evaluation_emits_no_warnings(self) -> None:
+        # The locked 1.9 API does not need an explicit penalty/l1_ratio setting;
+        # reject any new warnings in the local compatibility check as well.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            evaluate()
+
     def test_invalid_samples_are_rejected(self) -> None:
         invalid_cases = (
             [],
@@ -87,6 +95,8 @@ class TicketRouterTests(unittest.TestCase):
             {"test_size": 24},
             {"random_state": True},
             {"random_state": "42"},
+            {"random_state": -1},
+            {"random_state": 2**32},
         )
         for arguments in invalid_arguments:
             with self.subTest(arguments=arguments):
@@ -104,4 +114,3 @@ class TicketRouterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

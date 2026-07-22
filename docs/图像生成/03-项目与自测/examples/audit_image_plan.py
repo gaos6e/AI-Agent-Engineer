@@ -45,6 +45,8 @@ TOP_FIELDS = {
     "prompt",
     "output",
     "reference_assets",
+    "lineage",
+    "governance",
     "risk",
     "acceptance",
     "budget",
@@ -64,10 +66,18 @@ PROMPT_FIELDS = {
 OUTPUT_FIELDS = {"aspect_ratio", "width", "height", "format", "candidate_count"}
 ASSET_FIELDS = {
     "asset_id",
+    "source_revision",
     "role",
     "source_reference",
     "content_sha256",
     "rights_reference",
+    "acl_reference",
+}
+LINEAGE_FIELDS = {"source_revision", "transform_id", "release_id"}
+GOVERNANCE_FIELDS = {
+    "object_acl_required",
+    "deletion_propagation_plan",
+    "evidence_policy",
 }
 RISK_FIELDS = {
     "rights_confirmed",
@@ -183,6 +193,20 @@ def validate_contract(plan: Any) -> dict[str, Any]:
     if root["task_type"] not in ALLOWED_TASK_TYPES:
         raise FixtureError(f"task_type 必须是 {sorted(ALLOWED_TASK_TYPES)} 之一")
 
+    lineage = _require_exact_fields(root["lineage"], LINEAGE_FIELDS, context="lineage")
+    for field in LINEAGE_FIELDS:
+        if not _nonempty_text(lineage[field]):
+            raise FixtureError(f"lineage.{field} 必须是非空字符串")
+
+    governance = _require_exact_fields(
+        root["governance"], GOVERNANCE_FIELDS, context="governance"
+    )
+    if not isinstance(governance["object_acl_required"], bool):
+        raise FixtureError("governance.object_acl_required 必须是布尔值")
+    for field in ("deletion_propagation_plan", "evidence_policy"):
+        if not _nonempty_text(governance[field]):
+            raise FixtureError(f"governance.{field} 必须是非空字符串")
+
     prompt = _require_exact_fields(root["prompt"], PROMPT_FIELDS, context="prompt")
     for field in PROMPT_FIELDS - {"must_include", "must_avoid"}:
         if not _nonempty_text(prompt[field]):
@@ -285,6 +309,15 @@ def audit_plan(plan: dict[str, Any]) -> list[str]:
         errors.append(f"prompt.must_include 与 must_avoid 冲突：{conflicts}。")
 
     roles = {asset["role"] for asset in plan["reference_assets"]}
+    for asset in plan["reference_assets"]:
+        for field in (
+            "source_reference",
+            "source_revision",
+            "rights_reference",
+            "acl_reference",
+        ):
+            if INCOMPLETE_VALUE_PATTERN.search(asset[field]):
+                errors.append(f"素材 {asset['asset_id']} 的 {field} 不能保留占位值。")
     required_roles = {
         "image_to_image": {"source_image"},
         "variation": {"source_image"},
@@ -300,6 +333,21 @@ def audit_plan(plan: dict[str, Any]) -> list[str]:
         errors.append("risk.rights_confirmed 必须显式为 true。")
     if risk["human_review_required"] is not True:
         errors.append("risk.human_review_required 必须显式为 true。")
+
+    lineage = plan["lineage"]
+    for field in LINEAGE_FIELDS:
+        if INCOMPLETE_VALUE_PATTERN.search(lineage[field]):
+            errors.append(f"lineage.{field} 不能保留占位值。")
+
+    governance = plan["governance"]
+    if governance["object_acl_required"] is not True:
+        errors.append("governance.object_acl_required 必须在评分前启用对象级授权/ACL。")
+    if INCOMPLETE_VALUE_PATTERN.search(governance["deletion_propagation_plan"]):
+        errors.append("governance.deletion_propagation_plan 不能保留占位值。")
+    if governance["evidence_policy"] != "evidence_supported":
+        errors.append(
+            "governance.evidence_policy 必须为 'evidence_supported'，不得把生成图单独当作事实证据。"
+        )
 
     dimensions: set[str] = set()
     for item in plan["acceptance"]:

@@ -1,7 +1,7 @@
 ---
 title: 文件、JSON 与输入校验
-tags: [ai-agent-engineer, Python, JSON, I-O]
-aliases: [Python 文件边界, Python JSON 校验]
+tags: [ ai-agent-engineer, Python, JSON, I-O ]
+aliases: [ Python 文件边界, Python JSON 校验 ]
 ---
 
 # 文件、JSON 与输入校验

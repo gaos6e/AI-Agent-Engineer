@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { isMap, isScalar, isSeq, parseDocument } from "yaml"
 import { HIGH_CONFIDENCE_SECRET_PATTERNS } from "./scan-public-repository.mjs"
 
 export const WEBSITE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -19,12 +20,78 @@ export const GENERATED_ROOT = path.join(WEBSITE_ROOT, ".generated")
 export const CONTENT_ROOT = path.join(GENERATED_ROOT, "content")
 export const MANIFEST_PATH = path.join(GENERATED_ROOT, "publish-manifest.json")
 const LOCAL_VAULT_ROOT = path.resolve(DOCS_ROOT, "..", "..", "..")
+const WINDOWS_ABSOLUTE_PROJECT_ROOT_PATTERN =
+  /[A-Za-z]:[\\/](?:[^\\/\r\n"'`<>|]+[\\/])*AI Agent Engineer(?=[\\/\s"'`]|$)/i
 
 const VAULT_PREFIX = "Knowledge/AI Agent Engineer/docs/"
 const MAX_CODE_BYTES = 2_000_000
 const MAX_IMAGE_BYTES = 8_000_000
 const CODE_EXTENSIONS = new Set([".py", ".json", ".csv", ".ipynb", ".jsonl", ".sh", ".txt"])
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"])
+const SUPPLEMENTAL_TOP_LEVEL = new Set(["维护记录"])
+// Frozen legacy reference trees are intentionally listed explicitly. They may
+// contain mirrors, translations, or local summaries derived from upstream
+// documentation. A source URL or a metadata-only relabel is not proof that a
+// body is current or may be redistributed, so every page fails closed until
+// its content shape, provenance, license, and quality have all been reviewed.
+const LEGACY_REFERENCE_PREFIXES = [
+  "深度学习/",
+  "LangChain/01-Learn.md",
+  "LangChain/LICENSE-LangChain-docs.md",
+  "LangChain/01-Conceptual Overviews/",
+  "LangChain/02-LangChain/",
+  "LangChain/03-LangGraph/",
+  "LangChain/04-Multi-agent/",
+  "LangChain/05-Deep Agents/",
+  "LangChain/06-Additional Resources/",
+  "MCP/01-入门/",
+  "MCP/02-了解 MCP/",
+  "MCP/03-使用 MCP 开发/",
+  "MCP/04-客户端/",
+  "MCP/05-安全/",
+  "MCP/06-开发者工具/",
+  "MCP/07-示例/",
+  "Agent Skills/01-概览/",
+  "Agent Skills/02-技能创建者/",
+]
+const LEGACY_REFERENCE_LOCAL_FILES = new Set([
+  "深度学习/00-目录.md",
+  "深度学习/00-来源与目录.md",
+  // This is an independently authored engineering overlay, not a D2L mirror.
+  // Keep the exception exact so it cannot release neighboring reference pages.
+  "深度学习/00-工程实践与现代化路线.md",
+])
+const LEGACY_REFERENCE_ASSET_EXCLUDE_PREFIXES = ["LangChain/attachments/"]
+// These six images are the only frozen LangChain reference assets that have
+// been individually checked against the upstream MIT repository.  Keep the
+// enclosing attachment tree fail-closed; the phase-17 maintenance record
+// records the upstream commit, blob paths, and content digests.
+const LANGCHAIN_PUBLIC_REFERENCE_IMAGE_DIGESTS = new Map([
+  ["LangChain/attachments/images/rag_indexing.png", "d24e6b3c8631685e5efd85e0cf7714dce7a7f1e3186655b1e00cbeccb894431b"],
+  ["LangChain/attachments/images/rag_retrieval_generation.png", "723d38f4c3e9fb1c84eb4fdaa32ff2375b04f2e154692ac117a06028afc610f3"],
+  ["LangChain/attachments/images/langgraph-hybrid-rag-tutorial.png", "e8a37e3d1df2e71e724506714acb32da3465a3b6b1c81f3e8ac2283c74b887f4"],
+  ["LangChain/attachments/oss/images/agentic-rag-output.png", "23e192104524074fb91cb17d8fca7ef0f6777f6c5910deadd30b9ac98ba51c39"],
+  ["LangChain/attachments/oss/images/sql-agent-langgraph.png", "72cb96ea3b2db9054e076197b69b536e081aa6ef3a11965b900c558d4e5a4755"],
+  ["LangChain/attachments/images/data_analysis_slack_response.png", "36f3f251bcf8603adc9462b699047f269f5e2f3ff654c386d927668217654092"],
+])
+const LEGACY_REFERENCE_ASSET_ALLOWED_PREFIXES = [
+  "LangChain/00-初学者路线/examples/",
+  "MCP/examples/",
+]
+// Exact, reviewed offline examples that belong to the independently authored
+// deep-learning overlay above. Do not widen this to the whole examples folder:
+// frozen D2L material must remain unable to expose adjacent assets by default.
+const LEGACY_REFERENCE_ASSET_ALLOWED_FILES = new Set([
+  "深度学习/examples/training_run_audit.py",
+  "深度学习/examples/test_training_run_audit.py",
+])
+const AGENT_SKILLS_PUBLIC_EXAMPLE_FILES = new Set([
+  "Agent Skills/examples/test_validate_skill.py",
+  "Agent Skills/examples/validate_skill.py",
+  "Agent Skills/examples/text-statistics/SKILL.md",
+  "Agent Skills/examples/text-statistics/evals/evals.json",
+  "Agent Skills/examples/text-statistics/scripts/text_stats.py",
+])
 const PYTHON_PUBLIC_FILES = new Set([
   "Python基础/00-目录.md",
   "Python基础/00-Agent工程实践.md",
@@ -32,6 +99,159 @@ const PYTHON_PUBLIC_FILES = new Set([
 const PYTHON_PUBLIC_PREFIXES = ["Python基础/Agent工程路线/", "Python基础/examples/"]
 const AGENTIC_PUBLIC_FILES = new Set(["Agentic Design Patterns/00-目录.md"])
 const AGENTIC_PUBLIC_PREFIXES = ["Agentic Design Patterns/00-初学者路线/"]
+const CONTENT_ORIGINS = new Set(["original", "curated", "third-party", "mixed"])
+const CONTENT_STATUSES = new Set(["validated", "dynamic", "needs-review", "frozen-reference"])
+const COURSE_SCHEMA_VERSION = 2
+const COURSE_DOMAIN_LABELS = new Map([
+  ["foundations", "工程与数学基础"],
+  ["model-and-context", "模型与上下文"],
+  ["retrieval-and-data", "检索与数据"],
+  ["multimodal", "多模态"],
+  ["agent-runtime", "Agent 运行时"],
+  ["framework-practice", "框架实践"],
+  ["evaluation-reliability", "评测与可靠性"],
+  ["safety-governance", "安全与治理"],
+  ["production-ops", "生产运维"],
+  ["frontier-reference", "前沿与参考"],
+])
+const COURSE_TRACK_LABELS = new Map([
+  ["agent_app", "Agent 应用开发"],
+  ["rag", "RAG 与知识库"],
+  ["agent_platform", "Agent 平台与可靠性"],
+  ["multimodal_realtime", "多模态与实时交互"],
+])
+const COURSE_TRACK_KIND_LABELS = new Map([
+  ["core", "核心"],
+  ["recommended", "推荐"],
+  ["optional", "可选"],
+])
+const COURSE_DOMAINS = new Set(COURSE_DOMAIN_LABELS.keys())
+const COURSE_TRACK_ROLES = new Set(COURSE_TRACK_LABELS.keys())
+const COURSE_TRACK_KINDS = new Set(["core", "recommended", "optional"])
+const GOVERNANCE_KEYS = new Set([
+  "content_origin",
+  "content_status",
+  "reference_layer_status",
+  "license",
+  "source_url",
+  "attribution",
+  "local_changes",
+])
+const PUBLIC_THIRD_PARTY_LICENSES = new Set(["mit", "apache-2.0", "cc-by-4.0", "cc0-1.0"])
+const PUBLIC_SOURCE_PROTOCOLS = new Set(["http:", "https:"])
+const LEGAL_LICENSE_FILES = new Set([
+  "Agent-Skills-CC-BY-4.0.txt",
+  "Apache-2.0.txt",
+  "LangChain-MIT.txt",
+  "MCP-MIT.txt",
+  "Mermaid-MIT.txt",
+  "Quartz-Community-MIT.txt",
+  "Quartz-MIT.txt",
+])
+const LEGAL_LICENSE_SHA256 = new Map([
+  [
+    "Agent-Skills-CC-BY-4.0.txt",
+    "9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94",
+  ],
+])
+const PUBLIC_THIRD_PARTY_SOURCE_REGISTRY = [
+  {
+    id: "d2l-zh",
+    routes: [
+      { origin: "https://github.com", pathPrefix: "/d2l-ai/d2l-zh" },
+      { origin: "https://zh-v2.d2l.ai", pathPrefix: "/" },
+    ],
+    licenses: new Set(["apache-2.0"]),
+    licenseFile: "Apache-2.0.txt",
+  },
+  {
+    id: "langchain-docs",
+    routes: [
+      { origin: "https://github.com", pathPrefix: "/langchain-ai/docs" },
+      { origin: "https://docs.langchain.com", pathPrefix: "/" },
+    ],
+    licenses: new Set(["mit"]),
+    licenseFile: "LangChain-MIT.txt",
+  },
+  {
+    id: "model-context-protocol-archived-docs",
+    routes: [
+      { origin: "https://github.com", pathPrefix: "/modelcontextprotocol/docs" },
+    ],
+    licenses: new Set(["mit"]),
+    licenseFile: "MCP-MIT.txt",
+  },
+  {
+    id: "agent-skills-docs",
+    routes: [
+      {
+        origin: "https://agentskills.io",
+        pathExact: "/home.md",
+        localPath: "Agent Skills/01-概览/01-Agent Skills Overview.md",
+      },
+      {
+        origin: "https://agentskills.io",
+        pathExact: "/specification.md",
+        localPath: "Agent Skills/01-概览/02-Specification.md",
+      },
+      {
+        origin: "https://agentskills.io",
+        pathExact: "/clients.md",
+        localPath: "Agent Skills/01-概览/03-Client Showcase.md",
+      },
+      ...[
+        ["quickstart.md", "01-Quickstart.md"],
+        ["best-practices.md", "02-Best practices.md"],
+        ["optimizing-descriptions.md", "03-Optimizing descriptions.md"],
+        ["evaluating-skills.md", "04-Evaluating skills.md"],
+        ["using-scripts.md", "05-Using scripts.md"],
+      ].map(([upstreamName, localName]) => ({
+        origin: "https://agentskills.io",
+        pathExact: `/skill-creation/${upstreamName}`,
+        localPath: `Agent Skills/02-技能创建者/${localName}`,
+      })),
+    ],
+    licenses: new Set(["cc-by-4.0"]),
+    licenseFile: "Agent-Skills-CC-BY-4.0.txt",
+    requiredAttribution: "Agent Skills project contributors",
+    requiredChangeNotice: "Chinese translation, link normalization, and Obsidian formatting",
+  },
+  {
+    id: "requests-docs",
+    routes: [
+      { origin: "https://github.com", pathPrefix: "/psf/requests" },
+      { origin: "https://requests.readthedocs.io", pathPrefix: "/" },
+    ],
+    licenses: new Set(["apache-2.0"]),
+    licenseFile: "Apache-2.0.txt",
+  },
+]
+const UNKNOWN_LICENSES = new Set([
+  "unknown",
+  "unspecified",
+  "not specified",
+  "none",
+  "unlicensed",
+  "n/a",
+  "null",
+  "~",
+  "false",
+])
+
+for (const registration of PUBLIC_THIRD_PARTY_SOURCE_REGISTRY) {
+  if (!LEGAL_LICENSE_FILES.has(registration.licenseFile)) {
+    throw new Error(`Registered third-party source lacks a copied license file: ${registration.id}`)
+  }
+}
+
+export function assertLegalLicenseDigest(filename, contents) {
+  const expected = LEGAL_LICENSE_SHA256.get(filename)
+  if (!expected) return
+  const actual = createHash("sha256").update(contents).digest("hex")
+  if (actual !== expected) {
+    throw new Error(`Copied license digest mismatch for ${filename}: ${actual}`)
+  }
+}
 
 function toPosix(value) {
   return value.split(path.sep).join("/")
@@ -62,9 +282,336 @@ function isAllowedByPrefix(relativePath, files, prefixes) {
   return files.has(relativePath) || prefixes.some((prefix) => relativePath.startsWith(prefix))
 }
 
-export function classifyPath(relativePath, size = 0) {
+function simpleYamlScalar(rawValue) {
+  const value = String(rawValue ?? "").trim()
+  const doubleQuoted = value.match(/^"((?:\\.|[^"\\])*)"\s*(?:#.*)?$/)
+  if (doubleQuoted) {
+    try {
+      return JSON.parse(`"${doubleQuoted[1]}"`)
+    } catch {
+      return value
+    }
+  }
+  const singleQuoted = value.match(/^'((?:''|[^'])*)'\s*(?:#.*)?$/)
+  if (singleQuoted) return singleQuoted[1].replaceAll("''", "'")
+  return value.replace(/\s+#.*$/, "").trim()
+}
+
+function frontmatterKeyPattern(key) {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return `(?:${escaped}|"${escaped}"|'${escaped}')`
+}
+
+function frontmatterValues(markdown, key) {
+  const { frontmatter } = splitFrontmatter(markdown)
+  if (!frontmatter) return []
+  const keyPattern = frontmatterKeyPattern(key)
+  return [...frontmatter.matchAll(new RegExp(`^${keyPattern}[ \\t]*:[ \\t]*(.*?)[ \\t]*$`, "gm"))]
+    .map((match) => simpleYamlScalar(match[1]))
+}
+
+function parseGovernanceFields(relativePath, markdown) {
+  const { frontmatter } = splitFrontmatter(markdown)
+  const fields = new Map()
+  if (!frontmatter) return fields
+
+  for (const key of GOVERNANCE_KEYS) {
+    if (frontmatterValues(markdown, key).length > 1) {
+      throw new Error(`Duplicate ${key} in ${relativePath}`)
+    }
+  }
+
+  const document = parseDocument(frontmatter, {
+    uniqueKeys: true,
+    merge: false,
+    prettyErrors: false,
+    logLevel: "silent",
+  })
+  const yamlIssue = document.errors[0] ?? document.warnings[0]
+  if (yamlIssue) {
+    throw new Error(`Invalid YAML frontmatter in ${relativePath}: ${yamlIssue.code}`)
+  }
+  if (!document.contents) return fields
+  if (!isMap(document.contents)) {
+    throw new Error(`YAML frontmatter must be a root mapping in ${relativePath}`)
+  }
+
+  function visit(node, depth) {
+    if (isMap(node)) {
+      for (const pair of node.items) {
+        const keyNode = pair.key
+        if (!isScalar(keyNode)) {
+          throw new Error(`Unsupported YAML mapping key syntax in ${relativePath}`)
+        }
+        const semanticKey = keyNode.value == null ? "" : String(keyNode.value)
+        if (semanticKey === "<<") {
+          throw new Error(`YAML merge keys are not allowed in ${relativePath}`)
+        }
+
+        if (GOVERNANCE_KEYS.has(semanticKey)) {
+          const canonicalValues = frontmatterValues(markdown, semanticKey)
+          if (
+            depth !== 0 ||
+            canonicalValues.length !== 1 ||
+            keyNode.tag ||
+            keyNode.anchor ||
+            keyNode.range && frontmatter.slice(keyNode.range[0], keyNode.range[1]).includes("\n")
+          ) {
+            throw new Error(
+              `Unsupported ${semanticKey} YAML syntax in ${relativePath}; ` +
+              "use one unindented root-level 'key: value' field",
+            )
+          }
+          if (fields.has(semanticKey)) {
+            throw new Error(`Duplicate ${semanticKey} in ${relativePath}`)
+          }
+          if (!isScalar(pair.value) || pair.value.tag || pair.value.anchor) {
+            throw new Error(`Unsupported ${semanticKey} value syntax in ${relativePath}`)
+          }
+          const valueRange = pair.value.range
+          if (valueRange && frontmatter.slice(valueRange[0], valueRange[1]).includes("\n")) {
+            throw new Error(`Unsupported multiline ${semanticKey} value in ${relativePath}`)
+          }
+          fields.set(
+            semanticKey,
+            pair.value.value == null ? "" : String(pair.value.value).trim(),
+          )
+        }
+
+        visit(pair.value, depth + 1)
+      }
+    } else if (isSeq(node)) {
+      for (const item of node.items) visit(item, depth + 1)
+    }
+  }
+
+  visit(document.contents, 0)
+  return fields
+}
+
+function governanceFieldValue(relativePath, fields, key, { allowEmpty = false } = {}) {
+  if (!fields.has(key)) return undefined
+  const value = fields.get(key)
+  if (!allowEmpty && !value) throw new Error(`Empty ${key} in ${relativePath}`)
+  if (/[\u0000-\u001f\u007f\u2028\u2029]/u.test(value)) {
+    throw new Error(`Decoded control characters are not allowed in ${key} in ${relativePath}`)
+  }
+  return value
+}
+
+function normalizedPublicSourceUrl(value) {
+  try {
+    const parsed = new URL(value)
+    if (!PUBLIC_SOURCE_PROTOCOLS.has(parsed.protocol)) return undefined
+    if (parsed.username || parsed.password) return undefined
+    return parsed.href
+  } catch {
+    return undefined
+  }
+}
+
+function sourcePathMatches(pathname, prefix) {
+  if (prefix === "/") return true
+  const normalizedPrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix
+  return pathname === normalizedPrefix || pathname.startsWith(`${normalizedPrefix}/`)
+}
+
+function isPathUnderPrefix(relativePath, prefixes) {
+  return prefixes.some((prefix) => relativePath === prefix || relativePath.startsWith(prefix))
+}
+
+function hasRootFrontmatterField(markdown, key) {
+  return frontmatterValues(markdown, key).length === 1
+}
+
+function legacyReferenceStubReason(relativePath, metadata) {
+  if (!isPathUnderPrefix(relativePath, LEGACY_REFERENCE_PREFIXES)) return undefined
+  if (LEGACY_REFERENCE_LOCAL_FILES.has(relativePath)) return undefined
+  if (metadata?.status === "needs-review") {
+    return "third-party-reference-needs-review"
+  }
+  // A metadata-only change to original/curated/mixed must never release a body
+  // from a frozen legacy tree. A genuinely independent, validated rewrite
+  // belongs outside this tree; a reviewed redistribution must satisfy the
+  // third-party provenance and license contract below.
+  return metadata?.origin !== "third-party" || metadata?.status !== "frozen-reference"
+    ? "third-party-metadata-missing"
+    : undefined
+}
+
+function publicSourceRegistration(relativePath, parsedUrl) {
+  // Keep registry matching independent of any upstream/proxy decoding policy.
+  // Encoded percent signs, dot segments, or path separators are non-canonical
+  // for the registered routes and therefore fail closed.
+  if (/%(?:25|2e|2f|5c)/i.test(parsedUrl.pathname)) return undefined
+  return PUBLIC_THIRD_PARTY_SOURCE_REGISTRY.find((registration) =>
+    registration.routes.some((route) =>
+      parsedUrl.origin === route.origin &&
+      (!route.localPath || route.localPath === relativePath) &&
+      (route.pathExact
+        ? parsedUrl.pathname === route.pathExact && !parsedUrl.search && !parsedUrl.hash
+        : sourcePathMatches(parsedUrl.pathname, route.pathPrefix)),
+    ),
+  )
+}
+
+const CC_BY_PLACEHOLDER_VALUES = new Set([
+  "0",
+  "false",
+  "n/a",
+  "none",
+  "null",
+  "tbd",
+  "unknown",
+  "unspecified",
+  "~",
+])
+
+function meaningfulCcByText(value) {
+  const normalized = String(value ?? "").trim()
+  return normalized.length >= 8 && !CC_BY_PLACEHOLDER_VALUES.has(normalized.toLowerCase())
+}
+
+function validCcByAttribution(value, sourceRegistration) {
+  if (!meaningfulCcByText(value)) return false
+  const normalized = String(value).toLowerCase()
+  if (sourceRegistration?.requiredAttribution) {
+    return normalized === sourceRegistration.requiredAttribution.toLowerCase()
+  }
+  const tokens = sourceRegistration?.attributionTokens ?? []
+  return tokens.length === 0 || tokens.some((token) => normalized.includes(token))
+}
+
+function validCcByChangeNotice(value, sourceRegistration) {
+  if (!meaningfulCcByText(value)) return false
+  if (sourceRegistration?.requiredChangeNotice) {
+    return String(value) === sourceRegistration.requiredChangeNotice
+  }
+  if (sourceRegistration?.requiredChangePattern) {
+    return sourceRegistration.requiredChangePattern.test(String(value))
+  }
+  return /(翻译|译文|整理|改写|格式|排版|删节|增补|未作改动|translation|translated|adapt|format|local change|no change)/i
+    .test(String(value))
+}
+
+function markdownSafeUrl(value) {
+  return String(value).replace(/[()[\]<>\\]/g, (character) =>
+    `%${character.codePointAt(0).toString(16).toUpperCase()}`,
+  )
+}
+
+export function validateContentMetadata(relativePath, markdown) {
+  const fields = parseGovernanceFields(relativePath, markdown)
+  const origin = governanceFieldValue(relativePath, fields, "content_origin")
+  const status = governanceFieldValue(relativePath, fields, "content_status")
+  const referenceStatus = governanceFieldValue(relativePath, fields, "reference_layer_status")
+  const license = governanceFieldValue(relativePath, fields, "license", { allowEmpty: true })
+  const sourceUrl = governanceFieldValue(relativePath, fields, "source_url", { allowEmpty: true })
+  const attribution = governanceFieldValue(relativePath, fields, "attribution", { allowEmpty: true })
+  const localChanges = governanceFieldValue(relativePath, fields, "local_changes", { allowEmpty: true })
+  let canonicalSourceUrl = sourceUrl
+  let sourceRegistration
+
+  if (origin && !CONTENT_ORIGINS.has(origin)) {
+    throw new Error(
+      `Invalid content_origin in ${relativePath}: ${origin}. ` +
+      `Expected one of ${[...CONTENT_ORIGINS].join(", ")}`,
+    )
+  }
+  if (status && !CONTENT_STATUSES.has(status)) {
+    throw new Error(
+      `Invalid content_status in ${relativePath}: ${status}. ` +
+      `Expected one of ${[...CONTENT_STATUSES].join(", ")}`,
+    )
+  }
+  if (referenceStatus && !CONTENT_STATUSES.has(referenceStatus)) {
+    throw new Error(
+      `Invalid reference_layer_status in ${relativePath}: ${referenceStatus}. ` +
+      `Expected one of ${[...CONTENT_STATUSES].join(", ")}`,
+    )
+  }
+  if (origin === "third-party") {
+    if (!sourceUrl) {
+      throw new Error(`Third-party page requires an absolute source_url in ${relativePath}`)
+    }
+    let parsedSourceUrl
+    try {
+      parsedSourceUrl = new URL(sourceUrl)
+    } catch {
+      throw new Error(`Third-party page requires a valid absolute source_url in ${relativePath}`)
+    }
+    if (!PUBLIC_SOURCE_PROTOCOLS.has(parsedSourceUrl.protocol)) {
+      throw new Error(`Third-party source_url must use http or https in ${relativePath}`)
+    }
+    if (parsedSourceUrl.username || parsedSourceUrl.password) {
+      throw new Error(`Third-party source_url must not contain credentials in ${relativePath}`)
+    }
+    canonicalSourceUrl = parsedSourceUrl.href
+    sourceRegistration = publicSourceRegistration(relativePath, parsedSourceUrl)
+  }
+
+  const normalizedLicense = license?.toLowerCase()
+  const licenseIsUnknown = !normalizedLicense || UNKNOWN_LICENSES.has(normalizedLicense)
+  const licenseIsAllowlisted = Boolean(
+    normalizedLicense && PUBLIC_THIRD_PARTY_LICENSES.has(normalizedLicense),
+  )
+  const sourceLicenseMatches = Boolean(
+    sourceRegistration && normalizedLicense && sourceRegistration.licenses.has(normalizedLicense),
+  )
+  const requiresCcByAttribution = normalizedLicense === "cc-by-4.0"
+  const ccByAttributionIsValid = validCcByAttribution(attribution, sourceRegistration)
+  const ccByChangeNoticeIsValid = validCcByChangeNotice(localChanges, sourceRegistration)
+  const metadata = {
+    origin,
+    status,
+    referenceStatus,
+    license,
+    sourceUrl: canonicalSourceUrl,
+    attribution,
+    localChanges,
+    requiresThirdPartyStub: origin === "third-party" && (
+      !licenseIsAllowlisted ||
+      !sourceRegistration ||
+      !sourceLicenseMatches ||
+      (requiresCcByAttribution && !ccByAttributionIsValid) ||
+      (requiresCcByAttribution && !ccByChangeNoticeIsValid)
+    ),
+  }
+  if (metadata.requiresThirdPartyStub) {
+    metadata.thirdPartyStubReason = licenseIsUnknown
+      ? "third-party-license-unknown"
+      : !licenseIsAllowlisted
+        ? "third-party-license-not-allowlisted"
+        : !sourceRegistration
+          ? "third-party-source-unregistered"
+          : !sourceLicenseMatches
+            ? "third-party-source-license-mismatch"
+            : !ccByAttributionIsValid
+              ? "third-party-attribution-missing"
+              : "third-party-change-notice-missing"
+  }
+  return metadata
+}
+
+export function classifyPath(relativePath, size = 0, markdown) {
   const normalized = relativePath.replaceAll("\\", "/")
   const extension = path.posix.extname(normalized).toLowerCase()
+  const metadata = extension === ".md" && typeof markdown === "string"
+    ? validateContentMetadata(normalized, markdown)
+    : undefined
+
+  if (normalized.startsWith("Agent Skills/examples/") &&
+      !AGENT_SKILLS_PUBLIC_EXAMPLE_FILES.has(normalized)) {
+    return { action: "exclude", reason: "agent-skills-example-not-audited" }
+  }
+
+  if (
+    extension !== ".md" &&
+    isPathUnderPrefix(normalized, LEGACY_REFERENCE_ASSET_EXCLUDE_PREFIXES) &&
+    !LANGCHAIN_PUBLIC_REFERENCE_IMAGE_DIGESTS.has(normalized)
+  ) {
+    return { action: "exclude", reason: "third-party-metadata-missing" }
+  }
 
   if (normalized.startsWith("Python基础/") &&
       !isAllowedByPrefix(normalized, PYTHON_PUBLIC_FILES, PYTHON_PUBLIC_PREFIXES)) {
@@ -82,6 +629,17 @@ export function classifyPath(relativePath, size = 0) {
 
   if (normalized === "深度学习/00-manifest.json") {
     return { action: "exclude", reason: "local-absolute-path-manifest" }
+  }
+
+  const legacyStubReason = extension === ".md"
+    ? legacyReferenceStubReason(normalized, metadata)
+    : undefined
+  if (legacyStubReason) {
+    return { action: "stub", reason: legacyStubReason }
+  }
+
+  if (extension === ".md" && metadata?.requiresThirdPartyStub) {
+    return { action: "stub", reason: metadata.thirdPartyStubReason }
   }
 
   if (extension === ".md") return { action: "publish", reason: "markdown" }
@@ -112,6 +670,57 @@ export function classifyPath(relativePath, size = 0) {
   return { action: "exclude", reason: "extension-not-allowlisted" }
 }
 
+export function assertPortablePublishedMarkdown(markdownSources) {
+  const offenders = []
+  for (const { relativePath, markdown } of markdownSources) {
+    const normalized = relativePath.replaceAll("\\", "/")
+    const topLevel = normalized.split("/")[0]
+    if (SUPPLEMENTAL_TOP_LEVEL.has(topLevel)) continue
+
+    const classification = classifyPath(normalized, Buffer.byteLength(markdown, "utf8"), markdown)
+    if (classification.action !== "publish") continue
+    if (WINDOWS_ABSOLUTE_PROJECT_ROOT_PATTERN.test(markdown)) {
+      offenders.push(normalized)
+    }
+  }
+
+  if (offenders.length > 0) {
+    throw new Error(
+      "Published course Markdown must use project-root-relative paths; " +
+      `hard-coded local project root found in: ${offenders.join(", ")}`,
+    )
+  }
+}
+
+export function assertThirdPartyAssetBoundaries(markdownSources, publicAssets) {
+  for (const { relativePath, markdown } of markdownSources) {
+    const classification = classifyPath(relativePath, Buffer.byteLength(markdown, "utf8"), markdown)
+    if (!classification.reason.startsWith("third-party-")) continue
+
+    const course = relativePath.split("/", 1)[0]
+    const exposedAssets = publicAssets.filter((asset) => {
+      if (!asset.startsWith(`${course}/`)) return false
+      // These are independently maintained, offline examples rather than
+      // attachments belonging to the frozen reference pages.  Keep them
+      // publishable while the upstream prose remains a metadata-free stub.
+      if (isPathUnderPrefix(asset, LEGACY_REFERENCE_ASSET_ALLOWED_PREFIXES) ||
+          LEGACY_REFERENCE_ASSET_ALLOWED_FILES.has(asset) ||
+          LANGCHAIN_PUBLIC_REFERENCE_IMAGE_DIGESTS.has(asset) ||
+          AGENT_SKILLS_PUBLIC_EXAMPLE_FILES.has(asset)) {
+        return false
+      }
+      return true
+    })
+    if (exposedAssets.length === 0) continue
+
+    throw new Error(
+      `Non-publishable third-party page has assets that would still be published: ${relativePath} -> ` +
+      `${exposedAssets.slice(0, 5).join(", ")}. ` +
+      "Move the reference into an isolated top-level course or add an explicit, verified publication policy.",
+    )
+  }
+}
+
 function splitFrontmatter(markdown) {
   const match = markdown.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return { frontmatter: "", body: markdown, full: "" }
@@ -125,14 +734,10 @@ function splitFrontmatter(markdown) {
 export function frontmatterValue(markdown, key) {
   const { frontmatter } = splitFrontmatter(markdown)
   if (!frontmatter) return undefined
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const match = frontmatter.match(new RegExp(`^${escaped}:\\s*(.*?)\\s*$`, "m"))
+  const keyPattern = frontmatterKeyPattern(key)
+  const match = frontmatter.match(new RegExp(`^${keyPattern}[ \\t]*:[ \\t]*(.*?)[ \\t]*$`, "m"))
   if (!match) return undefined
-  const value = match[1].trim()
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1)
-  }
-  return value
+  return simpleYamlScalar(match[1])
 }
 
 function firstHeading(markdown) {
@@ -151,11 +756,58 @@ export function ensureTitleAndStripProgress(markdown, fallbackTitle) {
     return `---\ntitle: ${yamlString(title)}\n---\n\n${markdown.replace(/^\uFEFF/, "")}`
   }
 
-  const lines = parts.frontmatter
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(?:["']ai_learning_completed["']|ai_learning_completed)\s*:/i.test(line))
-  if (!lines.some((line) => /^title\s*:/.test(line))) lines.unshift(`title: ${yamlString(title)}`)
-  return `---\n${lines.join("\n")}\n---\n${parts.body}`
+  const document = parseDocument(parts.frontmatter, {
+    uniqueKeys: true,
+    merge: false,
+    prettyErrors: false,
+    logLevel: "silent",
+  })
+  const yamlIssue = document.errors[0] ?? document.warnings[0]
+  if (yamlIssue) throw new Error(`Invalid YAML frontmatter while stripping progress: ${yamlIssue.code}`)
+  if (!document.contents || !isMap(document.contents)) {
+    throw new Error("YAML frontmatter must be a root mapping while stripping progress")
+  }
+
+  document.contents.items = document.contents.items.filter((pair) =>
+    !isScalar(pair.key) || String(pair.key.value).toLowerCase() !== "ai_learning_completed",
+  )
+  const hasTitle = document.contents.items.some((pair) =>
+    isScalar(pair.key) && String(pair.key.value) === "title",
+  )
+  let frontmatter = document.toString().trimEnd()
+  if (!hasTitle) frontmatter = `title: ${yamlString(title)}\n${frontmatter}`.trimEnd()
+  return `---\n${frontmatter}\n---\n${parts.body}`
+}
+
+function escapeMarkdownPlainText(value) {
+  return String(value).replace(/[\\`*_[\]<>]/g, (character) => `\\${character}`)
+}
+
+export function injectThirdPartyAttribution(markdown, relativePath) {
+  const metadata = validateContentMetadata(relativePath, markdown)
+  if (metadata.origin !== "third-party" || metadata.license?.toLowerCase() !== "cc-by-4.0") {
+    return markdown
+  }
+  if (metadata.requiresThirdPartyStub) {
+    throw new Error(`Cannot inject attribution for a non-publishable third-party page: ${relativePath}`)
+  }
+
+  const marker = "<!-- aae-visible-third-party-attribution -->"
+  if (markdown.includes(marker)) {
+    throw new Error(`Duplicate generated third-party attribution marker in ${relativePath}`)
+  }
+  const safeSourceUrl = markdownSafeUrl(metadata.sourceUrl)
+  const notice = [
+    marker,
+    "> [!quote] 第三方来源、许可与本地改动",
+    `> 上游署名：${escapeMarkdownPlainText(metadata.attribution)}`,
+    `> 原始页面：[查看上游来源](<${safeSourceUrl}>)`,
+    "> 许可：[Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)",
+    `> 本地改动：${escapeMarkdownPlainText(metadata.localChanges)}`,
+  ].join("\n")
+
+  const parts = splitFrontmatter(markdown)
+  return `${parts.full}${notice}\n\n${parts.body}`
 }
 
 export function redactMachineSpecificPaths(markdown) {
@@ -243,8 +895,8 @@ function escapeWikilinkPipes(wikilink) {
 /**
  * Markdown tables treat the alias separator in `[[target|alias]]` as a cell
  * delimiter. Obsidian accepts `[[target\|alias]]`, while the escaped form is
- * also understood by the Quartz Obsidian parser. Normalize only table rows in
- * the generated publication layer so the source vault remains untouched.
+ * also understood by the Quartz Obsidian parser. Source notes should already
+ * use the escaped form; this keeps imported or older notes publishable.
  */
 function wikilinkTargetExists(wikilink, relativePath, sourcePaths) {
   if (!(sourcePaths instanceof Set)) return false
@@ -271,7 +923,9 @@ export function normalizeTableWikilinks(markdown, relativePath = "", sourcePaths
       else if (fence === token) fence = null
       return line
     }
-    if (fence !== null || !line.includes("[[") || !line.includes("|")) return line
+    // The authored vault uses leading-pipe Markdown table rows. Requiring that
+    // shape avoids mistaking prose such as `|a ∩ b|` for a table.
+    if (fence !== null || !/^\s*\|/.test(line) || !line.includes("[[") || !line.includes("|")) return line
 
     const probe = line.replace(/(`+)?!?\[\[[^\]\r\n]+\]\]\1?/g, "WIKILINK")
     if (countUnescapedPipes(probe) < 2) return line
@@ -336,8 +990,9 @@ export function normalizeRelativeMarkdownLinks(markdown, relativePath, sourcePat
 }
 
 function sourceUrlFor(relativePath, markdown = "") {
-  const explicit = frontmatterValue(markdown, "source_url")
-  if (explicit) return explicit
+  const explicit = frontmatterValue(markdown, "source_url") || frontmatterValue(markdown, "source")
+  const normalizedExplicit = normalizedPublicSourceUrl(explicit)
+  if (normalizedExplicit) return normalizedExplicit
   if (relativePath.startsWith("Python基础/")) {
     const upstream = relativePath.slice("Python基础/".length)
     const encoded = upstream.split("/").map(encodeURIComponent).join("/")
@@ -374,43 +1029,397 @@ export function transformVaultPaths(markdown) {
   )
 }
 
-function courseRecordsFromSources(markdownSources) {
-  return markdownSources
-    .filter(({ relativePath }) => relativePath.split("/").length === 2 && relativePath.endsWith("/00-目录.md"))
-    .map(({ relativePath, markdown }) => ({
-      name: relativePath.split("/")[0],
-      stage: frontmatterValue(markdown, "ai_learning_stage"),
-      order: Number(frontmatterValue(markdown, "ai_learning_order")),
-    }))
-    .filter((course) => course.stage && Number.isFinite(course.order))
-    .sort((left, right) => left.order - right.order)
+export function courseRecordsFromSources(markdownSources) {
+  const courses = markdownSources
+    .filter(({ relativePath }) => {
+      if (!/^[^/]+\/00-目录\.md$/.test(relativePath)) return false
+      return !SUPPLEMENTAL_TOP_LEVEL.has(relativePath.split("/", 1)[0])
+    })
+    .map(({ relativePath, markdown }) => parseCourseIndex(relativePath, markdown))
+
+  if (courses.length === 0) throw new Error("Expected at least one top-level course index")
+
+  const seenOrders = new Map()
+  const seenCatalogOrders = new Map()
+  const seenIds = new Map()
+  const seenTrackOrders = new Map()
+  for (const course of courses) {
+    if (!course.stage) {
+      throw new Error(`Course index is missing a non-empty ai_learning_stage: ${course.name}/00-目录.md`)
+    }
+    if (!Number.isFinite(course.order)) {
+      throw new Error(`Course index has an invalid ai_learning_order: ${course.name}/00-目录.md`)
+    }
+    if (seenOrders.has(course.order)) {
+      throw new Error(
+        `Course order must be unique: ${course.order} is used by ${seenOrders.get(course.order)} and ${course.name}`,
+      )
+    }
+    seenOrders.set(course.order, course.name)
+
+    if (seenCatalogOrders.has(course.catalogOrder)) {
+      throw new Error(
+        `Course catalog order must be unique: ${course.catalogOrder} is used by ` +
+        `${seenCatalogOrders.get(course.catalogOrder)} and ${course.name}`,
+      )
+    }
+    seenCatalogOrders.set(course.catalogOrder, course.name)
+
+    if (course.schema === COURSE_SCHEMA_VERSION) {
+      if (seenIds.has(course.id)) {
+        throw new Error(`Course ID must be unique: ${course.id} is used by ${seenIds.get(course.id)} and ${course.name}`)
+      }
+      seenIds.set(course.id, course.name)
+      for (const [role, track] of Object.entries(course.tracks)) {
+        const key = `${role}:${track.order}`
+        if (seenTrackOrders.has(key)) {
+          throw new Error(
+            `Course track order must be unique for ${role}: ${track.order} is used by ` +
+            `${seenTrackOrders.get(key)} and ${course.name}`,
+          )
+        }
+        seenTrackOrders.set(key, course.name)
+      }
+    }
+  }
+
+  const versionedCourses = courses.filter((course) => course.schema === COURSE_SCHEMA_VERSION)
+  const versionedById = new Map(versionedCourses.map((course) => [course.id, course]))
+  for (const course of versionedCourses) {
+    for (const prerequisite of course.hardPrerequisites) {
+      if (!versionedById.has(prerequisite)) {
+        throw new Error(`Unknown hard prerequisite ${prerequisite} in ${course.name}/00-目录.md`)
+      }
+      const prerequisiteCourse = versionedById.get(prerequisite)
+      for (const [role, track] of Object.entries(course.tracks)) {
+        const prerequisiteTrack = prerequisiteCourse.tracks[role]
+        if (!prerequisiteTrack) {
+          throw new Error(
+            `Hard prerequisite ${prerequisite} must appear in role ${role} before ${course.id}`,
+          )
+        }
+        if (prerequisiteTrack.order >= track.order) {
+          throw new Error(
+            `Hard prerequisite ${prerequisite} must have an earlier ${role} track order than ${course.id}`,
+          )
+        }
+        if (track.kind === "core" && prerequisiteTrack.kind !== "core") {
+          throw new Error(
+            `Core course ${course.id} requires ${prerequisite} to be core in role ${role}`,
+          )
+        }
+      }
+    }
+  }
+
+  const visiting = new Set()
+  const visited = new Set()
+  function visit(course) {
+    if (visiting.has(course.id)) {
+      throw new Error(`Course hard prerequisites contain a cycle at ${course.id}`)
+    }
+    if (visited.has(course.id)) return
+    visiting.add(course.id)
+    for (const prerequisite of course.hardPrerequisites) visit(versionedById.get(prerequisite))
+    visiting.delete(course.id)
+    visited.add(course.id)
+  }
+  for (const course of versionedCourses) visit(course)
+
+  return courses.sort((left, right) => left.catalogOrder - right.catalogOrder)
+}
+
+function parseCourseIndex(relativePath, markdown) {
+  const { frontmatter } = splitFrontmatter(markdown)
+  if (!frontmatter) throw new Error(`Course index is missing YAML frontmatter: ${relativePath}`)
+  const document = parseDocument(frontmatter, {
+    uniqueKeys: true,
+    merge: false,
+    prettyErrors: false,
+    logLevel: "silent",
+  })
+  const yamlIssue = document.errors[0] ?? document.warnings[0]
+  if (yamlIssue) throw new Error(`Invalid YAML frontmatter in ${relativePath}: ${yamlIssue.code}`)
+  if (!document.contents || !isMap(document.contents)) {
+    throw new Error(`YAML frontmatter must be a root mapping in ${relativePath}`)
+  }
+
+  const fields = new Map()
+  for (const pair of document.contents.items) {
+    if (!isScalar(pair.key) || pair.key.tag || pair.key.anchor) {
+      throw new Error(`Unsupported YAML key in course index: ${relativePath}`)
+    }
+    fields.set(String(pair.key.value), pair.value)
+  }
+
+  function scalar(key, expectedType) {
+    const node = fields.get(key)
+    if (!isScalar(node) || node.tag || node.anchor || typeof node.value !== expectedType) return undefined
+    return node.value
+  }
+
+  const stage = scalar("ai_learning_stage", "string")?.trim()
+  const order = scalar("ai_learning_order", "number")
+  const schemaNodePresent = fields.has("ai_learning_schema")
+  const schema = scalar("ai_learning_schema", "number")
+  const v2Keys = [...fields.keys()].filter((key) =>
+    key.startsWith("ai_learning_") &&
+    !["ai_learning_stage", "ai_learning_order", "ai_learning_completed", "ai_learning_schema"].includes(key),
+  )
+  if (schemaNodePresent && schema === undefined) {
+    throw new Error(`Course index has an invalid ai_learning_schema: ${relativePath}`)
+  }
+  if (schema === undefined && v2Keys.length > 0) {
+    throw new Error(`Course v2 fields require ai_learning_schema: 2 in ${relativePath}`)
+  }
+  if (schema !== undefined && schema !== COURSE_SCHEMA_VERSION) {
+    throw new Error(`Unsupported ai_learning_schema in ${relativePath}: ${schema}`)
+  }
+  if (schema === COURSE_SCHEMA_VERSION) {
+    const allowedV2Fields = new Set([
+      "ai_learning_id",
+      "ai_learning_domain",
+      "ai_learning_catalog_order",
+      "ai_learning_hard_prerequisites",
+    ])
+    for (const key of v2Keys) {
+      if (!allowedV2Fields.has(key) && !key.startsWith("ai_learning_track_")) {
+        throw new Error(`Unknown course metadata field ${key} in ${relativePath}`)
+      }
+    }
+  }
+
+  const base = {
+    name: relativePath.split("/")[0],
+    stage,
+    order,
+    schema: schema ?? 1,
+    catalogOrder: Number.isFinite(order) ? order * 100 : Number.NaN,
+  }
+  if (schema === undefined) return base
+
+  const id = scalar("ai_learning_id", "string")?.trim()
+  const domain = scalar("ai_learning_domain", "string")?.trim()
+  const catalogOrder = scalar("ai_learning_catalog_order", "number")
+  if (!id || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+    throw new Error(`Course index has an invalid ai_learning_id: ${relativePath}`)
+  }
+  if (!COURSE_DOMAINS.has(domain)) {
+    throw new Error(`Course index has an invalid ai_learning_domain: ${relativePath}`)
+  }
+  if (!Number.isSafeInteger(catalogOrder) || catalogOrder <= 0) {
+    throw new Error(`Course index has an invalid ai_learning_catalog_order: ${relativePath}`)
+  }
+
+  const prerequisiteNode = fields.get("ai_learning_hard_prerequisites")
+  if (!isSeq(prerequisiteNode) || prerequisiteNode.tag || prerequisiteNode.anchor) {
+    throw new Error(`Course index must declare ai_learning_hard_prerequisites as a list: ${relativePath}`)
+  }
+  const hardPrerequisites = prerequisiteNode.items.map((item) => {
+    if (!isScalar(item) || item.tag || item.anchor || typeof item.value !== "string") {
+      throw new Error(`Course hard prerequisites must be string IDs: ${relativePath}`)
+    }
+    return item.value.trim()
+  })
+  if (hardPrerequisites.some((item) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item))) {
+    throw new Error(`Course hard prerequisites contain an invalid ID: ${relativePath}`)
+  }
+  if (new Set(hardPrerequisites).size !== hardPrerequisites.length) {
+    throw new Error(`Course hard prerequisites contain duplicates: ${relativePath}`)
+  }
+  if (hardPrerequisites.includes(id)) {
+    throw new Error(`Course hard prerequisites contain a self reference: ${relativePath}`)
+  }
+
+  const trackFields = new Map()
+  for (const key of fields.keys()) {
+    if (!key.startsWith("ai_learning_track_")) continue
+    const match = key.match(/^ai_learning_track_([a-z0-9_]+)_(order|kind)$/)
+    if (!match || !COURSE_TRACK_ROLES.has(match[1])) {
+      throw new Error(`Unknown course track field ${key} in ${relativePath}`)
+    }
+    const [, role, field] = match
+    const record = trackFields.get(role) ?? {}
+    record[field] = fields.get(key)
+    trackFields.set(role, record)
+  }
+  const tracks = {}
+  for (const [role, record] of trackFields) {
+    if (!record.order || !record.kind) {
+      throw new Error(`Course track ${role} must declare order and kind together: ${relativePath}`)
+    }
+    const trackOrder = isScalar(record.order) && !record.order.tag && !record.order.anchor &&
+      typeof record.order.value === "number" ? record.order.value : undefined
+    const trackKind = isScalar(record.kind) && !record.kind.tag && !record.kind.anchor &&
+      typeof record.kind.value === "string" ? record.kind.value.trim() : undefined
+    if (!Number.isSafeInteger(trackOrder) || trackOrder <= 0) {
+      throw new Error(`Course track ${role} has an invalid order: ${relativePath}`)
+    }
+    if (!COURSE_TRACK_KINDS.has(trackKind)) {
+      throw new Error(`Course track ${role} has an invalid kind: ${relativePath}`)
+    }
+    tracks[role] = { order: trackOrder, kind: trackKind }
+  }
+
+  return {
+    ...base,
+    id,
+    domain,
+    catalogOrder,
+    hardPrerequisites,
+    tracks,
+  }
+}
+
+export function assertCompleteV2Migration(courses) {
+  const legacy = courses.filter((course) => course.schema !== COURSE_SCHEMA_VERSION)
+  if (legacy.length > 0) {
+    throw new Error(
+      `All top-level courses must use ai_learning_schema: 2; legacy courses: ` +
+      legacy.map((course) => course.name).join(", "),
+    )
+  }
 }
 
 export function buildRoadmapTable(courses) {
-  const stages = [...new Set(courses.map((course) => course.stage))]
-  const lines = ["| 阶段 | 学习重点 |", "| --- | --- |"]
-  for (const stage of stages) {
+  const lines = ["| 知识域 | 学习重点 |", "| --- | --- |"]
+  for (const [domain, label] of COURSE_DOMAIN_LABELS) {
     const links = courses
-      .filter((course) => course.stage === stage)
-      .map((course) => `[[${course.name}/00-目录|${course.name}]]`)
+      .filter((course) => course.domain === domain)
+      .sort((left, right) => left.catalogOrder - right.catalogOrder)
+      // A wikilink alias must escape its separator inside a Markdown table;
+      // otherwise the table parser treats it as another cell boundary.
+      .map((course) => `[[${course.name}/00-目录\\|${course.name}]]`)
       .join(" · ")
-    lines.push(`| ${stage} | ${links} |`)
+    if (links) lines.push(`| ${label} | ${links} |`)
   }
   return lines.join("\n")
 }
 
-function replaceDataviewRoadmap(markdown, courses) {
-  const table = buildRoadmapTable(courses)
-  return markdown.replace(/```dataviewjs\s*[\s\S]*?```/, table)
+export function buildRoleTrackTables(courses) {
+  const sections = []
+  for (const [role, label] of COURSE_TRACK_LABELS) {
+    const trackCourses = courses
+      .filter((course) => course.tracks?.[role])
+      .sort((left, right) => left.tracks[role].order - right.tracks[role].order)
+    const counts = { core: 0, recommended: 0, optional: 0 }
+    for (const course of trackCourses) counts[course.tracks[role].kind] += 1
+    const lines = [
+      `### ${label}`,
+      "",
+      `共 ${trackCourses.length} 门：${counts.core} 门核心、${counts.recommended} 门推荐、${counts.optional} 门可选。`,
+      "",
+      "| 顺序 | 课程 | 定位 |",
+      "| ---: | --- | --- |",
+    ]
+    trackCourses.forEach((course, index) => {
+      const kind = COURSE_TRACK_KIND_LABELS.get(course.tracks[role].kind)
+      lines.push(`| ${index + 1} | [[${course.name}/00-目录\\|${course.name}]] | ${kind} |`)
+    })
+    sections.push(lines.join("\n"))
+  }
+  return sections.join("\n\n")
 }
 
-function buildStub(relativePath, markdown) {
-  const title = frontmatterValue(markdown, "title") || firstHeading(markdown) || path.posix.basename(relativePath, ".md")
+function replaceRoadmapSnapshot(markdown, marker, content) {
+  const start = `<!-- ${marker}:START -->`
+  const end = `<!-- ${marker}:END -->`
+  const pattern = new RegExp(
+    `${start.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?` +
+    `${end.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    "g",
+  )
+  const matches = [...markdown.matchAll(pattern)]
+  if (matches.length !== 1) {
+    throw new Error(`All of AI.md must contain exactly one ${marker} snapshot, found ${matches.length}`)
+  }
+  return markdown.replace(pattern, `${start}\n${content}\n${end}`)
+}
+
+export function replaceRoadmapCatalogForPublication(markdown, courses) {
+  const catalogMarker = "<!-- AI_LEARNING_CATALOG:START -->"
+  const catalogEndMarker = "<!-- AI_LEARNING_CATALOG:END -->"
+  const hasCatalogSnapshot = markdown.includes(catalogMarker) || markdown.includes(catalogEndMarker)
+  const pattern = /```dataviewjs[ \t]*\r?\n[ \t]*await\s+dv\.view\(\s*["']tools\/dataview\/ai-learning-roadmap["']\s*\)\s*;?[ \t]*\r?\n```/g
+
+  if (hasCatalogSnapshot) {
+    if (/```dataviewjs\b/.test(markdown)) {
+      throw new Error(
+        "All of AI.md cannot contain both an interactive Dataview catalog and a catalog snapshot",
+      )
+    }
+    const catalogStartCount = (markdown.match(/<!-- AI_LEARNING_CATALOG:START -->/g) ?? []).length
+    const catalogEndCount = (markdown.match(/<!-- AI_LEARNING_CATALOG:END -->/g) ?? []).length
+    if (catalogStartCount !== 1 || catalogEndCount !== 1) {
+      throw new Error(
+        `All of AI.md must contain exactly one AI_LEARNING_CATALOG snapshot, found ${catalogStartCount} starts and ${catalogEndCount} ends`,
+      )
+    }
+    const expected = replaceRoadmapSnapshot(
+      markdown,
+      "AI_LEARNING_CATALOG",
+      buildRoadmapTable(courses),
+    )
+    if (expected.replaceAll("\r\n", "\n") !== markdown.replaceAll("\r\n", "\n")) {
+      throw new Error(
+        "All of AI.md catalog snapshot is stale or differs from the generated v2 catalog",
+      )
+    }
+    return markdown
+  }
+
+  const matches = [...markdown.matchAll(pattern)]
+  if (matches.length !== 1) {
+    throw new Error(
+      `All of AI.md must contain exactly one interactive Dataview catalog, found ${matches.length}`,
+    )
+  }
+
+  return markdown.replace(
+    pattern,
+    `${catalogMarker}\n${buildRoadmapTable(courses)}\n${catalogEndMarker}`,
+  )
+}
+
+export function replaceRoadmapRoleTrackSnapshot(markdown, courses) {
+  return replaceRoadmapSnapshot(
+    markdown,
+    "AI_LEARNING_ROLE_TRACKS",
+    buildRoleTrackTables(courses),
+  )
+}
+
+export function replaceRoadmapSnapshots(markdown, courses) {
+  return replaceRoadmapRoleTrackSnapshot(
+    replaceRoadmapCatalogForPublication(markdown, courses),
+    courses,
+  )
+}
+
+export function buildStub(relativePath, markdown, stubReason) {
+  const fallbackTitle = path.posix.basename(relativePath, ".md")
+  const rawTitle = frontmatterValue(markdown, "title") || firstHeading(markdown) || fallbackTitle
+  const title = safeStubTitle(rawTitle, fallbackTitle)
   const sourceUrl = sourceUrlFor(relativePath, markdown)
+  const safeSourceUrl = sourceUrl ? markdownSafeUrl(sourceUrl) : undefined
   const course = relativePath.split("/")[0]
-  const reason = relativePath.startsWith("Python基础/")
+  const reason = stubReason === "python-complete-replica"
     ? "原 Python-100-Days 课程未在固定来源中提供明确的再分发许可证。"
-    : "该固定 commit 的中文译文层未提供明确的再分发许可证。"
+    : stubReason === "agentic-unlicensed-translation"
+      ? "该固定 commit 的中文译文层未提供明确的再分发许可证。"
+      : stubReason === "third-party-metadata-missing"
+        ? "该上游参考页尚未完成逐页的来源、内容来源和再分发许可标记；公开层先保留安全的来源跳转页。"
+      : stubReason === "third-party-reference-needs-review"
+        ? "该冻结参考页已发现术语、事实、来源或示例质量问题，并明确标记为待复核；完成逐段审阅前不公开其完整正文。"
+      : stubReason === "third-party-source-unregistered"
+        ? "该上游来源尚未进入项目的公开来源与许可声明注册表。"
+        : stubReason === "third-party-source-license-mismatch"
+          ? "页面声明的许可证与该上游项目已核验的许可不一致。"
+          : stubReason === "third-party-attribution-missing"
+            ? "该 CC BY 4.0 页面尚未记录上游署名信息。"
+            : stubReason === "third-party-change-notice-missing"
+              ? "该 CC BY 4.0 页面尚未说明本地翻译、整理或格式变更。"
+          : "本页标记为第三方材料，但尚未提供明确、可核验的再分发许可证。"
   return `---
 title: ${yamlString(title)}
 tags:
@@ -423,10 +1432,26 @@ third_party_stub: true
 > [!info] 本页未复制第三方原文
 > ${reason} 公开网站仅保留来源跳转页；你仍可在本机 Obsidian 中阅读已有参考资料。
 
-${sourceUrl ? `[前往上游来源查看本节](${sourceUrl})` : "请从上游项目主页查看原始材料。"}
+${safeSourceUrl ? `[前往上游来源查看本节](<${safeSourceUrl}>)` : "请从上游项目主页查看原始材料。"}
 
 返回 [[${course}/00-目录|${course} 学习入口]]。
 `
+}
+
+function safeStubTitle(value, fallback) {
+  const rawValue = String(value ?? "")
+  const isStructurallyUnsafe = /[\u0000-\u001f\u007f\u2028\u2029]/u.test(rawValue) ||
+    /!?\[[^\]]*\]\([^\r\n)]*\)|<[^\r\n>]*>|https?:\/\//i.test(rawValue)
+  const sanitize = (candidate) => String(candidate ?? "")
+    .replace(/!?\[([^\]]*)\]\([^\r\n)]*\)/g, "$1")
+    .replace(/<[^\r\n>]*>/g, "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]/gu, " ")
+    .replace(/[\\`*_[\]<>!#|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (isStructurallyUnsafe) return sanitize(fallback) || "第三方参考页"
+  return sanitize(rawValue) || sanitize(fallback) || "第三方参考页"
 }
 
 function encodedMarkdownTarget(relativePath) {
@@ -477,20 +1502,25 @@ tags:
 
 # 第三方材料与许可声明
 
-本页记录公开网站使用或再发布的第三方材料。获取与核对日期：**2026-07-16**。
+本页记录公开网站使用或再发布的第三方材料。获取与核对日期：**2026-07-20**。
 
 ## 网站运行时
 
 - [Quartz 5](https://github.com/jackyzha0/quartz/releases/tag/v5.0.0)：MIT License；项目锁定正式版 v5.0.0 的 commit \`ab346fa66a895e12d63a308e70ce330ba795822a\`；[查看 Quartz MIT 全文](_licenses/Quartz-MIT.txt)。
 - [Quartz Community 插件](https://github.com/quartz-community)：本站锁定 28 个插件的精确 commit，统一保留上游 MIT 声明；[查看插件 MIT 全文](_licenses/Quartz-Community-MIT.txt)。
 - [GSAP 3.15.0](https://gsap.com/docs/v3/)：按 [GSAP Standard “No Charge” License](https://gsap.com/standard-license/) 使用，仅用于界面动效。
+- [Mermaid 11.16.0](https://github.com/mermaid-js/mermaid/releases/tag/mermaid%4011.16.0)：MIT License；构建时从 lockfile 固定依赖复制到同源静态资源，不再在浏览器中加载第三方 CDN；[查看 Mermaid MIT 全文](_licenses/Mermaid-MIT.txt)。
+
+## 构建与发布工具
+
+- [YAML 2.9.0](https://www.npmjs.com/package/yaml/v/2.9.0)：ISC License；仅在构建期解析并校验 frontmatter，[查看上游许可](https://github.com/eemeli/yaml/blob/v2.9.0/LICENSE)。
 
 ## 公开参考材料
 
 - [D2L 中文版](https://github.com/d2l-ai/d2l-zh)：Apache License 2.0。本站保留各页来源和许可说明；[查看 Apache-2.0 全文](_licenses/Apache-2.0.txt)。
 - [LangChain 文档](https://github.com/langchain-ai/docs)：MIT License。许可副本同时保留在 [[LangChain/LICENSE-LangChain-docs|LangChain 许可页]]；[查看 LangChain MIT 全文](_licenses/LangChain-MIT.txt)。
-- [Model Context Protocol 文档](https://github.com/modelcontextprotocol/docs)：MIT License；[查看 MCP MIT 全文](_licenses/MCP-MIT.txt)。
-- [Agent Skills](https://github.com/agentskills/agentskills/tree/38a2ff82958afee88dadf4831509e6f7e9d8ef4e)：Apache License 2.0，版权归 Anthropic, PBC（2025）；其中明确声明 CC0-1.0 的示例按该声明处理；[查看完整上游许可文本](_licenses/Agent-Skills-Apache-2.0.txt)。
+- [Model Context Protocol 已归档旧文档仓库](https://github.com/modelcontextprotocol/docs)：MIT License；[查看该旧仓库的 MCP MIT 全文](_licenses/MCP-MIT.txt)。2026-01-05 后的新单仓库文档及跨许可迁移页面不由这份登记覆盖，继续逐页失败关闭。
+- [Agent Skills 文档](https://github.com/agentskills/agentskills/tree/38a2ff82958afee88dadf4831509e6f7e9d8ef4e/docs)：CC BY 4.0。逐页放行的中文参考页必须保留 Agent Skills 项目署名、原始页面链接，并明确说明中文翻译、整理与格式变更；[查看上游文档许可全文](_licenses/Agent-Skills-CC-BY-4.0.txt)。仓库代码的 Apache-2.0 不能替代文档许可证；明确声明 CC0-1.0 的示例仍按各自声明处理。
 - Requests Quickstart 等零散官方参考页按其页面来源和上游 Apache-2.0 许可说明使用。
 
 ## 未在本站复制的完整参考层
@@ -533,6 +1563,17 @@ async function copyAsset(source, relativePath, timestamps) {
   if (timestamps) await utimes(destination, timestamps.atime, timestamps.mtime)
 }
 
+export function assertVerifiedLangChainReferenceAsset(relativePath, bytes) {
+  const expectedDigest = LANGCHAIN_PUBLIC_REFERENCE_IMAGE_DIGESTS.get(relativePath)
+  if (!expectedDigest) return
+  const actualDigest = createHash("sha256").update(bytes).digest("hex")
+  if (actualDigest !== expectedDigest) {
+    throw new Error(
+      `Verified LangChain reference asset digest mismatch: ${relativePath}`,
+    )
+  }
+}
+
 export async function prepareContent() {
   assertInside(WEBSITE_ROOT, GENERATED_ROOT, "generated root")
   await rm(GENERATED_ROOT, { recursive: true, force: true })
@@ -547,21 +1588,27 @@ export async function prepareContent() {
       markdownSources.push({ relativePath, markdown: await readFile(source, "utf8") })
     }
   }
+  assertPortablePublishedMarkdown(markdownSources)
   const courses = courseRecordsFromSources(markdownSources)
-  if (courses.length !== 53) throw new Error(`Expected 53 course indexes, found ${courses.length}`)
-  const orders = courses.map((course) => course.order)
-  if (new Set(orders).size !== 53 || Math.min(...orders) !== 1 || Math.max(...orders) !== 53) {
-    throw new Error("Course order must be unique and cover 1 through 53")
-  }
+  assertCompleteV2Migration(courses)
   const courseNames = new Set(courses.map((course) => course.name))
   const unknownTopLevel = [...sourcePaths].filter((relativePath) => {
     if (relativePath === "All of AI.md") return false
-    return !courseNames.has(relativePath.split("/")[0])
+    const topLevel = relativePath.split("/")[0]
+    return !courseNames.has(topLevel) && !SUPPLEMENTAL_TOP_LEVEL.has(topLevel)
   })
   if (unknownTopLevel.length > 0) {
-    throw new Error(`Source files outside the 53-course publishing scope: ${unknownTopLevel.slice(0, 10).join(", ")}`)
+    throw new Error(`Source files outside the course or supplemental publishing scope: ${unknownTopLevel.slice(0, 10).join(", ")}`)
   }
   const markdownByPath = new Map(markdownSources.map((entry) => [entry.relativePath, entry.markdown]))
+  const publicAssets = []
+  for (const source of sourceFiles) {
+    const relativePath = toPosix(path.relative(DOCS_ROOT, source))
+    if (markdownByPath.has(relativePath)) continue
+    const fileStat = await stat(source)
+    if (classifyPath(relativePath, fileStat.size).action === "asset") publicAssets.push(relativePath)
+  }
+  assertThirdPartyAssetBoundaries(markdownSources, publicAssets)
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -578,7 +1625,7 @@ export async function prepareContent() {
   for (const source of sourceFiles) {
     const relativePath = toPosix(path.relative(DOCS_ROOT, source))
     const fileStat = await stat(source)
-    const classification = classifyPath(relativePath, fileStat.size)
+    const classification = classifyPath(relativePath, fileStat.size, markdownByPath.get(relativePath))
     const sourceBytes = markdownByPath.has(relativePath)
       ? Buffer.from(markdownByPath.get(relativePath), "utf8")
       : await readFile(source)
@@ -592,6 +1639,7 @@ export async function prepareContent() {
       continue
     }
     if (classification.action === "asset") {
+      assertVerifiedLangChainReferenceAsset(relativePath, sourceBytes)
       await copyAsset(source, relativePath, fileStat)
       manifest.assets.push(relativePath)
       continue
@@ -599,20 +1647,31 @@ export async function prepareContent() {
 
     const original = sourceBytes.toString("utf8")
     if (classification.action === "stub") {
-      await writeText(relativePath, buildStub(relativePath, original), fileStat)
+      if (/^[^/]+\/00-目录\.md$/.test(relativePath)) {
+        throw new Error(`Top-level course index cannot be published as a metadata-free stub: ${relativePath}`)
+      }
+      await writeText(relativePath, buildStub(relativePath, original, classification.reason), fileStat)
       manifest.stubMarkdown.push(relativePath)
       continue
     }
 
     const fallbackTitle = path.posix.basename(relativePath, ".md")
-    let transformed = relativePath === "All of AI.md"
-      ? replaceDataviewRoadmap(original, courses)
-      : original
+    let transformed = original
+    if (relativePath === "All of AI.md") {
+      const catalogForPublication = replaceRoadmapCatalogForPublication(original, courses)
+      transformed = replaceRoadmapRoleTrackSnapshot(catalogForPublication, courses)
+      if (transformed !== catalogForPublication) {
+        throw new Error(
+          "All of AI.md role-track snapshot is stale; update the authored v2 role tracks",
+        )
+      }
+    }
     transformed = normalizeTableWikilinks(transformed, relativePath, sourcePaths)
     transformed = normalizeRelativeMarkdownLinks(transformed, relativePath, sourcePaths)
     transformed = transformVaultPaths(transformed)
     transformed = redactMachineSpecificPaths(transformed)
     transformed = ensureTitleAndStripProgress(transformed, fallbackTitle)
+    transformed = injectThirdPartyAttribution(transformed, relativePath)
     await writeText(relativePath, transformed, fileStat)
     manifest.publishedMarkdown.push(relativePath)
   }
@@ -628,17 +1687,11 @@ export async function prepareContent() {
   await writeText("THIRD_PARTY_NOTICES.md", buildThirdPartyNotices())
 
   const legalRoot = path.join(WEBSITE_ROOT, "legal")
-  for (const filename of [
-    "Agent-Skills-Apache-2.0.txt",
-    "Apache-2.0.txt",
-    "LangChain-MIT.txt",
-    "MCP-MIT.txt",
-    "Quartz-Community-MIT.txt",
-    "Quartz-MIT.txt",
-  ]) {
+  for (const filename of LEGAL_LICENSE_FILES) {
     const source = path.join(legalRoot, filename)
     const destination = path.join(CONTENT_ROOT, "_licenses", filename)
     assertInside(CONTENT_ROOT, destination, "license destination")
+    assertLegalLicenseDigest(filename, await readFile(source))
     await mkdir(path.dirname(destination), { recursive: true })
     await copyFile(source, destination)
   }
@@ -647,6 +1700,8 @@ export async function prepareContent() {
   manifest.sourceDigest = sourceHash.digest("hex")
   manifest.summary = {
     ...stats,
+    legacyCourseMetadata: courses.filter((course) => course.schema === 1).length,
+    v2CourseMetadata: courses.filter((course) => course.schema === COURSE_SCHEMA_VERSION).length,
     generatedPages: manifest.generatedPages.length,
     excludedFiles: manifest.excluded.length,
     stagedMarkdown: stats.fullMarkdown + stats.stubs + manifest.generatedPages.length,

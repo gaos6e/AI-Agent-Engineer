@@ -1,0 +1,26 @@
+{
+  "schema_version": "persistent-tool-case-v1",
+  "principal": {
+    "tenant_id": "tenant-a",
+    "subject_id": "user-1",
+    "roles": []
+  },
+  "proposal": {
+    "name": "create_refund_draft",
+    "arguments": {
+      "order_ref": "ORDER-7",
+      "reason": "duplicate"
+    }
+  },
+  "execution_context": {
+    "provider": "openai",
+    "api_family": "responses",
+    "response_id": "response-persistent-1",
+    "call_id": "call-persistent-1",
+    "operation_id": "operation-persistent-1",
+    "idempotency_key": "refund-draft-persistent-1",
+    "adapter_revision": "openai-responses-v1"
+  },
+  "approval_mode": "valid",
+  "now": 1784419200
+}

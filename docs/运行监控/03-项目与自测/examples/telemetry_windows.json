@@ -1,6 +1,6 @@
 {
   "policy": {
-    "version": "local-monitor-policy-v2",
+    "version": "local-monitor-policy-v3",
     "allowed_metric_labels": [
       "service",
       "release",
@@ -17,6 +17,7 @@
     "min_trace_completeness_rate": 0.8,
     "max_collector_drop_rate": 0.05,
     "max_export_age_seconds": 60,
+    "max_event_age_seconds": 60,
     "max_retention_days": 30,
     "page_short_burn_rate": 4.0,
     "page_long_burn_rate": 2.0,
@@ -37,8 +38,15 @@
   "scenarios": [
     {
       "name": "stable-window",
+      "release_evidence": {
+        "release_id": "agent-release-v3",
+        "release_manifest_sha256": "314f53141e88c3e50b4ae656821986bd729b6f21af4b1876b768562beeccb144",
+        "candidate_gate_evidence_sha256": "5a263c399ad33cf93be4e1428adb38617ae719d96dc1c168fa83136281e64d79",
+        "candidate_gate_evidence_digest_format": "python-json-sorted-utf8-v1"
+      },
       "window_minutes": 60,
       "short_window_minutes": 5,
+      "window_end": "2026-07-14T09:00:00Z",
       "metric_label_keys": [
         "service",
         "release",
@@ -287,8 +295,15 @@
     },
     {
       "name": "incident-window",
+      "release_evidence": {
+        "release_id": "agent-release-v4",
+        "release_manifest_sha256": "1f24d9a95c0b5a09d007e5e926275a20a725206aaa5b1382de9010d24ae7b4bc",
+        "candidate_gate_evidence_sha256": "42a975b9000a0e6f5b4b8c61730e26c8ac14425b752083add07d168ffc3568ae",
+        "candidate_gate_evidence_digest_format": "python-json-sorted-utf8-v1"
+      },
       "window_minutes": 60,
       "short_window_minutes": 5,
+      "window_end": "2026-07-14T10:00:00Z",
       "metric_label_keys": [
         "service",
         "release",

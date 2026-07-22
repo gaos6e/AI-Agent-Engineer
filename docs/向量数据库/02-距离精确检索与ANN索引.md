@@ -66,25 +66,27 @@ $$
 
 ### ANN Recall@k
 
-同一空间、同一 filter、同一 query：
+先冻结同一数据快照、空间、可信身份派生的 filter、query 与 tie-breaking。令 $D_{\mathrm{eligible}}$ 为过滤后可搜索集合，$K=\min(k, |D_{\mathrm{eligible}}|)$：
 
 $$
 \operatorname{ANNRecall@k}
 =
-\frac{|ANN_k\cap Exact_k|}{k}
+\frac{|ANN_K\cap Exact_K|}{K}
 $$
 
-它问“近似索引找回多少 exact 邻居”。
+它问“近似索引找回多少 exact 邻居”。$K=0$ 时记录 `empty_eligible`/不适用，不要把安全空结果记成 0；ANN 本可返回 $K$ 条却少返回时，缺口仍应算作低 recall 或独立服务失败。
 
 ### Business Recall@k
+
+令 $Relevant_{\mathrm{eligible}}$ 是同一测试主体、时间和策略 revision 下**本应可访问**的 gold 相关项：
 
 $$
 \operatorname{BusinessRecall@k}
 =
-\frac{|Retrieved_k\cap Relevant|}{|Relevant|}
+\frac{|Retrieved_K\cap Relevant_{\mathrm{eligible}}|}{|Relevant_{\mathrm{eligible}}|}
 $$
 
-它问“找回多少人工/行为相关证据”。
+它问“找回多少人工/行为相关证据”。若 $Relevant_{\mathrm{eligible}}$ 为空，应转入无答案/越权不得返回的安全断言，不能用 0 recall 惩罚正确过滤。
 
 ANN Recall 1.0 但业务 Recall 很低，说明表示或 gold 不匹配；业务 Recall 足够而 ANN Recall 略低，可能是遗漏的 exact 邻居本来就不相关。两者都报告。
 

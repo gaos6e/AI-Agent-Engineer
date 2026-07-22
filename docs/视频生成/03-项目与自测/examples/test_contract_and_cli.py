@@ -35,10 +35,12 @@ def reference_asset(
 ) -> dict[str, str]:
     return {
         "asset_id": asset_id,
+        "source_revision": "asset-1-r1",
         "role": role,
         "source_reference": "synthetic://asset-1",
         "content_sha256": "a" * 64,
         "rights_reference": "synthetic-rights-record",
+        "acl_reference": "synthetic-acl-record",
     }
 
 
@@ -267,6 +269,20 @@ class ShotAndAssetContractTests(unittest.TestCase):
         package["shots"][0]["reference_assets"] = [asset]
         self.assert_invalid(package, "缺少字段")
 
+    def test_asset_source_revision_must_be_nonempty(self) -> None:
+        package = valid_package()
+        asset = reference_asset()
+        asset["source_revision"] = ""
+        package["shots"][0]["reference_assets"] = [asset]
+        self.assert_invalid(package, "source_revision")
+
+    def test_asset_acl_reference_must_be_nonempty(self) -> None:
+        package = valid_package()
+        asset = reference_asset()
+        asset["acl_reference"] = ""
+        package["shots"][0]["reference_assets"] = [asset]
+        self.assert_invalid(package, "acl_reference")
+
     def test_asset_unknown_field(self) -> None:
         package = valid_package()
         asset = reference_asset()
@@ -394,6 +410,16 @@ class AudioCaptionRiskContractTests(unittest.TestCase):
         package = valid_package()
         package["risk"]["disclosure_plan"] = ""
         self.assert_invalid(package, "disclosure_plan")
+
+    def test_lineage_text_must_be_nonempty(self) -> None:
+        package = valid_package()
+        package["lineage"]["transform_id"] = ""
+        self.assert_invalid(package, "transform_id")
+
+    def test_governance_fields_have_the_declared_types(self) -> None:
+        package = valid_package()
+        package["governance"]["object_acl_required"] = "yes"
+        self.assert_invalid(package, "object_acl_required")
 
 
 class GovernanceContractTests(unittest.TestCase):
@@ -532,6 +558,20 @@ class AuditTests(unittest.TestCase):
         package["shots"][0]["reference_assets"] = [asset]
         self.assertIn("source_reference", " ".join(audit_package(package)))
 
+    def test_asset_source_revision_cannot_be_incomplete(self) -> None:
+        package = valid_package()
+        asset = reference_asset()
+        asset["source_revision"] = "TO_BE_FILLED"
+        package["shots"][0]["reference_assets"] = [asset]
+        self.assertIn("source_revision", " ".join(audit_package(package)))
+
+    def test_asset_acl_reference_cannot_be_incomplete(self) -> None:
+        package = valid_package()
+        asset = reference_asset()
+        asset["acl_reference"] = "ACL_NOT_SET"
+        package["shots"][0]["reference_assets"] = [asset]
+        self.assertIn("acl_reference", " ".join(audit_package(package)))
+
     def test_audio_rights_gate(self) -> None:
         package = valid_package()
         package["audio"]["music_rights_confirmed"] = False
@@ -571,6 +611,26 @@ class AuditTests(unittest.TestCase):
         package = valid_package()
         package["risk"]["real_person"] = True
         self.assertIn("人物同意", " ".join(audit_package(package)))
+
+    def test_lineage_cannot_contain_placeholder(self) -> None:
+        package = valid_package()
+        package["lineage"]["release_id"] = "RELEASE_NOT_SET"
+        self.assertIn("release_id", " ".join(audit_package(package)))
+
+    def test_object_acl_is_a_hard_gate_before_scoring(self) -> None:
+        package = valid_package()
+        package["governance"]["object_acl_required"] = False
+        self.assertIn("对象级授权/ACL", " ".join(audit_package(package)))
+
+    def test_deletion_propagation_plan_cannot_be_incomplete(self) -> None:
+        package = valid_package()
+        package["governance"]["deletion_propagation_plan"] = "NOT_SET"
+        self.assertIn("deletion_propagation_plan", " ".join(audit_package(package)))
+
+    def test_evidence_policy_is_a_hard_gate(self) -> None:
+        package = valid_package()
+        package["governance"]["evidence_policy"] = "unbounded"
+        self.assertIn("evidence_supported", " ".join(audit_package(package)))
 
     def test_duplicate_acceptance_dimension(self) -> None:
         package = valid_package()

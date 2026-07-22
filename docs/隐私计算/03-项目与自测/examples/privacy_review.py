@@ -23,22 +23,24 @@ TOP_FIELDS = {
     "data_fields", "participants", "data_flows", "processing", "release",
     "retention", "controls", "threat_model", "risk_policy",
 }
-DATA_FIELD_FIELDS = {"name", "classification", "necessary", "contribution_bound"}
+DATA_FIELD_FIELDS = {"name", "privacy_class", "output_role", "necessary", "contribution_bound"}
 PARTICIPANT_FIELDS = {"id", "role", "trusted"}
-FLOW_FIELDS = {"id", "from", "to", "fields", "raw"}
+FLOW_FIELDS = {"id", "from", "to", "fields", "protection"}
 PROCESSING_FIELDS = {
-    "raw_data_centralized", "local_training", "secure_aggregation", "mpc",
-    "homomorphic_encryption", "tee",
+    "task_type", "local_training", "secure_aggregation", "mpc", "homomorphic_encryption",
+    "tee", "protocol_participants", "protocol_security", "protocol_evidence",
 }
 RELEASE_FIELDS = {
-    "public", "minimum_group_size", "adjacency_definition", "epsilon_limit",
-    "delta_limit", "mechanisms",
+    "public", "minimum_group_size", "adjacency", "epsilon_limit", "delta_limit",
+    "mechanisms", "outputs",
 }
+ADJACENCY_FIELDS = {"unit", "relation", "time_window", "contribution_bounds_enforced"}
 MECHANISM_FIELDS = {"id", "mechanism", "epsilon", "delta", "approved"}
+OUTPUT_FIELDS = {"id", "fields", "transformation", "public"}
 RETENTION_FIELDS = {"days", "deletion_verified", "backups_in_scope"}
 CONTROL_FIELDS = {
     "access_control", "purpose_enforcement", "output_review", "budget_ledger",
-    "provenance", "incident_plan", "update_validation",
+    "provenance", "incident_plan", "linkage_evaluation", "update_validation",
 }
 THREAT_FIELDS = {
     "honest_but_curious_server", "collusion_threshold", "malicious_clients",
@@ -46,10 +48,13 @@ THREAT_FIELDS = {
 }
 POLICY_FIELDS = {"block_severities", "review_severities"}
 
-CLASSIFICATIONS = {
-    "direct_identifier", "quasi_identifier", "sensitive_attribute", "measure",
-}
+PRIVACY_CLASSES = {"direct_identifier", "quasi_identifier", "sensitive_attribute", "non_sensitive"}
+OUTPUT_ROLES = {"dimension", "measure", "linkage_key", "not_released"}
 ROLES = {"data_holder", "compute_service", "publisher", "auditor"}
+FLOW_PROTECTIONS = {"raw", "locally_aggregated", "mpc_share", "he_ciphertext", "tee_input", "federated_update", "secure_update"}
+OUTPUT_TRANSFORMATIONS = {"aggregate", "dp_aggregate", "record_level", "model"}
+TASK_TYPES = {"aggregate_statistics", "federated_training_and_statistics"}
+PROTOCOL_SECURITY = {"none", "semi_honest", "malicious"}
 SEVERITIES = {"low", "medium", "high", "critical"}
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
@@ -167,8 +172,10 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     fields = _objects(scenario["data_fields"], DATA_FIELD_FIELDS, "scenario.data_fields")
     for index, field in enumerate(fields):
         _text(field["name"], f"scenario.data_fields[{index}].name")
-        if field["classification"] not in CLASSIFICATIONS:
-            raise ContractError(f"scenario.data_fields[{index}].classification is invalid")
+        if field["privacy_class"] not in PRIVACY_CLASSES:
+            raise ContractError(f"scenario.data_fields[{index}].privacy_class is invalid")
+        if field["output_role"] not in OUTPUT_ROLES:
+            raise ContractError(f"scenario.data_fields[{index}].output_role is invalid")
         _boolean(field["necessary"], f"scenario.data_fields[{index}].necessary")
         _integer(field["contribution_bound"], f"scenario.data_fields[{index}].contribution_bound", 1)
     _unique((field["name"] for field in fields), "data field")
@@ -198,19 +205,74 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         unknown = sorted(set(names) - field_names)
         if unknown:
             raise ContractError(f"scenario.data_flows[{index}] references unknown fields: {unknown}")
-        _boolean(flow["raw"], f"scenario.data_flows[{index}].raw")
+        if flow["protection"] not in FLOW_PROTECTIONS:
+            raise ContractError(f"scenario.data_flows[{index}].protection is invalid")
     _unique((flow["id"] for flow in flows), "data flow")
 
     processing = _exact(scenario["processing"], PROCESSING_FIELDS, "scenario.processing")
-    for key in PROCESSING_FIELDS:
+    if processing["task_type"] not in TASK_TYPES:
+        raise ContractError("scenario.processing.task_type is invalid")
+    for key in ("local_training", "secure_aggregation", "mpc", "homomorphic_encryption", "tee", "protocol_evidence"):
         _boolean(processing[key], f"scenario.processing.{key}")
+    protocol_participants = _strings(
+        processing["protocol_participants"],
+        "scenario.processing.protocol_participants",
+        allow_empty=True,
+    )
+    unknown_protocol_participants = sorted(set(protocol_participants) - participant_ids)
+    if unknown_protocol_participants:
+        raise ContractError(
+            f"scenario.processing.protocol_participants references unknown participants: {unknown_protocol_participants}"
+        )
+    if processing["protocol_security"] not in PROTOCOL_SECURITY:
+        raise ContractError("scenario.processing.protocol_security is invalid")
+
+    update_flows = [flow for flow in flows if flow["protection"] in {"federated_update", "secure_update"}]
+    if processing["local_training"] != bool(update_flows):
+        raise ContractError("scenario.processing.local_training must match declared update flows")
+    if processing["local_training"] != (processing["task_type"] == "federated_training_and_statistics"):
+        raise ContractError("scenario.processing.task_type must match local_training")
+    secure_update_flows = [flow for flow in flows if flow["protection"] == "secure_update"]
+    if processing["secure_aggregation"] != bool(secure_update_flows):
+        raise ContractError("scenario.processing.secure_aggregation must match secure_update flows")
+    for flag, protection in (("mpc", "mpc_share"), ("homomorphic_encryption", "he_ciphertext"), ("tee", "tee_input")):
+        if processing[flag] != any(flow["protection"] == protection for flow in flows):
+            raise ContractError(f"scenario.processing.{flag} must match {protection} flows")
+    protocol_enabled = any(
+        processing[key] for key in ("secure_aggregation", "mpc", "homomorphic_encryption", "tee")
+    )
+    if protocol_enabled:
+        if not protocol_participants:
+            raise ContractError("enabled privacy protocol requires protocol_participants")
+        if processing["protocol_security"] == "none":
+            raise ContractError("enabled privacy protocol requires a declared security model")
+        protected_flow_kinds = {"secure_update", "mpc_share", "he_ciphertext", "tee_input"}
+        flow_participants = {
+            endpoint
+            for flow in flows
+            if flow["protection"] in protected_flow_kinds
+            for endpoint in (flow["from"], flow["to"])
+        }
+        if set(protocol_participants) != flow_participants:
+            raise ContractError(
+                "scenario.processing.protocol_participants must match protected-flow endpoints"
+            )
+    else:
+        if protocol_participants or processing["protocol_security"] != "none" or processing["protocol_evidence"]:
+            raise ContractError("protocol metadata must be N/A when no privacy protocol is enabled")
 
     release = _exact(scenario["release"], RELEASE_FIELDS, "scenario.release")
     _boolean(release["public"], "scenario.release.public")
     _integer(release["minimum_group_size"], "scenario.release.minimum_group_size", 1)
-    _text(release["adjacency_definition"], "scenario.release.adjacency_definition")
+    adjacency = _exact(release["adjacency"], ADJACENCY_FIELDS, "scenario.release.adjacency")
+    if adjacency["unit"] not in {"person", "organization", "event", "undefined"}:
+        raise ContractError("scenario.release.adjacency.unit is invalid")
+    if adjacency["relation"] not in {"add_remove", "replace_one", "undefined"}:
+        raise ContractError("scenario.release.adjacency.relation is invalid")
+    _text(adjacency["time_window"], "scenario.release.adjacency.time_window")
+    _boolean(adjacency["contribution_bounds_enforced"], "scenario.release.adjacency.contribution_bounds_enforced")
     epsilon_limit = _decimal(release["epsilon_limit"], "scenario.release.epsilon_limit", positive=True)
-    delta_limit = _decimal(release["delta_limit"], "scenario.release.delta_limit", positive=True)
+    delta_limit = _decimal(release["delta_limit"], "scenario.release.delta_limit")
     if delta_limit >= 1:
         raise ContractError("scenario.release.delta_limit must be less than 1")
     mechanisms = _objects(
@@ -225,6 +287,31 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
             raise ContractError(f"scenario.release.mechanisms[{index}].delta must be less than 1")
         _boolean(mechanism["approved"], f"scenario.release.mechanisms[{index}].approved")
     _unique((item["id"] for item in mechanisms), "release mechanism")
+    outputs = _objects(release["outputs"], OUTPUT_FIELDS, "scenario.release.outputs")
+    public_outputs = 0
+    direct_identifiers = {
+        field["name"] for field in fields if field["privacy_class"] == "direct_identifier"
+    }
+    not_released_fields = {
+        field["name"] for field in fields if field["output_role"] == "not_released"
+    }
+    for index, output in enumerate(outputs):
+        _text(output["id"], f"scenario.release.outputs[{index}].id")
+        output_fields = _strings(output["fields"], f"scenario.release.outputs[{index}].fields")
+        unknown = sorted(set(output_fields) - field_names)
+        if unknown:
+            raise ContractError(f"scenario.release.outputs[{index}] references unknown fields: {unknown}")
+        if output["transformation"] not in OUTPUT_TRANSFORMATIONS:
+            raise ContractError(f"scenario.release.outputs[{index}].transformation is invalid")
+        is_public = _boolean(output["public"], f"scenario.release.outputs[{index}].public")
+        public_outputs += int(is_public)
+        if is_public and direct_identifiers.intersection(output_fields):
+            raise ContractError("public release outputs must not include direct identifiers")
+        if not_released_fields.intersection(output_fields):
+            raise ContractError("release outputs reference fields declared not_released")
+    _unique((item["id"] for item in outputs), "release output")
+    if release["public"] != bool(public_outputs):
+        raise ContractError("scenario.release.public must match declared public outputs")
 
     retention = _exact(scenario["retention"], RETENTION_FIELDS, "scenario.retention")
     _integer(retention["days"], "scenario.retention.days", 1)
@@ -238,7 +325,17 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     threat = _exact(scenario["threat_model"], THREAT_FIELDS, "scenario.threat_model")
     for key in ("honest_but_curious_server", "malicious_clients", "final_output_inference"):
         _boolean(threat[key], f"scenario.threat_model.{key}")
-    _integer(threat["collusion_threshold"], "scenario.threat_model.collusion_threshold", 1)
+    collusion_threshold = _integer(
+        threat["collusion_threshold"], "scenario.threat_model.collusion_threshold", 0
+    )
+    if protocol_participants:
+        if processing["mpc"] or processing["secure_aggregation"]:
+            if len(protocol_participants) < 2:
+                raise ContractError("MPC or secure aggregation requires at least two protocol participants")
+        if not 0 <= collusion_threshold < len(protocol_participants):
+            raise ContractError("collusion threshold must be lower than the protocol participant count")
+    elif collusion_threshold != 0:
+        raise ContractError("collusion threshold must be 0 when no privacy protocol is enabled")
 
     policy = _exact(scenario["risk_policy"], POLICY_FIELDS, "scenario.risk_policy")
     block = set(_strings(policy["block_severities"], "scenario.risk_policy.block_severities"))
@@ -255,6 +352,9 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     overlap = sorted(block & review)
     if overlap:
         raise ContractError(f"risk policy severities overlap: {overlap}")
+    uncovered = sorted(SEVERITIES - block - review)
+    if uncovered:
+        raise ContractError(f"risk policy must classify every severity; uncovered={uncovered}")
     return copy.deepcopy(scenario)
 
 
@@ -284,6 +384,20 @@ def budget_totals(scenario: dict[str, Any]) -> tuple[Decimal, Decimal]:
     return epsilon, delta
 
 
+def raw_centralization_targets(scenario: dict[str, Any]) -> list[str]:
+    """Derive central raw collection from declared topology instead of a self-reported flag."""
+    participants = {item["id"]: item for item in scenario["participants"]}
+    holders_by_target: dict[str, set[str]] = {}
+    for flow in scenario["data_flows"]:
+        if (
+            flow["protection"] == "raw"
+            and participants[flow["from"]]["role"] == "data_holder"
+            and participants[flow["to"]]["role"] == "compute_service"
+        ):
+            holders_by_target.setdefault(flow["to"], set()).add(flow["from"])
+    return sorted(target for target, holders in holders_by_target.items() if len(holders) > 1)
+
+
 def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     fields = scenario["data_fields"]
@@ -293,34 +407,43 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     threat = scenario["threat_model"]
     participants = {item["id"]: item for item in scenario["participants"]}
 
-    unnecessary_direct = [
+    unnecessary_fields = [
         field["name"]
         for field in fields
-        if field["classification"] == "direct_identifier" and not field["necessary"]
+        if not field["necessary"]
     ]
-    if unnecessary_direct:
+    if unnecessary_fields:
+        high_impact = any(
+            field["name"] in unnecessary_fields
+            and field["privacy_class"] in {"direct_identifier", "sensitive_attribute"}
+            for field in fields
+        )
         findings.append(
             finding(
-                "PR-001", "Unnecessary direct identifiers are collected", "high",
+                "PR-001", "Unnecessary data fields are collected", "high" if high_impact else "medium",
                 "collecting data without a purpose expands harm, access, and response scope",
-                ["exclude before collection", "separate any independently approved identity purpose"],
+                ["exclude before collection", "separate any independently approved secondary purpose"],
                 ["field-to-purpose review", "ingestion rejection test"],
             )
         )
 
-    quasi = [field["name"] for field in fields if field["classification"] == "quasi_identifier"]
-    if release["public"] and quasi:
+    quasi = {field["name"] for field in fields if field["privacy_class"] == "quasi_identifier"}
+    public_quasi_outputs = [
+        output["id"]
+        for output in release["outputs"]
+        if output["public"] and quasi.intersection(output["fields"])
+    ]
+    if public_quasi_outputs and not controls["linkage_evaluation"]:
         findings.append(
             finding(
-                "PR-002", "Public release is derived from quasi-identifiers", "medium",
+                "PR-002", "Public quasi-identifying dimensions lack linkage evaluation", "medium",
                 "external data may link rare combinations back to people",
                 ["generalize or suppress rare combinations", "evaluate linkage and output inference"],
                 ["linkage attack exercise", "rare-group report"],
             )
         )
 
-    holders = [item for item in scenario["participants"] if item["role"] == "data_holder"]
-    if len(holders) > 1 and processing["raw_data_centralized"]:
+    if raw_centralization_targets(scenario):
         findings.append(
             finding(
                 "PR-003", "Multiple holders centralize raw records", "high",
@@ -340,9 +463,13 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if release["adjacency_definition"].strip().lower() in {
-        "undefined", "not-defined", "not defined", "none",
-    }:
+    adjacency = release["adjacency"]
+    if (
+        adjacency["unit"] == "undefined"
+        or adjacency["relation"] == "undefined"
+        or adjacency["time_window"].strip().lower() == "undefined"
+        or not adjacency["contribution_bounds_enforced"]
+    ):
         findings.append(
             finding(
                 "PR-005", "Differential-privacy adjacency is not defined", "high",
@@ -388,12 +515,12 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     sensitive_names = {
         field["name"]
         for field in fields
-        if field["classification"] in {"direct_identifier", "quasi_identifier", "sensitive_attribute"}
+        if field["privacy_class"] in {"direct_identifier", "quasi_identifier", "sensitive_attribute"}
     }
     unsafe_flows = [
         flow["id"]
         for flow in scenario["data_flows"]
-        if flow["raw"]
+        if flow["protection"] == "raw"
         and sensitive_names.intersection(flow["fields"])
         and not participants[flow["to"]]["trusted"]
     ]
@@ -407,11 +534,14 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if (
-        processing["local_training"]
-        and threat["honest_but_curious_server"]
-        and not processing["secure_aggregation"]
-    ):
+    update_flows = [
+        flow for flow in scenario["data_flows"]
+        if flow["protection"] in {"federated_update", "secure_update"}
+    ]
+    visible_update_flows = [
+        flow for flow in update_flows if flow["protection"] == "federated_update"
+    ]
+    if visible_update_flows and threat["honest_but_curious_server"]:
         findings.append(
             finding(
                 "PR-010", "Federated updates are visible to the curious server", "high",
@@ -421,7 +551,7 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if threat["malicious_clients"] and not controls["update_validation"]:
+    if update_flows and threat["malicious_clients"] and not controls["update_validation"]:
         findings.append(
             finding(
                 "PR-011", "Malicious participant updates are not constrained", "high",
@@ -431,7 +561,13 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    missing = [key for key in CONTROL_FIELDS if not controls[key]]
+    applicable_controls = set(CONTROL_FIELDS)
+    if not update_flows:
+        applicable_controls.remove("update_validation")
+    missing = [key for key in sorted(applicable_controls) if not controls[key]]
+    if any(processing[key] for key in ("secure_aggregation", "mpc", "homomorphic_encryption", "tee")):
+        if not processing["protocol_evidence"]:
+            missing.append("protocol_evidence")
     if missing:
         findings.append(
             finding(
@@ -486,6 +622,9 @@ def decision(scenario: dict[str, Any], findings: list[dict[str, Any]]) -> tuple[
     review_levels = set(scenario["risk_policy"]["review_severities"])
     blockers = [item["id"] for item in findings if item["severity"] in block]
     reviews = [item["id"] for item in findings if item["severity"] in review_levels]
+    uncovered = [item["id"] for item in findings if item["severity"] not in (block | review_levels)]
+    if uncovered:
+        raise ContractError("risk policy left findings unclassified: " + ", ".join(uncovered))
     if blockers:
         return "BLOCK", ["blocking findings: " + ", ".join(blockers)]
     if reviews:
@@ -502,6 +641,8 @@ def build_report(scenario: dict[str, Any]) -> dict[str, Any]:
         "reasons": reasons,
         "scenario_id": scenario["scenario_id"],
         "purpose": scenario["purpose"],
+        "non_goals": scenario["non_goals"],
+        "release_outputs": scenario["release"]["outputs"],
         "budget_ledger": {
             "epsilon_used": str(epsilon),
             "epsilon_limit": scenario["release"]["epsilon_limit"],
@@ -518,6 +659,7 @@ def build_report(scenario: dict[str, Any]) -> dict[str, Any]:
             "No personal data, model, DP library, FL system, MPC, FHE, TEE, or network was used.",
             "The ledger uses basic illustrative addition and does not validate a mechanism or accountant.",
             "A PASS result only means the declared metadata triggered no teaching rule.",
+            "Protocol participants, protections, lineage, and evidence are declarations, not runtime verification.",
             "The report is not legal advice, a cryptographic review, or a production privacy assessment.",
         ],
     }

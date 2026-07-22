@@ -28,6 +28,7 @@ ALLOWED_KINDS = {
     "table_header",
     "table_row",
 }
+LEXICAL_INDEX_REVISION = "lexical-overlap-index-v1"
 
 
 class ChunkingError(ValueError):
@@ -118,6 +119,7 @@ class RankedChunk:
     rank: int
     score: int
     chunk: Chunk
+    index_entry_id: str
 
 
 @dataclass
@@ -157,6 +159,30 @@ def _clean_token(name: str, value: str, maximum: int = 300) -> str:
     if len(value) > maximum or any(ord(character) < 32 for character in value):
         raise ChunkingError(f"{name} 长度或控制字符不合法")
     return value
+
+
+def acl_snapshot_sha256(acl: Sequence[str]) -> str:
+    if isinstance(acl, (str, bytes)) or not acl:
+        raise ChunkingError("acl snapshot 必须是非空字符串序列")
+    values = tuple(_clean_token("acl", value) for value in acl)
+    if values != tuple(sorted(set(values))):
+        raise ChunkingError("acl snapshot 必须排序且不得重复")
+    return _digest(_canonical_json(list(values)))
+
+
+def index_entry_id(
+    chunk: Chunk, *, index_revision: str = LEXICAL_INDEX_REVISION
+) -> str:
+    revision = _clean_token("index_revision", index_revision)
+    if chunk.retrieval_sha256 != _digest(chunk.retrieval_text):
+        raise ChunkingError(f"retrieval hash 不一致：{chunk.chunk_id}")
+    identity = {
+        "acl_snapshot_sha256": acl_snapshot_sha256(chunk.acl),
+        "chunk_id": _clean_token("chunk_id", chunk.chunk_id),
+        "index_revision": revision,
+        "retrieval_sha256": chunk.retrieval_sha256,
+    }
+    return "idx_" + _digest(_canonical_json(identity))
 
 
 def lexical_units(text: str) -> tuple[Unit, ...]:
@@ -323,32 +349,32 @@ def load_query_cases(path: Path, elements: Sequence[Element]) -> list[QueryCase]
 
 
 def _family(kind: str) -> str:
-    if kind.startswith("table_"):
-        return "table"
-    if kind == "code_block":
-        return "code"
-    return "prose"
+    if kind.startswith("table_"):  # 表头和表格行必须共享表格 family，才能保留表头上下文。
+        return "table"  # 统一标记为 table，防止和普通段落合并。
+    if kind == "code_block":  # 代码块不应和自然语言段落混在同一个结构块中。
+        return "code"  # 用独立 family 让后续合并逻辑保持代码边界。
+    return "prose"  # 其余已解析元素按普通文本处理。
 
 
 def _window_slices(text: str, max_units: int, overlap_units: int) -> list[tuple[str, int, int, int]]:
-    units = lexical_units(text)
-    if not units:
-        return []
-    if len(units) <= max_units:
-        return [(text.strip(), 0, len(units), 0)]
-    step = max_units - overlap_units
-    result: list[tuple[str, int, int, int]] = []
-    start = 0
-    while start < len(units):
-        end = min(start + max_units, len(units))
-        char_start = units[start].char_start
-        char_end = units[end - 1].char_end
-        actual_overlap = 0 if not result else max(0, result[-1][2] - start)
-        result.append((text[char_start:char_end], start, end, actual_overlap))
-        if end == len(units):
-            break
-        start += step
-    return result
+    units = lexical_units(text)  # 先把文本变成带字符偏移的教学单位，而不是直接按字符硬切。
+    if not units:  # 空白或没有可计量单位的文本不应产生空 chunk。
+        return []  # 直接返回空结果，让调用方跳过该元素。
+    if len(units) <= max_units:  # 未超出 hard max 时保留完整文本和完整来源边界。
+        return [(text.strip(), 0, len(units), 0)]  # 单窗没有前驱，因此实际 overlap 为 0。
+    step = max_units - overlap_units  # 已由配置校验保证 step 为正，循环必定前进。
+    result: list[tuple[str, int, int, int]] = []  # 每项依次保存正文、单位起止和实际重复量。
+    start = 0  # 第一窗从第 0 个 lexical unit 开始。
+    while start < len(units):  # 当起点仍位于输入中时持续构造窗口。
+        end = min(start + max_units, len(units))  # 最后一窗允许较短，但不能越过最后一个单位。
+        char_start = units[start].char_start  # 将单位起点映射回规范文本中的字符起点。
+        char_end = units[end - 1].char_end  # 终点取最后一个单位的右边界，保持半开区间语义。
+        actual_overlap = 0 if not result else max(0, result[-1][2] - start)  # 用前窗终点计算真实重复量。
+        result.append((text[char_start:char_end], start, end, actual_overlap))  # 保存切片及其可审计 span。
+        if end == len(units):  # 本窗已触及文末时，不能再制造仅含 overlap 的尾窗。
+            break  # 立即停止，避免重复数据和死循环风险。
+        start += step  # 按正步长移动起点，同时留下配置指定的上下文重叠。
+    return result  # 按原顺序交还所有窗口。
 
 
 def _common_prefix(paths: Sequence[tuple[str, ...]]) -> tuple[str, ...]:
@@ -376,21 +402,21 @@ def _build_chunk(
     strategy_version: str,
     table_headers: dict[tuple[str, str, tuple[str, ...], tuple[str, ...]], str],
 ) -> Chunk:
-    text = _draft_text(draft)
-    if not text:
-        raise ChunkingError("不得生成空 chunk")
-    spans = tuple(ElementSpan(part[0].element_id, part[1], part[2]) for part in draft.parts)
-    context: list[str] = []
-    if draft.section_path:
-        context.append("标题路径：" + " > ".join(draft.section_path))
-    header_key = (draft.source_id, draft.source_revision, draft.section_path, draft.acl)
-    includes_header = any(part[0].kind == "table_header" for part in draft.parts)
-    if draft.family == "table" and not includes_header and header_key in table_headers:
-        context.append("表头：" + table_headers[header_key])
-    retrieval_text = "\n".join((*context, text)) if context else text
-    content_hash = _digest(text)
-    retrieval_hash = _digest(retrieval_text)
-    identity = {
+    text = _draft_text(draft)  # 先拼接草稿中的正文；检索前缀不能混入可引用原文。
+    if not text:  # 空正文意味着上游切分或合并逻辑违反了输出契约。
+        raise ChunkingError("不得生成空 chunk")  # 及早失败，避免给空内容建立索引。
+    spans = tuple(ElementSpan(part[0].element_id, part[1], part[2]) for part in draft.parts)  # 记录每段正文来自哪个元素和单位区间。
+    context: list[str] = []  # 只为检索额外准备派生上下文，不修改原文。
+    if draft.section_path:  # 有标题路径时，把它作为可检索但不可引用的提示信息。
+        context.append("标题路径：" + " > ".join(draft.section_path))  # 用稳定分隔符保留层级关系。
+    header_key = (draft.source_id, draft.source_revision, draft.section_path, draft.acl)  # 表头只可在同来源、版本、结构和权限域内复用。
+    includes_header = any(part[0].kind == "table_header" for part in draft.parts)  # 避免把已在正文中的表头重复加入。
+    if draft.family == "table" and not includes_header and header_key in table_headers:  # 表格行需要表头才能在检索时自解释。
+        context.append("表头：" + table_headers[header_key])  # 表头只进入 retrieval_text，不伪装成该行原文。
+    retrieval_text = "\n".join((*context, text)) if context else text  # 有派生上下文才添加换行前缀。
+    content_hash = _digest(text)  # 正文哈希用于检测被引用的原始内容是否变化。
+    retrieval_hash = _digest(retrieval_text)  # 检索文本哈希用于检测标题或表头变化。
+    identity = {  # 只把会改变内容身份的字段纳入稳定 ID。
         "acl": list(draft.acl),
         "content_sha256": content_hash,
         "element_spans": [asdict(span) for span in spans],
@@ -398,8 +424,8 @@ def _build_chunk(
         "source_revision": draft.source_revision,
         "strategy_version": strategy_version,
     }
-    chunk_id = "chk_" + _digest(_canonical_json(identity))
-    return Chunk(
+    chunk_id = "chk_" + _digest(_canonical_json(identity))  # 对规范 JSON 求哈希，避免字典顺序造成 ID 漂移。
+    return Chunk(  # 用不可变数据类一次性封装完整的教学输出契约。
         chunk_id,
         draft.source_id,
         draft.source_revision,
@@ -420,46 +446,46 @@ def _build_chunk(
 
 
 def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[Chunk]:
-    config.validate()
-    if not elements:
-        return []
-    table_headers = {
+    config.validate()  # 先保证 hard max 与 overlap 不会导致无效窗口。
+    if not elements:  # 空来源没有任何可切分内容。
+        return []  # 保持空输入到空输出的确定性。
+    table_headers = {  # 预先收集表头，供后续只含表格行的块添加检索上下文。
         (element.source_id, element.source_revision, element.section_path, element.acl): element.text
         for element in elements
         if element.kind == "table_header"
     }
-    drafts: list[_Draft] = []
-    current: _Draft | None = None
+    drafts: list[_Draft] = []  # 保存已经关闭的草稿块，稍后统一编号并建立身份。
+    current: _Draft | None = None  # current 是仍可继续合并的当前结构块。
 
     def flush() -> None:
-        nonlocal current
-        if current is not None and current.parts:
-            drafts.append(current)
-        current = None
+        nonlocal current  # 内部函数需要重绑定外层的当前草稿。
+        if current is not None and current.parts:  # 只有包含实际元素的草稿才值得输出。
+            drafts.append(current)  # 关闭当前草稿，后续元素不得再跨边界加入。
+        current = None  # 无论是否输出，都清空状态以开始新的结构域。
 
-    for element in elements:
-        units = count_units(element.text)
-        family = _family(element.kind)
-        key = (
+    for element in elements:  # 按解析器给出的原始顺序逐元素处理，保证输出顺序稳定。
+        units = count_units(element.text)  # 用同一个计量器判断元素是否需要超长兜底。
+        family = _family(element.kind)  # 表格、代码和正文不能随意互相合并。
+        key = (  # 这些字段共同定义允许合并的结构与访问边界。
             element.source_id,
             element.source_revision,
             family,
             element.section_path,
             element.acl,
         )
-        current_key = None if current is None else (
+        current_key = None if current is None else (  # 没有草稿时没有可比较的边界键。
             current.source_id,
             current.source_revision,
             current.family,
             current.section_path,
             current.acl,
         )
-        if units > config.max_units:
-            flush()
-            for piece, start, end, overlap in _window_slices(
+        if units > config.max_units:  # 单一元素超长时不能放宽 hard max，只能在元素内部开窗。
+            flush()  # 先结束前一块，防止把超长元素与其他来源内容混合。
+            for piece, start, end, overlap in _window_slices(  # 每个窗口保留可重建的单位 span。
                 element.text, config.max_units, config.overlap_units
             ):
-                drafts.append(
+                drafts.append(  # 每个超长窗口独立成为草稿，以便保留真实 overlap。
                     _Draft(
                         element.source_id,
                         element.source_revision,
@@ -470,10 +496,10 @@ def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[
                         overlap,
                     )
                 )
-            continue
-        if current is None or current_key != key:
-            flush()
-            current = _Draft(
+            continue  # 超长元素已完整处理，不再落入普通合并逻辑。
+        if current is None or current_key != key:  # 来源、权限、结构或 family 改变时必须隔离。
+            flush()  # 结束旧域中的草稿，防止跨 source/revision/ACL 污染。
+            current = _Draft(  # 为新域创建空草稿，等待当前短元素加入。
                 element.source_id,
                 element.source_revision,
                 family,
@@ -481,8 +507,8 @@ def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[
                 element.acl,
                 [],
             )
-        candidate_parts = [*current.parts, (element, 0, units, element.text)]
-        candidate = _Draft(
+        candidate_parts = [*current.parts, (element, 0, units, element.text)]  # 先假设把当前元素完整加入。
+        candidate = _Draft(  # 构造候选草稿，只用于检查加入后是否超过 hard max。
             current.source_id,
             current.source_revision,
             current.family,
@@ -490,9 +516,9 @@ def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[
             current.acl,
             candidate_parts,
         )
-        if current.parts and count_units(_draft_text(candidate)) > config.max_units:
-            flush()
-            current = _Draft(
+        if current.parts and count_units(_draft_text(candidate)) > config.max_units:  # 已有内容且再加入会超限时关闭旧块。
+            flush()  # 保留完整短元素，避免为了凑大小把它切开。
+            current = _Draft(  # 当前元素作为新块的第一个完整部分。
                 element.source_id,
                 element.source_revision,
                 family,
@@ -501,9 +527,9 @@ def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[
                 [(element, 0, units, element.text)],
             )
         else:
-            current.parts = candidate_parts
-    flush()
-    chunks = [
+            current.parts = candidate_parts  # 仍未超限时，安全地把短元素合并进当前草稿。
+    flush()  # 循环结束后别忘了提交最后一个尚未关闭的草稿。
+    chunks = [  # 统一给已关闭的草稿赋连续 ordinal 和稳定身份。
         _build_chunk(
             draft,
             ordinal=index,
@@ -512,8 +538,8 @@ def structured_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[
         )
         for index, draft in enumerate(drafts, start=1)
     ]
-    validate_chunks(chunks, elements, config)
-    return chunks
+    validate_chunks(chunks, elements, config)  # 在返回前证明覆盖、边界、哈希和权限不变量。
+    return chunks  # 只有通过完整校验的 chunks 才交给下游索引器。
 
 
 def fixed_window_chunks(elements: Sequence[Element], config: ChunkConfig) -> list[Chunk]:
@@ -648,9 +674,11 @@ def retrieve(
     *,
     subject_groups: Sequence[str],
     k: int,
+    index_revision: str = LEXICAL_INDEX_REVISION,
 ) -> list[RankedChunk]:
     if not isinstance(k, int) or isinstance(k, bool) or k <= 0:
         raise ChunkingError("k 必须是正整数")
+    revision = _clean_token("index_revision", index_revision)
     groups = set(subject_groups)
     if not groups:
         return []
@@ -664,7 +692,12 @@ def retrieve(
             scored.append((score, chunk))
     scored.sort(key=lambda item: (-item[0], item[1].retrieval_unit_count, item[1].chunk_id))
     return [
-        RankedChunk(rank, score, chunk)
+        RankedChunk(
+            rank,
+            score,
+            chunk,
+            index_entry_id(chunk, index_revision=revision),
+        )
         for rank, (score, chunk) in enumerate(scored[:k], start=1)
     ]
 
@@ -679,7 +712,11 @@ def _covers(chunk: Chunk, anchor: EvidenceAnchor) -> bool:
 
 
 def evaluate(
-    chunks: Sequence[Chunk], cases: Sequence[QueryCase], *, k: int = 3
+    chunks: Sequence[Chunk],
+    cases: Sequence[QueryCase],
+    *,
+    k: int = 3,
+    index_revision: str = LEXICAL_INDEX_REVISION,
 ) -> dict[str, Any]:
     details: list[dict[str, Any]] = []
     recalls: list[float] = []
@@ -693,6 +730,7 @@ def evaluate(
             chunks,
             subject_groups=case.subject_groups,
             k=k,
+            index_revision=index_revision,
         )
         context_units = sum(item.chunk.retrieval_unit_count for item in ranked)
         context_costs.append(context_units)
@@ -724,6 +762,9 @@ def evaluate(
             {
                 "query_id": case.query_id,
                 "retrieved_chunk_ids": [item.chunk.chunk_id for item in ranked],
+                "retrieved_index_entry_ids": [
+                    item.index_entry_id for item in ranked
+                ],
                 "scores": [item.score for item in ranked],
                 "anchor_recall_at_k": recall,
                 "reciprocal_rank": reciprocal_rank,
@@ -773,15 +814,24 @@ def run_experiment(
     fixed = fixed_window_chunks(elements, config)
     return {
         "unit_definition": "regex lexical units; not a model tokenizer",
+        "index_revision": LEXICAL_INDEX_REVISION,
         "config": asdict(config),
         "strategies": {
             "structured": {
                 "cost": cost_report(structured, elements),
-                "evaluation": evaluate(structured, cases),
+                "evaluation": evaluate(
+                    structured,
+                    cases,
+                    index_revision=LEXICAL_INDEX_REVISION,
+                ),
             },
             "fixed_window": {
                 "cost": cost_report(fixed, elements),
-                "evaluation": evaluate(fixed, cases),
+                "evaluation": evaluate(
+                    fixed,
+                    cases,
+                    index_revision=LEXICAL_INDEX_REVISION,
+                ),
             },
         },
     }

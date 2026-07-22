@@ -1,7 +1,7 @@
 ---
 title: 单元测试、Mock 与回归
-tags: [ai-agent-engineer, Python, testing]
-aliases: [Python 单元测试, Python Mock]
+tags: [ ai-agent-engineer, Python, testing ]
+aliases: [ Python 单元测试, Python Mock ]
 ---
 
 # 单元测试、Mock 与回归

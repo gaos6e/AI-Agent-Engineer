@@ -6,6 +6,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -16,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_SCENARIO = HERE / "agent_scenario_vulnerable.json"
 HARDENED_SCENARIO = HERE / "agent_scenario_hardened.json"
 CONTRACT_ERROR_SCENARIO = HERE / "agent_scenario_contract_error.json"
+SUPPORTED_SCHEMA_VERSION = "2"
 
 TOP_FIELDS = {
     "schema_version",
@@ -28,6 +30,7 @@ TOP_FIELDS = {
     "identities",
     "tools",
     "dependencies",
+    "memory",
     "controls",
     "risk_policy",
 }
@@ -38,16 +41,22 @@ IDENTITY_FIELDS = {"id", "shared", "ttl_minutes", "scopes"}
 TOOL_FIELDS = {
     "name",
     "mode",
-    "destination",
+    "destination_class",
+    "endpoint",
+    "resources",
     "side_effect",
     "required_for_purpose",
     "required_scopes",
+    "identity_id",
+    "egress_assets",
 }
-DEPENDENCY_FIELDS = {"name", "version", "pinned", "provenance_verified"}
+DEPENDENCY_FIELDS = {"name", "version", "artifact_digest", "provenance_verified"}
+MEMORY_FIELDS = {"enabled", "write_sources", "write_assets"}
 CONTROL_FIELDS = {
     "treat_external_content_as_data",
     "tool_allowlist",
-    "destination_allowlist",
+    "endpoint_allowlist",
+    "resource_allowlist",
     "approval",
     "sandbox",
     "output_validation",
@@ -59,7 +68,7 @@ CONTROL_FIELDS = {
 }
 APPROVAL_FIELDS = {"required_for_tools", "binds_parameters", "expires_minutes"}
 SANDBOX_FIELDS = {"enabled", "network_default_deny"}
-POLICY_FIELDS = {"block_severities", "review_severities"}
+POLICY_FIELDS = {"block_severities", "review_severities", "accept_severities"}
 
 CLASSIFICATIONS = {"public", "internal", "confidential", "restricted"}
 TRUST_LEVELS = {"trusted", "conditional", "untrusted"}
@@ -67,6 +76,13 @@ TOOL_MODES = {"read", "write", "execute"}
 DESTINATIONS = {"local", "internal", "external"}
 SEVERITIES = {"low", "medium", "high", "critical"}
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+MUTABLE_VERSION_LABELS = {"latest", "main", "master", "head", "tip", "snapshot"}
+BROAD_TARGET_TOKENS = {"*", "any", "all"}
+SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+IMMUTABLE_VERSION_PATTERN = re.compile(
+    r"(?:v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?|git:[0-9a-f]{7,40})\Z",
+    re.IGNORECASE,
+)
 
 
 class ContractError(ValueError):
@@ -133,6 +149,33 @@ def _integer(value: Any, location: str, minimum: int = 0) -> int:
     return value
 
 
+def _artifact_digest(value: Any, location: str) -> str | None:
+    if value is None:
+        return None
+    digest = _text(value, location)
+    if not SHA256_PATTERN.fullmatch(digest):
+        raise ContractError(f"{location} must be null or a lowercase sha256 digest")
+    return digest
+
+
+def _is_immutable_version(value: str) -> bool:
+    normalized = value.strip().lower()
+    return (
+        normalized not in MUTABLE_VERSION_LABELS
+        and IMMUTABLE_VERSION_PATTERN.fullmatch(normalized) is not None
+    )
+
+
+def _policy_target(value: Any, location: str) -> str:
+    target = _text(value, location)
+    if target != target.strip():
+        raise ContractError(f"{location} must use a canonical target without outer whitespace")
+    tokens = {token for token in re.split(r"[:/]", target.lower()) if token}
+    if "*" in target or tokens.intersection(BROAD_TARGET_TOKENS):
+        raise ContractError(f"{location} must identify a concrete endpoint or resource")
+    return target
+
+
 def _strings(value: Any, location: str, allow_empty: bool = False) -> list[str]:
     if not isinstance(value, list) or (not value and not allow_empty):
         suffix = "" if allow_empty else " and non-empty"
@@ -162,7 +205,11 @@ def _unique(items: Iterable[str], location: str) -> None:
 
 def validate_scenario(raw: Any) -> dict[str, Any]:
     scenario = _exact(raw, TOP_FIELDS, "scenario")
-    _text(scenario["schema_version"], "scenario.schema_version")
+    schema_version = _text(scenario["schema_version"], "scenario.schema_version")
+    if schema_version != SUPPORTED_SCHEMA_VERSION:
+        raise ContractError(
+            f"scenario.schema_version must be {SUPPORTED_SCHEMA_VERSION!r}"
+        )
     _text(scenario["scenario_id"], "scenario.scenario_id")
     _text(scenario["purpose"], "scenario.purpose")
     _strings(scenario["non_goals"], "scenario.non_goals")
@@ -201,6 +248,7 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         if source["trust_level"] not in TRUST_LEVELS:
             raise ContractError(f"scenario.untrusted_sources[{index}].trust_level is invalid")
     _unique((item["id"] for item in sources), "source")
+    source_ids = {item["id"] for item in sources}
 
     identities = _object_list(
         scenario["identities"], IDENTITY_FIELDS, "scenario.identities"
@@ -211,30 +259,68 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         _integer(identity["ttl_minutes"], f"scenario.identities[{index}].ttl_minutes", 1)
         _strings(identity["scopes"], f"scenario.identities[{index}].scopes")
     _unique((item["id"] for item in identities), "identity")
-    available_scopes = {
-        scope for identity in identities for scope in identity["scopes"]
-    }
+    identities_by_id = {item["id"]: item for item in identities}
 
     tools = _object_list(scenario["tools"], TOOL_FIELDS, "scenario.tools")
     for index, tool in enumerate(tools):
         _text(tool["name"], f"scenario.tools[{index}].name")
         if tool["mode"] not in TOOL_MODES:
             raise ContractError(f"scenario.tools[{index}].mode is invalid")
-        if tool["destination"] not in DESTINATIONS:
-            raise ContractError(f"scenario.tools[{index}].destination is invalid")
-        _boolean(tool["side_effect"], f"scenario.tools[{index}].side_effect")
+        if tool["destination_class"] not in DESTINATIONS:
+            raise ContractError(
+                f"scenario.tools[{index}].destination_class is invalid"
+            )
+        _policy_target(tool["endpoint"], f"scenario.tools[{index}].endpoint")
+        resources = _strings(
+            tool["resources"], f"scenario.tools[{index}].resources"
+        )
+        for resource_index, resource in enumerate(resources):
+            _policy_target(
+                resource,
+                f"scenario.tools[{index}].resources[{resource_index}]",
+            )
+        side_effect = _boolean(
+            tool["side_effect"], f"scenario.tools[{index}].side_effect"
+        )
+        expected_side_effect = tool["mode"] in {"write", "execute"}
+        if side_effect is not expected_side_effect:
+            raise ContractError(
+                f"scenario.tools[{index}].side_effect must be "
+                f"{expected_side_effect} when mode is {tool['mode']!r}"
+            )
         _boolean(
             tool["required_for_purpose"],
             f"scenario.tools[{index}].required_for_purpose",
         )
+        identity_id = _text(
+            tool["identity_id"], f"scenario.tools[{index}].identity_id"
+        )
+        if identity_id not in identities_by_id:
+            raise ContractError(
+                f"scenario.tools[{index}] references unknown identity: {identity_id}"
+            )
         required_scopes = _strings(
             tool["required_scopes"],
             f"scenario.tools[{index}].required_scopes",
         )
-        missing_scopes = sorted(set(required_scopes) - available_scopes)
+        missing_scopes = sorted(
+            set(required_scopes) - set(identities_by_id[identity_id]["scopes"])
+        )
         if missing_scopes:
             raise ContractError(
-                f"scenario.tools[{index}] has unavailable scopes: {missing_scopes}"
+                f"scenario.tools[{index}] has scopes unavailable to identity "
+                f"{identity_id!r}: {missing_scopes}"
+            )
+        egress_assets = _strings(
+            tool["egress_assets"],
+            f"scenario.tools[{index}].egress_assets",
+            allow_empty=True,
+        )
+        unknown_egress_assets = sorted(set(egress_assets) - asset_ids)
+        if unknown_egress_assets:
+            raise ContractError(
+                f"scenario.tools[{index}] references unknown egress assets: "
+                f"{unknown_egress_assets}"
             )
     _unique((item["name"] for item in tools), "tool")
     tool_names = {item["name"] for item in tools}
@@ -245,12 +331,38 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     for index, dependency in enumerate(dependencies):
         _text(dependency["name"], f"scenario.dependencies[{index}].name")
         _text(dependency["version"], f"scenario.dependencies[{index}].version")
-        _boolean(dependency["pinned"], f"scenario.dependencies[{index}].pinned")
+        _artifact_digest(
+            dependency["artifact_digest"],
+            f"scenario.dependencies[{index}].artifact_digest",
+        )
         _boolean(
             dependency["provenance_verified"],
             f"scenario.dependencies[{index}].provenance_verified",
         )
     _unique((item["name"] for item in dependencies), "dependency")
+
+    memory = _exact(scenario["memory"], MEMORY_FIELDS, "scenario.memory")
+    memory_enabled = _boolean(memory["enabled"], "scenario.memory.enabled")
+    memory_sources = _strings(
+        memory["write_sources"], "scenario.memory.write_sources", allow_empty=True
+    )
+    unknown_memory_sources = sorted(set(memory_sources) - source_ids)
+    if unknown_memory_sources:
+        raise ContractError(
+            f"memory.write_sources references unknown sources: {unknown_memory_sources}"
+        )
+    memory_assets = _strings(
+        memory["write_assets"], "scenario.memory.write_assets", allow_empty=True
+    )
+    unknown_memory_assets = sorted(set(memory_assets) - asset_ids)
+    if unknown_memory_assets:
+        raise ContractError(
+            f"memory.write_assets references unknown assets: {unknown_memory_assets}"
+        )
+    if memory_enabled and not (memory_sources or memory_assets):
+        raise ContractError("enabled memory must declare a write source or asset")
+    if not memory_enabled and (memory_sources or memory_assets):
+        raise ContractError("disabled memory must not declare write sources or assets")
 
     controls = _exact(scenario["controls"], CONTROL_FIELDS, "scenario.controls")
     for key in (
@@ -269,14 +381,38 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
     unknown_tools = sorted(set(tool_allowlist) - tool_names)
     if unknown_tools:
         raise ContractError(f"tool_allowlist references unknown tools: {unknown_tools}")
-    destinations = _strings(
-        controls["destination_allowlist"],
-        "scenario.controls.destination_allowlist",
+    required_tools = {
+        tool["name"] for tool in tools if tool["required_for_purpose"]
+    }
+    missing_required_tools = sorted(required_tools - set(tool_allowlist))
+    if missing_required_tools:
+        raise ContractError(
+            f"required tools are missing from tool_allowlist: {missing_required_tools}"
+        )
+    endpoint_allowlist = _strings(
+        controls["endpoint_allowlist"],
+        "scenario.controls.endpoint_allowlist",
         allow_empty=True,
     )
-    invalid_destinations = sorted(set(destinations) - DESTINATIONS)
-    if invalid_destinations:
-        raise ContractError(f"destination_allowlist has invalid values: {invalid_destinations}")
+    declared_endpoints = {tool["endpoint"] for tool in tools}
+    unknown_endpoints = sorted(set(endpoint_allowlist) - declared_endpoints)
+    if unknown_endpoints:
+        raise ContractError(
+            f"endpoint_allowlist references unknown endpoints: {unknown_endpoints}"
+        )
+    resource_allowlist = _strings(
+        controls["resource_allowlist"],
+        "scenario.controls.resource_allowlist",
+        allow_empty=True,
+    )
+    declared_resources = {
+        resource for tool in tools for resource in tool["resources"]
+    }
+    unknown_resources = sorted(set(resource_allowlist) - declared_resources)
+    if unknown_resources:
+        raise ContractError(
+            f"resource_allowlist references unknown resources: {unknown_resources}"
+        )
 
     approval = _exact(controls["approval"], APPROVAL_FIELDS, "scenario.controls.approval")
     approval_tools = _strings(
@@ -289,6 +425,12 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         raise ContractError(
             f"approval references unknown tools: {unknown_approval_tools}"
         )
+    unavailable_approval_tools = sorted(set(approval_tools) - set(tool_allowlist))
+    if unavailable_approval_tools:
+        raise ContractError(
+            "approval references tools outside tool_allowlist: "
+            f"{unavailable_approval_tools}"
+        )
     _boolean(approval["binds_parameters"], "scenario.controls.approval.binds_parameters")
     _integer(approval["expires_minutes"], "scenario.controls.approval.expires_minutes", 1)
 
@@ -298,16 +440,31 @@ def validate_scenario(raw: Any) -> dict[str, Any]:
         sandbox["network_default_deny"],
         "scenario.controls.sandbox.network_default_deny",
     )
+    if not memory_enabled and controls["memory_write_validation"]:
+        raise ContractError(
+            "memory_write_validation must be false when memory is disabled"
+        )
 
     policy = _exact(scenario["risk_policy"], POLICY_FIELDS, "scenario.risk_policy")
     block = set(_strings(policy["block_severities"], "scenario.risk_policy.block_severities"))
     review = set(_strings(policy["review_severities"], "scenario.risk_policy.review_severities", allow_empty=True))
-    invalid_severities = sorted((block | review) - SEVERITIES)
+    accept = set(_strings(policy["accept_severities"], "scenario.risk_policy.accept_severities", allow_empty=True))
+    invalid_severities = sorted((block | review | accept) - SEVERITIES)
     if invalid_severities:
         raise ContractError(f"risk policy has invalid severities: {invalid_severities}")
-    overlap = sorted(block & review)
+    overlap = sorted((block & review) | (block & accept) | (review & accept))
     if overlap:
         raise ContractError(f"risk policy severities overlap: {overlap}")
+    uncovered = sorted(SEVERITIES - block - review - accept)
+    if uncovered:
+        raise ContractError(f"risk policy leaves severities uncovered: {uncovered}")
+    if "critical" not in block:
+        raise ContractError("risk policy must block critical findings")
+    unsafe_acceptance = sorted(accept - {"low"})
+    if unsafe_acceptance:
+        raise ContractError(
+            f"risk policy may explicitly accept only low findings: {unsafe_acceptance}"
+        )
     return copy.deepcopy(scenario)
 
 
@@ -339,28 +496,39 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     controls = scenario["controls"]
     tools_by_name = {tool["name"]: tool for tool in scenario["tools"]}
     allowed_tools = [tools_by_name[name] for name in controls["tool_allowlist"]]
-    untrusted = [
-        source for source in scenario["untrusted_sources"] if source["trust_level"] == "untrusted"
+    non_authoritative = [
+        source
+        for source in scenario["untrusted_sources"]
+        if source["trust_level"] != "trusted"
     ]
-    external_side_effects = [
-        tool
-        for tool in allowed_tools
-        if tool["destination"] == "external" and tool["side_effect"]
+    side_effect_tools = [tool for tool in allowed_tools if tool["side_effect"]]
+    external_tools = [
+        tool for tool in allowed_tools if tool["destination_class"] == "external"
     ]
-    sensitive_assets = [
-        asset
+    sensitive_assets = {
+        asset["id"]
         for asset in scenario["assets"]
         if asset["classification"] in {"confidential", "restricted"}
+    }
+    sensitive_external_egress = [
+        (tool["name"], asset_id)
+        for tool in external_tools
+        for asset_id in tool["egress_assets"]
+        if asset_id in sensitive_assets
     ]
 
-    if untrusted and external_side_effects and not controls["treat_external_content_as_data"]:
+    if (
+        non_authoritative
+        and side_effect_tools
+        and not controls["treat_external_content_as_data"]
+    ):
         findings.append(
             finding(
                 "AS-001",
                 "Indirect prompt injection can reach a side-effecting tool",
                 "critical",
-                sensitive_assets[0]["id"] if sensitive_assets else scenario["assets"][0]["id"],
-                ["untrusted content", "model context", "tool selection", "external side effect"],
+                next(iter(sorted(sensitive_assets)), scenario["assets"][0]["id"]),
+                ["non-authoritative content", "model context", "tool selection", "side effect"],
                 "attacker-controlled content can redirect the agent and cause unauthorized action or disclosure",
                 [
                     "treat retrieved content as data rather than authority",
@@ -386,13 +554,14 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    required_scopes = {
-        scope
-        for tool in allowed_tools
-        if tool["required_for_purpose"]
-        for scope in tool["required_scopes"]
-    }
     for identity in scenario["identities"]:
+        required_scopes = {
+            scope
+            for tool in allowed_tools
+            if tool["required_for_purpose"]
+            and tool["identity_id"] == identity["id"]
+            for scope in tool["required_scopes"]
+        }
         excess = sorted(set(identity["scopes"]) - required_scopes)
         if identity["shared"] or excess or identity["ttl_minutes"] > 60:
             findings.append(
@@ -412,10 +581,10 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     approval = controls["approval"]
     missing_approval = [
         tool["name"]
-        for tool in allowed_tools
-        if tool["side_effect"] and tool["name"] not in approval["required_for_tools"]
+        for tool in side_effect_tools
+        if tool["name"] not in approval["required_for_tools"]
     ]
-    weak_approval = bool(external_side_effects) and (
+    weak_approval = bool(side_effect_tools) and (
         not approval["binds_parameters"] or approval["expires_minutes"] > 15
     )
     if missing_approval or weak_approval:
@@ -432,27 +601,43 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if any(tool["destination"] not in controls["destination_allowlist"] for tool in external_side_effects):
+    missing_endpoints = sorted({
+        tool["endpoint"]
+        for tool in allowed_tools
+        if tool["endpoint"] not in controls["endpoint_allowlist"]
+    })
+    missing_resources = sorted({
+        resource
+        for tool in allowed_tools
+        for resource in tool["resources"]
+        if resource not in controls["resource_allowlist"]
+    })
+    if missing_endpoints or missing_resources:
         findings.append(
             finding(
                 "AS-005",
-                "External destination is not constrained by policy",
+                "Tool endpoint or resource is not constrained by policy",
                 "high",
-                "data-egress-boundary",
-                ["sensitive context", "external tool", "attacker-selected destination"],
-                "confidential data can leave the authorized boundary",
-                ["destination allowlist", "tenant-aware egress policy", "deny by default"],
-                ["blocked-destination test", "cross-tenant negative test"],
+                "tool-capability-boundary",
+                [
+                    "tool proposal",
+                    f"missing endpoints: {', '.join(missing_endpoints) or 'none'}",
+                    f"missing resources: {', '.join(missing_resources) or 'none'}",
+                ],
+                "a tool can reach an endpoint or resource outside the authorized task boundary",
+                ["endpoint allowlist", "resource-level policy", "deny by default"],
+                ["blocked-endpoint test", "cross-resource negative test"],
             )
         )
 
-    if sensitive_assets and external_side_effects and not controls["data_egress_validation"]:
+    if sensitive_external_egress and not controls["data_egress_validation"]:
+        first_asset = sensitive_external_egress[0][1]
         findings.append(
             finding(
                 "AS-006",
                 "Sensitive data can flow to an external tool without egress validation",
                 "critical",
-                sensitive_assets[0]["id"],
+                first_asset,
                 ["restricted asset", "model-generated parameters", "external connector"],
                 "private or restricted content can be disclosed",
                 ["data classification enforcement", "field-level minimization", "egress validation"],
@@ -463,18 +648,20 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
     weak_dependencies = [
         dependency["name"]
         for dependency in scenario["dependencies"]
-        if not dependency["pinned"] or not dependency["provenance_verified"]
+        if not _is_immutable_version(dependency["version"])
+        or dependency["artifact_digest"] is None
+        or not dependency["provenance_verified"]
     ]
     if weak_dependencies:
         findings.append(
             finding(
                 "AS-007",
-                "Dependency or agent component is not pinned and provenance-verified",
+                "Dependency lacks an immutable version, digest, or verified provenance",
                 "medium",
                 "software-supply-chain",
                 ["build input", f"unverified dependency: {', '.join(weak_dependencies)}", "agent runtime"],
                 "an unreviewed component can change tool or policy behavior",
-                ["pin immutable versions", "verify source and signatures where available", "retain rollback artifact"],
+                ["pin immutable versions and artifact digests", "verify source and signatures where available", "retain rollback artifact"],
                 ["lockfile drift check", "provenance verification", "rebuild comparison"],
             )
         )
@@ -510,7 +697,17 @@ def review(scenario: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if untrusted and not controls["memory_write_validation"]:
+    non_authoritative_source_ids = {item["id"] for item in non_authoritative}
+    unsafe_memory_sources = sorted(
+        non_authoritative_source_ids.intersection(
+            scenario["memory"]["write_sources"]
+        )
+    )
+    if (
+        scenario["memory"]["enabled"]
+        and unsafe_memory_sources
+        and not controls["memory_write_validation"]
+    ):
         findings.append(
             finding(
                 "AS-010",
@@ -559,8 +756,19 @@ def decision(scenario: dict[str, Any], findings: list[dict[str, Any]]) -> tuple[
     policy = scenario["risk_policy"]
     block = set(policy["block_severities"])
     review_severities = set(policy["review_severities"])
+    accept_severities = set(policy["accept_severities"])
+    covered = block | review_severities | accept_severities
+    unhandled = [item for item in findings if item["severity"] not in covered]
+    if unhandled:
+        return "BLOCK", [
+            "unhandled finding severities: "
+            + ", ".join(item["id"] for item in unhandled)
+        ]
     block_findings = [item for item in findings if item["severity"] in block]
     review_findings = [item for item in findings if item["severity"] in review_severities]
+    accepted_findings = [
+        item for item in findings if item["severity"] in accept_severities
+    ]
     if block_findings:
         return "BLOCK", [
             "blocking findings: " + ", ".join(item["id"] for item in block_findings)
@@ -568,6 +776,11 @@ def decision(scenario: dict[str, Any], findings: list[dict[str, Any]]) -> tuple[
     if review_findings:
         return "REVIEW", [
             "review findings: " + ", ".join(item["id"] for item in review_findings)
+        ]
+    if accepted_findings:
+        return "PASS", [
+            "explicitly accepted low findings: "
+            + ", ".join(item["id"] for item in accepted_findings)
         ]
     return "PASS", ["no finding crossed the frozen teaching policy"]
 
@@ -578,8 +791,10 @@ def build_report(scenario: dict[str, Any]) -> dict[str, Any]:
     return {
         "action": action,
         "reasons": reasons,
+        "schema_version": scenario["schema_version"],
         "scenario_id": scenario["scenario_id"],
         "purpose": scenario["purpose"],
+        "non_goals": copy.deepcopy(scenario["non_goals"]),
         "risk_counts": dict(sorted(Counter(item["severity"] for item in findings).items())),
         "finding_count": len(findings),
         "findings": findings,
@@ -587,6 +802,7 @@ def build_report(scenario: dict[str, Any]) -> dict[str, Any]:
         "limitations": [
             "Deterministic teaching rules are not a penetration test.",
             "No model, connector, identity provider, sandbox, or network was executed.",
+            "Endpoint, resource, digest, and control values are declarations rather than live verification evidence.",
             "A PASS result only means this small declared contract triggered no teaching rule.",
             "The report is not a legal, compliance, or risk-acceptance opinion.",
         ],

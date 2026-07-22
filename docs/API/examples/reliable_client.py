@@ -303,6 +303,14 @@ class ReliableApiClient:
                 requests.exceptions.InvalidURL,
             ) as exc:
                 raise ValueError("请求构造失败") from exc
+            # SSLError 是 ConnectionError 的子类。证书、主机名或信任链问题
+            # 不是暂时网络抖动；即使本次调用本身可重试，也不能用重试掩盖
+            # 身份验证失败。
+            except requests.exceptions.SSLError as exc:
+                raise ApiTransportError(
+                    f"{normalized_method} TLS 连接失败且不自动重试",
+                    attempts=attempt,
+                ) from exc
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.Timeout,

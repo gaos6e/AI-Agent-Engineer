@@ -380,6 +380,168 @@ document.addEventListener("render", setupReadOnlyCheckboxes);
   }
 }
 
+export function secureMermaidSource(source) {
+  const patched = source
+    // Mermaid re-renders the original source before parsing it.  textContent
+    // keeps hostile HTML/event-handler text inert until Mermaid parses the
+    // diagram under its strict security policy.
+    .replace("node.innerHTML = oldText;", "node.textContent = oldText;")
+    .replace('securityLevel: "loose"', 'securityLevel: "strict"')
+  if (!patched.includes("node.textContent = oldText;") ||
+      !patched.includes('securityLevel: "strict"') ||
+      patched.includes("node.innerHTML = oldText;")) {
+    throw new Error("Unable to apply Mermaid source security patch")
+  }
+  return patched
+}
+
+// Quartz's locked plugin currently embeds this legacy CDN URL. It is only the
+// patch target; the browser receives the separately pinned Mermaid dependency
+// from this website's own node_modules tree.
+const QUARTZ_MERMAID_REMOTE_URL = "https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.0/mermaid.esm.min.mjs"
+
+const MERMAID_SOURCE_URL_HELPER = `const getMermaidAssetUrl = () => {
+  const postscript = [...document.scripts].find((script) =>
+    script.src.split("?")[0].endsWith("/postscript.js"),
+  )?.src;
+  if (!postscript) throw new Error("Unable to resolve the same-origin Mermaid asset");
+  return new URL("static/mermaid.esm.min.mjs", new URL(".", postscript)).href;
+};`
+
+export function localMermaidSource(source) {
+  let patched = source
+  const existingHelper = /const getMermaidAssetUrl = \(\) => \{[\s\S]*?\n\};/
+  if (existingHelper.test(patched)) {
+    patched = patched.replace(existingHelper, MERMAID_SOURCE_URL_HELPER)
+  } else {
+    const declaration = "let mermaidImport = undefined;"
+    if (!patched.includes(declaration)) {
+      throw new Error("Unable to locate the Mermaid import declaration")
+    }
+    patched = patched.replace(declaration, `${declaration}\n${MERMAID_SOURCE_URL_HELPER}`)
+  }
+  patched = patched.replace(
+    /mermaidImport\s*\|\|=\s*await import\(\s*\/\/ @ts-expect-error -- remote ESM import\s*"https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/mermaid\/11\.4\.0\/mermaid\.esm\.min\.mjs"\s*\);/s,
+    "mermaidImport ||= await import(getMermaidAssetUrl());",
+  )
+  if (!patched.includes("getMermaidAssetUrl()") || patched.includes(QUARTZ_MERMAID_REMOTE_URL)) {
+    throw new Error("Unable to switch Mermaid to the same-origin asset")
+  }
+  return patched
+}
+
+export function removeMermaidCdnPreconnect(source) {
+  const patched = source.replace(
+    /\s*<link\s+rel="preconnect"\s+href="https:\/\/cdnjs\.cloudflare\.com"\s+crossOrigin="anonymous"\s*\/>/g,
+    "",
+  )
+  if (patched.includes("https://cdnjs.cloudflare.com")) {
+    throw new Error("Unable to remove the obsolete cdnjs preconnect from Quartz Head")
+  }
+  return patched
+}
+
+export function secureMermaidCompiled(compiled) {
+  const scriptMarker = "// src/scripts/mermaid.inline.ts"
+  const styleMarker = "// src/styles/mermaid.inline.scss"
+  const markerIndex = compiled.indexOf(scriptMarker)
+  const nextMarkerIndex = compiled.indexOf(styleMarker, markerIndex)
+  if (markerIndex < 0 || nextMarkerIndex < 0) {
+    throw new Error("Unable to locate the Quartz Mermaid runtime for the security patch")
+  }
+  const before = compiled.slice(0, nextMarkerIndex)
+  const after = compiled.slice(nextMarkerIndex)
+  const patchedBefore = before
+    .replace("i.innerHTML=c", "i.textContent=c")
+    .replace('securityLevel:"loose"', 'securityLevel:"strict"')
+  if (!patchedBefore.includes("i.textContent=c") ||
+      !patchedBefore.includes('securityLevel:"strict"') ||
+      patchedBefore.includes("i.innerHTML=c")) {
+    throw new Error("Unable to apply compiled Mermaid security patch")
+  }
+  return `${patchedBefore}${after}`
+}
+
+const MERMAID_COMPILED_URL_HELPER =
+  'function aaeMermaidAssetUrl(){let e=[...document.scripts].find(e=>e.src.split("?")[0].endsWith("/postscript.js"))?.src;if(!e)throw new Error("Unable to resolve the same-origin Mermaid asset");return new URL("static/mermaid.esm.min.mjs",new URL(".",e)).href}'
+
+export function localMermaidCompiled(compiled) {
+  const scriptMarker = "// src/scripts/mermaid.inline.ts"
+  const styleMarker = "// src/styles/mermaid.inline.scss"
+  const markerIndex = compiled.indexOf(scriptMarker)
+  const nextMarkerIndex = compiled.indexOf(styleMarker, markerIndex)
+  if (markerIndex < 0 || nextMarkerIndex < 0) {
+    throw new Error("Unable to locate the Quartz Mermaid runtime for the local asset patch")
+  }
+  const before = compiled.slice(0, nextMarkerIndex)
+  const after = compiled.slice(nextMarkerIndex)
+  let patchedBefore = before.replace(
+    `L||(L=await import("${QUARTZ_MERMAID_REMOTE_URL}"))`,
+    "L||(L=await import(aaeMermaidAssetUrl()))",
+  )
+  const existingHelper = /function aaeMermaidAssetUrl\(\)\{[\s\S]*?\}(?=async function M\(\)\{)/
+  if (existingHelper.test(patchedBefore)) {
+    patchedBefore = patchedBefore.replace(existingHelper, MERMAID_COMPILED_URL_HELPER)
+  } else {
+    const functionMarker = "async function M(){"
+    if (!patchedBefore.includes(functionMarker)) {
+      throw new Error("Unable to locate the compiled Mermaid loader")
+    }
+    patchedBefore = patchedBefore.replace(functionMarker, `${MERMAID_COMPILED_URL_HELPER}${functionMarker}`)
+  }
+  if (!patchedBefore.includes("function aaeMermaidAssetUrl(){") ||
+      !patchedBefore.includes("await import(aaeMermaidAssetUrl())") ||
+      patchedBefore.includes(QUARTZ_MERMAID_REMOTE_URL)) {
+    throw new Error("Unable to switch compiled Mermaid to the same-origin asset")
+  }
+  return `${patchedBefore}${after}`
+}
+
+async function patchMermaidSecurity(pluginLock) {
+  const pluginDirectory = path.join(RUNTIME_ROOT, ".quartz", "plugins", "obsidian-flavored-markdown")
+  const sourceTarget = path.join(pluginDirectory, "src", "scripts", "mermaid.inline.ts")
+  const compiledTarget = path.join(pluginDirectory, "dist", "index.js")
+  const marker = path.join(RUNTIME_ROOT, ".aae-mermaid-security-ready")
+  const patchVersion = `${pluginLock.plugins["obsidian-flavored-markdown"].commit}:security-v2-local-mermaid`
+
+  let source = await readFile(sourceTarget, "utf8")
+  const originalSource = source
+  source = localMermaidSource(secureMermaidSource(source))
+  if (source !== originalSource) await writeFile(sourceTarget, source, "utf8")
+
+  const compiled = localMermaidCompiled(secureMermaidCompiled(await readFile(compiledTarget, "utf8")))
+  await writeFile(compiledTarget, compiled, "utf8")
+  await writeFile(marker, `${patchVersion}\n`, "utf8")
+}
+
+async function patchQuartzHead() {
+  const target = path.join(RUNTIME_ROOT, "quartz", "components", "Head.tsx")
+  const source = await readFile(target, "utf8")
+  const patched = removeMermaidCdnPreconnect(source)
+  if (patched !== source) await writeFile(target, patched, "utf8")
+}
+
+async function stageMermaidAssets() {
+  const packageRoot = path.join(WEBSITE_ROOT, "node_modules", "mermaid", "dist")
+  const packageChunks = path.join(packageRoot, "chunks", "mermaid.esm.min")
+  const staticRoot = path.join(RUNTIME_ROOT, "quartz", "static")
+  const entryTarget = path.join(staticRoot, "mermaid.esm.min.mjs")
+  const chunkTarget = path.join(staticRoot, "chunks", "mermaid.esm.min")
+  assertRuntimePath(entryTarget)
+  assertRuntimePath(chunkTarget)
+
+  const chunks = (await readdir(packageChunks, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
+  if (chunks.length === 0) throw new Error("The installed Mermaid package has no browser ESM chunks")
+
+  await rm(chunkTarget, { recursive: true, force: true })
+  await mkdir(chunkTarget, { recursive: true })
+  await cp(path.join(packageRoot, "mermaid.esm.min.mjs"), entryTarget, { force: true })
+  for (const chunk of chunks) {
+    await cp(path.join(packageChunks, chunk.name), path.join(chunkTarget, chunk.name), { force: true })
+  }
+}
+
 export async function bootstrapRuntime() {
   const version = JSON.parse(await readFile(path.join(WEBSITE_ROOT, "quartz.version.json"), "utf8"))
   assertRuntimePath(RUNTIME_ROOT)
@@ -460,7 +622,10 @@ export async function bootstrapRuntime() {
   await patchTagPageRootLinks(pluginLock)
   await patchSearchBasePath(pluginLock)
   await patchReadOnlyCheckboxes(pluginLock)
+  await patchMermaidSecurity(pluginLock)
+  await patchQuartzHead()
   await cp(path.join(WEBSITE_ROOT, "overlay"), RUNTIME_ROOT, { recursive: true, force: true })
+  await stageMermaidAssets()
 
   return { runtimeRoot: RUNTIME_ROOT, commit: currentCommit }
 }

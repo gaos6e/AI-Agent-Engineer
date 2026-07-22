@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr
+from hashlib import sha256
 import io
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
@@ -51,6 +53,10 @@ class InspectDocumentsTests(unittest.TestCase):
         self.assertEqual("é 是示例", document["elements"][1]["text"])
         self.assertEqual(["入门"], document["elements"][2]["section_path"])
         self.assertEqual(1, document["elements"][0]["location"]["line_start"])
+        self.assertEqual(
+            "normalized-text-lines-1-based-inclusive-v1",
+            document["elements"][0]["location"]["coordinate_space"],
+        )
         self.assertEqual("python", document["elements"][3]["attributes"]["language"])
 
     def test_csv_handles_quoted_comma_and_embedded_newline(self) -> None:
@@ -188,6 +194,12 @@ class InspectDocumentsTests(unittest.TestCase):
         self.assertEqual("file_too_large", document["issues"][0]["code"])
         self.assertIsNone(document["raw_sha256"])
 
+    def test_bounded_read_rejects_bytes_that_exceed_the_read_budget(self) -> None:
+        path = self.write_bytes("changed-during-read.txt", b"12345")
+
+        with self.assertRaisesRegex(subject.DocumentError, "读取时文件超过 4"):
+            subject._read_bounded_bytes(path, 4)
+
     def test_total_budget_stops_later_file(self) -> None:
         self.write_text("a.txt", "1234")
         self.write_text("b.txt", "5678")
@@ -218,6 +230,55 @@ class InspectDocumentsTests(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual('{"a":1,"b":2}', first["documents"][0]["elements"][0]["text"])
+
+    def test_parse_revision_is_full_sha256_and_recomputable(self) -> None:
+        self.write_text("versioned.txt", "稳定正文")
+
+        manifest = self.scan()
+        document = manifest["documents"][0]
+        payload = json.dumps(
+            {
+                "config_sha256": manifest["config_sha256"],
+                "parser": document["parser"],
+                "parser_version": document["parser_version"],
+                "raw_sha256": document["raw_sha256"],
+            },
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        expected = sha256(payload.encode("utf-8")).hexdigest()
+
+        self.assertEqual(expected, document["parse_revision_sha256"])
+        self.assertRegex(document["parse_revision_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_parse_revision_and_element_ids_change_when_config_changes(self) -> None:
+        self.write_text("versioned.txt", "稳定正文")
+
+        first = self.scan(subject.Limits(100, 1_000_000, 5_000_000))["documents"][0]
+        second = self.scan(subject.Limits(101, 1_000_000, 5_000_000))["documents"][0]
+
+        self.assertEqual(first["raw_sha256"], second["raw_sha256"])
+        self.assertNotEqual(first["parse_revision_sha256"], second["parse_revision_sha256"])
+        self.assertNotEqual(first["elements"][0]["element_id"], second["elements"][0]["element_id"])
+
+    def test_element_id_binds_parse_revision_kind_span_and_text_hash(self) -> None:
+        parse_revision = "a" * 64
+        variants = (
+            subject.ParsedBlock("paragraph", "alpha", 1, 1),
+            subject.ParsedBlock("list_item", "alpha", 1, 1),
+            subject.ParsedBlock("paragraph", "alpha", 2, 2),
+            subject.ParsedBlock("paragraph", "beta", 1, 1),
+        )
+
+        element_ids = {
+            subject._make_elements(parse_revision, [block])[0].element_id
+            for block in variants
+        }
+
+        self.assertEqual(len(variants), len(element_ids))
+        self.assertTrue(all(re.fullmatch(r"elm_[0-9a-f]{64}", value) for value in element_ids))
 
     def test_hash_and_source_id_change_when_raw_bytes_change(self) -> None:
         path = self.write_text("version.txt", "v1")
@@ -262,6 +323,7 @@ class InspectDocumentsTests(unittest.TestCase):
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
         self.assertEqual("https://json-schema.org/draft/2020-12/schema", schema["$schema"])
+        self.assertEqual("2.0", schema["properties"]["schema_version"]["const"])
         self.assertEqual(
             {
                 "schema_version",
@@ -274,6 +336,13 @@ class InspectDocumentsTests(unittest.TestCase):
                 "issues",
             },
             set(schema["required"]),
+        )
+        document = schema["$defs"]["document"]
+        self.assertIn("parse_revision_sha256", document["required"])
+        self.assertEqual(
+            "normalized-text-lines-1-based-inclusive-v1",
+            schema["$defs"]["element"]["properties"]["location"]["properties"]
+            ["coordinate_space"]["const"],
         )
 
 

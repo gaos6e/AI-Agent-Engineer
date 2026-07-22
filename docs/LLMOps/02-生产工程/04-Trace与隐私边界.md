@@ -6,7 +6,7 @@ tags:
 aliases:
   - LLM Trace
   - LLM 链路追踪
-source_checked: 2026-07-14
+source_checked: 2026-07-21
 ---
 
 # Trace 与隐私边界
@@ -50,6 +50,8 @@ request
 
 内容与元数据应分开开关和保留策略。为调试开启内容采样时，应限定环境、租户、百分比、访问角色和到期时间，而不是久久打开“全量记录”。
 
+若要把离线门与线上窗口关联，Trace或受控审计Log可记录`release_id`、发布清单SHA-256和candidate gate的**完整**SHA-256摘要；短指纹只用于人读对照。完整摘要、Trace ID、request ID和用户ID均不得作为Metric label：它们会造成高基数，后两者还可能扩大隐私风险。摘要也不应成为内容采集的借口；真实原文仍遵循最小化、授权与保留边界。
+
 ## 上下文传播
 
 分布式系统需要将Trace上下文从网关传给检索、模型代理和工具服务。W3C Trace Context定义HTTP传播格式；实施时应用成熟库生成和验证，不手工拼接ID。
@@ -82,11 +84,11 @@ request
 
 ## 小结与下一步
 
-Trace是诊断和谱系的连接层，不是“把所有内容都存下来”。下一步在 [[LLMOps/01-基础与生命周期/05-离线评测门与回归集|离线评测门与回归集]] 中把Trace中的真实失败转成回归样本。
+Trace是诊断和谱系的连接层，不是“把所有内容都存下来”。下一步在 [[LLMOps/01-基础与生命周期/05-离线评测门与回归集|离线评测门与回归集]] 中把Trace中的真实失败转成待人工分诊的回归候选；完整接纳流程见 [[评测体系/02-方法与质量/08-离线到线上证据交接与回归闭环|离线到线上证据交接与回归闭环]]。
 
 ## 参考资料
 
-- [OpenTelemetry Traces](https://opentelemetry.io/docs/concepts/signals/traces/)（访问于2026-07-14）
-- [OpenTelemetry GenAI semantic conventions repository](https://github.com/open-telemetry/semantic-conventions-genai)（访问于2026-07-14；GenAI 约定已迁移到此官方仓库，接入时固定 schema 版本）
-- [W3C Trace Context](https://www.w3.org/TR/trace-context/)（W3C Recommendation，访问于2026-07-14）
-- [OpenAI Data controls](https://developers.openai.com/api/docs/guides/your-data)（访问于2026-07-14；存储与保留条件会随端点、功能与账户资格改变）
+- [OpenTelemetry Traces](https://opentelemetry.io/docs/concepts/signals/traces/)（访问于2026-07-21）
+- [OpenTelemetry GenAI semantic conventions repository](https://github.com/open-telemetry/semantic-conventions-genai)（访问于2026-07-21；GenAI约定已迁移到此官方仓库，接入时固定实际修订和schema URL）
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)（W3C Recommendation，访问于2026-07-21）
+- [OpenAI Data controls](https://developers.openai.com/api/docs/guides/your-data)（访问于2026-07-21；存储与保留条件会随端点、功能与账户资格改变）

@@ -6,7 +6,7 @@ tags:
   - langchain
   - tools
   - agent
-source_checked: 2026-07-14
+source_checked: 2026-07-21
 ---
 
 # Tools、Agent 循环与中间件
@@ -33,13 +33,13 @@ LangChain v1 以 `from langchain.agents import create_agent` 作为标准高层 
 当前官方 Python 工具入口是 `from langchain.tools import tool`。装饰器默认使用函数名和 docstring 构造工具描述，类型提示参与参数 schema。示意代码：
 
 ```python
-from langchain.tools import tool
+from langchain.tools import tool  # 导入将普通 Python 函数声明为 LangChain Tool 的装饰器。
 
-@tool
-def lookup_order(order_id: str) -> dict[str, str]:
+@tool  # 根据函数名、docstring 和类型提示生成工具描述与参数 schema。
+def lookup_order(order_id: str) -> dict[str, str]:  # 只读查询接口，输入是订单标识符。
     """按订单 ID 查询当前调用者有权查看的订单摘要。"""
-    # 身份与资源授权必须由业务代码校验。
-    return {"order_id": order_id, "status": "pending"}
+    # 身份与资源授权必须由业务代码校验，装饰器本身不提供访问控制。
+    return {"order_id": order_id, "status": "pending"}  # 返回最小订单摘要，不暴露无关字段。
 ```
 
 工具描述要说明何时使用和边界，但它不是授权系统。模型生成的 `order_id`、路径、URL 或 SQL 都是不可信输入。
@@ -69,6 +69,8 @@ def lookup_order(order_id: str) -> dict[str, str]:
 - Prompt injection 无法影响动作；
 - 每个工具都有合理超时和错误分类；
 - 最终回答有事实来源。
+
+在没有 provider 凭据前，可先运行 [[LangChain/00-初学者路线/10-项目-无密钥create_agent运行时合同|无密钥 create_agent 运行时合同]]。它以固定消息轨迹穿过真实 `create_agent` 与 ToolNode，验证正常、未知工具和严格参数拒绝；其 fake shim 刻意不验证提供商的 `bind_tools` 序列化、真实模型决策、网络或授权，因此这些仍要以独立 smoke / 集成测试覆盖。
 
 ## Middleware 在哪里使用
 
@@ -102,7 +104,7 @@ def lookup_order(order_id: str) -> dict[str, str]:
 
 ## 资料基线
 
-官方事实核对日期：2026-07-14。
+官方事实核对日期：2026-07-21。
 
 - [LangChain Agents](https://docs.langchain.com/oss/python/langchain/agents)
 - [LangChain Tools](https://docs.langchain.com/oss/python/langchain/tools)

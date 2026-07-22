@@ -4,7 +4,13 @@ aliases:
   - Graph API
 source: https://docs.langchain.com/oss/python/langgraph/graph-api
 source_md: https://docs.langchain.com/oss/python/langgraph/graph-api.md
+source_url: https://docs.langchain.com/oss/python/langgraph/graph-api
 retrieved: 2026-05-07
+source_checked: 2026-07-20
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
+local_changes: "Translation, formatting, links, and local code notes"
 tags:
   - langchain
   - python
@@ -13,6 +19,9 @@ license: MIT
 ---
 
 # Graph API
+
+> [!quote] 冻结的第三方参考页
+> 本页是 [LangGraph Graph API 官方文档](https://docs.langchain.com/oss/python/langgraph/graph-api)于 2026-05-07 获取版本的中文翻译与格式整理，并保留本地解释性注释和窄范围代码纠错，按上游文档仓库的 MIT License 保留。当前无法证明本地正文对应的精确 Git commit，代码签名与运行行为也未在本页重新执行；主线请结合 [[LangChain/00-初学者路线/06-LangGraph边界审批恢复与评测|LangGraph 边界、审批、恢复与评测]]和锁定版本的官方 Reference 使用。
 
 ## 图
 

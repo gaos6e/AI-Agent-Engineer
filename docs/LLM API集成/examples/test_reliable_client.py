@@ -9,11 +9,14 @@ from reliable_client import (
     ClientResult,
     LLMRequest,
     LLMResponse,
+    MAX_STREAM_EVENTS,
+    MAX_STREAM_TEXT_CHARS,
     MockTransport,
     PermanentError,
     RetryExhaustedError,
     RetryPolicy,
     StreamInterruptedError,
+    StreamLimitError,
     StreamProtocolError,
     TransientError,
     call_with_retry,
@@ -139,6 +142,18 @@ class ValidationTests(unittest.TestCase):
             TransientError("secret", "bad")
         with self.assertRaisesRegex(ValueError, "retry_after"):
             TransientError("rate_limit", "wait", retry_after_seconds=-1.0)
+        with self.assertRaisesRegex(ValueError, "unsupported stream resource"):
+            StreamLimitError(
+                "bytes", limit=1, observed=2, request_id=None, partial_text=""
+            )
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            StreamLimitError(
+                "events", limit=True, observed=2, request_id=None, partial_text=""
+            )
+        with self.assertRaisesRegex(ValueError, "greater than limit"):
+            StreamLimitError(
+                "events", limit=2, observed=2, request_id=None, partial_text=""
+            )
 
 
 class RetryTests(unittest.TestCase):
@@ -403,6 +418,40 @@ class StreamingTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(StreamProtocolError, "after terminal"):
             consume_canonical_stream(trailing)
+
+    def test_stream_event_count_is_bounded(self) -> None:
+        events = [{"type": "response.started", "request_id": "req-bounded"}] + [
+            {"type": "response.text.delta", "text": ""}
+        ] * MAX_STREAM_EVENTS
+        with self.assertRaisesRegex(StreamLimitError, "events exceeds") as captured:
+            consume_canonical_stream(events)
+        self.assertEqual("events", captured.exception.resource)
+        self.assertEqual(MAX_STREAM_EVENTS + 1, captured.exception.observed)
+        self.assertEqual("req-bounded", captured.exception.request_id)
+        self.assertFalse(captured.exception.retryable)
+
+    def test_aggregate_stream_text_is_bounded(self) -> None:
+        oversized = completed_events()
+        oversized[1] = {
+            "type": "response.text.delta",
+            "text": "a" * (MAX_STREAM_TEXT_CHARS + 1),
+        }
+        with self.assertRaisesRegex(StreamLimitError, "text_chars exceeds") as captured:
+            consume_canonical_stream(oversized)
+        self.assertEqual("text_chars", captured.exception.resource)
+        self.assertEqual(MAX_STREAM_TEXT_CHARS + 1, captured.exception.observed)
+        self.assertEqual("stream-request-1", captured.exception.request_id)
+        self.assertEqual("", captured.exception.partial_text)
+
+        events = completed_events()
+        events[1] = {
+            "type": "response.text.delta",
+            "text": "a" * MAX_STREAM_TEXT_CHARS,
+        }
+        events[2] = {"type": "response.text.delta", "text": "b"}
+        with self.assertRaisesRegex(StreamLimitError, "text_chars exceeds") as captured:
+            consume_canonical_stream(events)
+        self.assertEqual(MAX_STREAM_TEXT_CHARS, len(captured.exception.partial_text))
 
 
 if __name__ == "__main__":

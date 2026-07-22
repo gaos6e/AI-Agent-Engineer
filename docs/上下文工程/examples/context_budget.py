@@ -407,6 +407,17 @@ def load_fixture(path: Path) -> Fixture:
             "required chunks cannot share a dedupe_key: "
             f"{ambiguous_required}"
         )
+    for key in sorted(groups):
+        members = groups[key]
+        if len(members) < 2:
+            continue
+        for field_name in ("section", "required_permission", "trust"):
+            values = {getattr(member, field_name) for member in members}
+            if len(values) > 1:
+                raise ContextPackError(
+                    f"dedupe_key {key!r} crosses {field_name} boundaries: "
+                    f"{sorted(values)}"
+                )
 
     return Fixture(
         fixture_version=_require_identifier(

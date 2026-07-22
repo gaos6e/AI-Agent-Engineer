@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/cross-layer-eval-artifact-v1.json",
+  "title": "Cross-layer adapter evaluation artifact v1",
+  "description": "Structural schema for this lab's local evaluation artifact, not a wire input for the separate LLMOps release-gate lab. validate_artifact checks only self-consistency; oracle agreement, evidence freshness, and authenticity require trusted recomputation of the pipeline. A versioned adapter must declare and verify the digest profile plus release/source/index/auth lineage before a cross-boundary gate can consume it; cross-boundary authenticity additionally requires a MAC or signature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fixture_sha256",
+    "fixture_model_sha256",
+    "pipeline_fingerprint",
+    "capture_state_sha256",
+    "capture_artifact_sha256",
+    "index_generation_id",
+    "release_manifest_sha256",
+    "harness_revision",
+    "failure_injection",
+    "cases",
+    "summary",
+    "artifact_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cross-layer-eval-v1"
+    },
+    "fixture_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "fixture_model_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "pipeline_fingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capture_state_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capture_artifact_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "index_generation_id": {
+      "type": "string",
+      "pattern": "^xgen_[0-9a-f]{64}$"
+    },
+    "release_manifest_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "harness_revision": {
+      "const": "cross-layer-harness-v1"
+    },
+    "failure_injection": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": "retrieval_unavailable"
+        }
+      ]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "artifact_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "boundedString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "uniqueStrings": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 100000
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "maxLength": 100000
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query_id",
+        "expected_status",
+        "actual_status",
+        "expected_claim_texts",
+        "actual_claim_texts",
+        "forbidden_document_ids",
+        "observed_document_ids",
+        "evidence_errors",
+        "passed"
+      ],
+      "properties": {
+        "query_id": {
+          "$ref": "#/$defs/boundedString"
+        },
+        "expected_status": {
+          "enum": [
+            "answered",
+            "insufficient_evidence"
+          ]
+        },
+        "actual_status": {
+          "enum": [
+            "answered",
+            "insufficient_evidence",
+            "dependency_unavailable"
+          ]
+        },
+        "expected_claim_texts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "actual_claim_texts": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "forbidden_document_ids": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "observed_document_ids": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "evidence_errors": {
+          "$ref": "#/$defs/uniqueStrings"
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "passed",
+        "failed",
+        "decision"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "decision": {
+          "enum": [
+            "PASS",
+            "BLOCK"
+          ]
+        }
+      }
+    }
+  }
+}

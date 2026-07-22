@@ -169,6 +169,17 @@ class EventValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported event type"):
             engine.validate_event(event)
 
+    def test_rfc3339_time_with_explicit_offset_is_accepted(self) -> None:
+        event = self.valid_event()
+        event["time"] = "2026-07-22T12:34:56.123Z"
+        self.assertEqual(engine.validate_event(event)["order_id"], "order-1")
+
+    def test_unsupported_event_time_is_rejected(self) -> None:
+        event = self.valid_event()
+        event["time"] = "2026-07-22 12:34:56"
+        with self.assertRaisesRegex(ValueError, "RFC 3339"):
+            engine.validate_event(event)
+
     def test_data_must_be_object(self) -> None:
         event = self.valid_event()
         event["data"] = []
@@ -270,6 +281,19 @@ class WorkflowExecutionTests(unittest.TestCase):
         coordinator.start(engine.make_event("event-1", "order-1", 100))
         with self.assertRaisesRegex(ValueError, "different payload"):
             coordinator.start(engine.make_event("event-1", "order-1", 101))
+
+    def test_delimiter_characters_cannot_collide_event_identities(self) -> None:
+        coordinator = self.coordinator()
+        first_event = engine.make_event("b::c", "order-1", 100)
+        first_event["source"] = "/a"
+        second_event = engine.make_event("c", "order-2", 100)
+        second_event["source"] = "/a::b"
+
+        first = coordinator.start(first_event)
+        second = coordinator.start(second_event)
+
+        self.assertIsNot(first, second)
+        self.assertNotEqual(first.event_key, second.event_key)
 
     def test_independent_steps_share_ready_batch(self) -> None:
         _, state = self.pause()

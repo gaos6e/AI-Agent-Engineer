@@ -120,8 +120,9 @@ class CollaborationSimulatorTests(unittest.TestCase):
 
     def test_duplicate_success_is_ignored(self) -> None:
         simulator = CollaborationSimulator(scenario_with())
+        simulator._transition("job", "running", "test_setup")
         first = simulator.accept_result("job", "same-key", {"value": 1})
-        second = simulator.accept_result("job", "same-key", {"value": 2})
+        second = simulator.accept_result("job", "same-key", {"value": 1})
         self.assertTrue(first)
         self.assertFalse(second)
         self.assertEqual(simulator.tasks["job"]["result"], {"value": 1})
@@ -139,4 +140,3 @@ class CollaborationSimulatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

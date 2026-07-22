@@ -220,6 +220,18 @@ def _vector_norm(vector: Sequence[float]) -> float:
     return sqrt(sum(value * value for value in vector))
 
 
+def _finite_float(value: Any, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise EmbeddingError(f"{label} 必须是有限数值")
+    try:
+        parsed = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise EmbeddingError(f"{label} 必须是有限数值") from exc
+    if not isfinite(parsed):
+        raise EmbeddingError(f"{label} 必须是有限数值")
+    return parsed
+
+
 def _parse_vector(
     value: Any,
     *,
@@ -233,13 +245,7 @@ def _parse_vector(
         )
     parsed: list[float] = []
     for index, item in enumerate(value):
-        if (
-            not isinstance(item, (int, float))
-            or isinstance(item, bool)
-            or not isfinite(float(item))
-        ):
-            raise EmbeddingError(f"{label}[{index}] 必须是有限数值")
-        parsed.append(float(item))
+        parsed.append(_finite_float(item, f"{label}[{index}]"))
     vector = tuple(parsed)
     norm = _vector_norm(vector)
     if norm == 0.0 or not isfinite(norm):
@@ -468,12 +474,15 @@ def load_fixture(path: Path) -> Fixture:
 
 
 def normalize(vector: Vector) -> Vector:
-    if not vector or not all(isfinite(value) for value in vector):
-        raise EmbeddingError("向量必须非空且全部有限")
-    norm = _vector_norm(vector)
-    if norm == 0.0 or not isfinite(norm):
-        raise EmbeddingError("向量范数必须为有限正数")
-    return tuple(value / norm for value in vector)
+    if not vector:  # 空向量没有方向，不能参与 cosine 或归一化。
+        raise EmbeddingError("向量必须非空且全部有限")  # 在数学计算前拒绝无意义输入。
+    parsed = tuple(  # 逐维转成有限浮点数，防止 bool、NaN 和 Inf 进入后续运算。
+        _finite_float(value, f"vector[{index}]") for index, value in enumerate(vector)  # 给错误附上具体维度位置。
+    )
+    norm = _vector_norm(parsed)  # 计算 L2 范数，即向量长度。
+    if norm == 0.0 or not isfinite(norm):  # 零向量无法除以范数，非有限范数会污染分数。
+        raise EmbeddingError("向量范数必须为有限正数")  # fail closed，不返回伪归一化结果。
+    return tuple(value / norm for value in parsed)  # 每一维除以相同长度，得到长度为 1 的单位向量。
 
 
 def similarity(
@@ -482,20 +491,24 @@ def similarity(
     *,
     metric: str,
 ) -> float:
-    if metric not in ALLOWED_METRICS:
-        raise EmbeddingError(f"不支持的 metric：{metric}")
-    if not left or len(left) != len(right):
-        raise EmbeddingError("向量必须非空且维度相同")
-    if not all(isfinite(value) for value in (*left, *right)):
-        raise EmbeddingError("向量包含 NaN/Inf")
-    if metric == "cosine":
-        left_unit = normalize(left)
-        right_unit = normalize(right)
-        return sum(a * b for a, b in zip(left_unit, right_unit))
-    if metric == "dot":
-        return sum(a * b for a, b in zip(left, right))
-    squared = sum((a - b) ** 2 for a, b in zip(left, right))
-    return -sqrt(squared)
+    if metric not in ALLOWED_METRICS:  # 只允许本实验明确实现和测试过的三种度量。
+        raise EmbeddingError(f"不支持的 metric：{metric}")  # 不让拼写错误静默退化为其他算法。
+    if not left or len(left) != len(right):  # 点积、cosine 与距离都要求非空且维度一致。
+        raise EmbeddingError("向量必须非空且维度相同")  # 错维向量绝不能通过截断或 zip 被悄悄比较。
+    left_values = tuple(  # 校验左向量的每个维度。
+        _finite_float(value, f"left[{index}]") for index, value in enumerate(left)  # 保留出错维度便于排查 fixture。
+    )
+    right_values = tuple(  # 校验右向量的每个维度。
+        _finite_float(value, f"right[{index}]") for index, value in enumerate(right)  # 同样拒绝非有限数值。
+    )
+    if metric == "cosine":  # cosine 比较方向，因此先把两边转换为单位向量。
+        left_unit = normalize(left_values)  # 将左向量除以自身 L2 范数。
+        right_unit = normalize(right_values)  # 将右向量除以自身 L2 范数。
+        return sum(a * b for a, b in zip(left_unit, right_unit))  # 单位向量的点积就是 cosine similarity。
+    if metric == "dot":  # dot 保留原始长度信息，只适用于契约允许的空间。
+        return sum(a * b for a, b in zip(left_values, right_values))  # 按维相乘再求和。
+    squared = sum((a - b) ** 2 for a, b in zip(left_values, right_values))  # 先计算 Euclidean 距离的平方。
+    return -sqrt(squared)  # 搜索统一按“分数越大越好”排序，因此返回负距离。
 
 
 def _contract_for(fixture: Fixture, space_id: str) -> EmbeddingContract:
@@ -521,56 +534,77 @@ def search(
     subject_groups: Sequence[str],
     k: int,
 ) -> list[RankedItem]:
-    if not isinstance(k, int) or isinstance(k, bool) or k <= 0:
-        raise EmbeddingError("k 必须是正整数")
-    contract = _contract_for(fixture, space_id)
-    items = _item_map(fixture, space_id)
-    if query_item_id not in items:
-        raise EmbeddingError(f"query item 不存在：{space_id}/{query_item_id}")
-    query = items[query_item_id]
-    if query.role != contract.query_role:
-        raise EmbeddingError(f"{query_item_id} 不是 query role")
-    groups = {
-        _clean_token("subject_group", group) for group in subject_groups
+    if not isinstance(k, int) or isinstance(k, bool) or k <= 0:  # k 是 API 边界，不能接受 0、负数或布尔值。
+        raise EmbeddingError("k 必须是正整数")  # 非法 k 必须显式失败，不能偷偷改成默认值。
+    contract = _contract_for(fixture, space_id)  # 读取目标空间的度量、角色和维度契约。
+    items = _item_map(fixture, space_id)  # 只建立同一 space_id 内的候选映射，防止跨空间比较。
+    if query_item_id not in items:  # 查询 ID 必须属于目标空间。
+        raise EmbeddingError(f"query item 不存在：{space_id}/{query_item_id}")  # 缺失 ID 不是“没有结果”。
+    query = items[query_item_id]  # 取出 query 向量和其角色元数据。
+    if query.role != contract.query_role:  # document 不能被误当作 query 传入。
+        raise EmbeddingError(f"{query_item_id} 不是 query role")  # 角色错误虽可能维度正确，仍需拒绝。
+    groups = {  # 规范化主体所属组，后面用于 ACL 的 OR 语义判断。
+        _clean_token("subject_group", group) for group in subject_groups  # 逐项拒绝空白或控制字符组名。
     }
-    if not groups:
-        return []
+    if not groups:  # 无身份上下文时不能默认看见所有文档。
+        return []  # fail closed，返回空候选而不是执行开放检索。
 
-    scored: list[tuple[float, str]] = []
-    for item in items.values():
-        if item.role != contract.document_role:
-            continue
-        if not groups.intersection(item.acl):
-            continue
-        score = similarity(query.vector, item.vector, metric=contract.metric)
-        scored.append((score, item.item_id))
-    scored.sort(key=lambda row: (-row[0], row[1]))
-    return [
-        RankedItem(rank=index, item_id=item_id, score=score)
-        for index, (score, item_id) in enumerate(scored[:k], start=1)
+    scored: list[tuple[float, str]] = []  # 保存“分数、ID”对，直到完成所有授权过滤。
+    for item in items.values():  # 遍历该空间中的所有教学 item。
+        if item.role != contract.document_role:  # query 自身和其他角色都不是可检索文档。
+            continue  # 跳过非 document，避免 query-query 比较混入结果。
+        if not groups.intersection(item.acl):  # 必须至少有一个主体组被文档 ACL 授权。
+            continue  # 在算相似度前过滤，防止未授权文档影响排序或日志。
+        score = similarity(query.vector, item.vector, metric=contract.metric)  # 用目标空间声明的度量计算 exact 分数。
+        scored.append((score, item.item_id))  # 暂存已授权 document 的可排序结果。
+    scored.sort(key=lambda row: (-row[0], row[1]))  # 分数降序；同分时按 ID 升序，确保结果可重放。
+    return [  # 把前 k 项转换为带从 1 开始排名的不可变输出记录。
+        RankedItem(rank=index, item_id=item_id, score=score)  # 保留原始数值，展示层再决定如何 round。
+        for index, (score, item_id) in enumerate(scored[:k], start=1)  # 先截取 top-k，再连续编号。
     ]
 
 
+def _validate_metric_inputs(
+    results: Sequence[str], relevance: dict[str, int]
+) -> tuple[str, ...]:
+    if isinstance(results, (str, bytes)):
+        raise EmbeddingError("results 必须是按排名排列的 ID 序列")
+    identifiers = tuple(
+        _clean_token(f"results[{index}]", item_id)
+        for index, item_id in enumerate(results)
+    )
+    if len(identifiers) != len(set(identifiers)):
+        raise EmbeddingError("results 含重复 item_id")
+    if not isinstance(relevance, dict) or not relevance:
+        raise EmbeddingError("relevance 必须是非空 object")
+    for item_id, grade in relevance.items():
+        _clean_token("relevance item_id", item_id)
+        if (
+            not isinstance(grade, int)
+            or isinstance(grade, bool)
+            or not 1 <= grade <= 3
+        ):
+            raise EmbeddingError("relevance grade 必须是 1..3 的整数")
+    return identifiers
+
+
 def recall_at_k(results: Sequence[str], relevance: dict[str, int]) -> float:
-    if not relevance:
-        raise EmbeddingError("relevance 不能为空")
-    return len(set(results).intersection(relevance)) / len(relevance)
+    identifiers = _validate_metric_inputs(results, relevance)
+    return len(set(identifiers).intersection(relevance)) / len(relevance)
 
 
 def reciprocal_rank(results: Sequence[str], relevance: dict[str, int]) -> float:
-    if not relevance:
-        raise EmbeddingError("relevance 不能为空")
-    for rank, item_id in enumerate(results, start=1):
+    identifiers = _validate_metric_inputs(results, relevance)
+    for rank, item_id in enumerate(identifiers, start=1):
         if item_id in relevance:
             return 1.0 / rank
     return 0.0
 
 
 def ndcg_at_k(results: Sequence[str], relevance: dict[str, int], k: int) -> float:
-    if not relevance:
-        raise EmbeddingError("relevance 不能为空")
     if not isinstance(k, int) or isinstance(k, bool) or k <= 0:
         raise EmbeddingError("k 必须是正整数")
+    identifiers = _validate_metric_inputs(results, relevance)
 
     def dcg(grades: Sequence[int]) -> float:
         return sum(
@@ -578,10 +612,13 @@ def ndcg_at_k(results: Sequence[str], relevance: dict[str, int], k: int) -> floa
             for rank, grade in enumerate(grades, start=1)
         )
 
-    observed = [relevance.get(item_id, 0) for item_id in results[:k]]
+    observed = [relevance.get(item_id, 0) for item_id in identifiers[:k]]
     ideal = sorted(relevance.values(), reverse=True)[:k]
     ideal_score = dcg(ideal)
-    return 0.0 if ideal_score == 0.0 else dcg(observed) / ideal_score
+    score = 0.0 if ideal_score == 0.0 else dcg(observed) / ideal_score
+    if not isfinite(score) or not 0.0 <= score <= 1.0 + 1e-12:
+        raise EmbeddingError("nDCG 超出 0..1，排名或 qrels 合同不合法")
+    return min(1.0, score)
 
 
 def _mean(values: Sequence[float | int]) -> float:
@@ -840,16 +877,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
             reconfigure(encoding="utf-8", newline="\n")
     args = parse_args(argv)
-    fixture = load_fixture(args.fixture.resolve())
-    report = run_experiment(fixture, k=args.k)
+    try:
+        fixture = load_fixture(args.fixture.resolve())
+        report = run_experiment(fixture, k=args.k)
+    except EmbeddingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     print(json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

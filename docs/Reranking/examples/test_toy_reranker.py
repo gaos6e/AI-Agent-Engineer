@@ -121,7 +121,9 @@ class MathAndContractTests(unittest.TestCase):
             [replace(valid[0], candidate_id="unknown"), valid[1]],
             [valid[0]],
             [replace(valid[0], score=math.nan), valid[1]],
+            [replace(valid[0], score=10**400), valid[1]],
             [replace(valid[0], features=(("bad", "x"),)), valid[1]],
+            [replace(valid[0], features=(("bad", 10**400),)), valid[1]],
         ]
         for value in cases:
             with self.subTest(value=value), self.assertRaises(lab.OutputContractError):
@@ -134,6 +136,7 @@ class FixtureValidationTests(TemporaryFixtureMixin, unittest.TestCase):
         self.assertEqual(len(fixture.candidates), 9)
         self.assertEqual(len(fixture.qrels), 4)
         self.assertEqual(len(fixture.must_not_return), 3)
+        self.assertEqual(fixture.query.authorization_revision, "authz-alpha-r7")
 
     def test_duplicate_key_and_nonfinite_json_are_rejected(self) -> None:
         self.path.write_text(
@@ -151,11 +154,11 @@ class FixtureValidationTests(TemporaryFixtureMixin, unittest.TestCase):
         with self.assertRaisesRegex(lab.RerankerError, "字段必须精确"):
             lab.load_fixture(self.write(value))
         value = raw_fixture()
-        value["schema_version"] = 2
+        value["schema_version"] = 3
         with self.assertRaisesRegex(lab.RerankerError, "schema_version"):
             lab.load_fixture(self.write(value))
 
-    def test_query_date_and_groups_are_checked(self) -> None:
+    def test_query_date_groups_and_authorization_revision_are_checked(self) -> None:
         value = raw_fixture()
         value["query"]["as_of"] = "2026-7-14"
         with self.assertRaisesRegex(lab.RerankerError, "YYYY-MM-DD"):
@@ -163,6 +166,10 @@ class FixtureValidationTests(TemporaryFixtureMixin, unittest.TestCase):
         value = raw_fixture()
         value["query"]["subject_groups"] = ["z", "a"]
         with self.assertRaisesRegex(lab.RerankerError, "字典序"):
+            lab.load_fixture(self.write(value))
+        value = raw_fixture()
+        value["query"]["authorization_revision"] = ""
+        with self.assertRaisesRegex(lab.RerankerError, "非空字符串"):
             lab.load_fixture(self.write(value))
 
     def test_settings_require_positive_values_and_top_not_above_window(self) -> None:
@@ -185,6 +192,7 @@ class FixtureValidationTests(TemporaryFixtureMixin, unittest.TestCase):
         mutations = [
             ("status", "deleted"),
             ("first_score", True),
+            ("first_score", 10**400),
             ("acl", ["guests", "employees"]),
             ("effective_from", "2026-1-01"),
         ]
@@ -276,8 +284,26 @@ class PipelineTests(unittest.TestCase):
             "acl_denied",
         )
 
+    def test_effective_interval_is_half_open(self) -> None:
+        candidate = self.candidates["d-01-membership"]
+        starts_now = replace(candidate, effective_from=self.fixture.query.as_of)
+        ends_now = replace(candidate, effective_to=self.fixture.query.as_of)
+        self.assertIsNone(lab.eligibility_reason(starts_now, self.fixture.query))
+        self.assertEqual("expired", lab.eligibility_reason(ends_now, self.fixture.query))
+
     def test_normal_pipeline_improves_ranking_and_is_secure(self) -> None:
         report = lab.run_pipeline(self.fixture, failure_mode="none")
+        self.assertEqual(report["visibility"], "protected_audit")
+        self.assertIn("not a public response", report["notice"])
+        self.assertEqual(
+            report["evidence"]["authorization_revision"],
+            self.fixture.query.authorization_revision,
+        )
+        self.assertEqual(
+            report["evidence"]["fixture_sha256"], report["fixture"]["signature"]
+        )
+        self.assertRegex(report["evidence"]["fixture_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(report["evidence"]["evidence_sha256"], r"^[0-9a-f]{64}$")
         self.assertTrue(report["rerank_applied"])
         self.assertIsNone(report["fallback_reason"])
         self.assertEqual(report["candidate_recall_at_window"], 1.0)
@@ -291,6 +317,114 @@ class PipelineTests(unittest.TestCase):
                 "d-05-refund-time-faq",
                 "d-06-refund-delay",
             ],
+        )
+
+    def test_fingerprints_bind_every_normalized_security_and_scoring_input(self) -> None:
+        baseline = lab.run_pipeline(self.fixture, failure_mode="none")
+
+        def change_query_tenant(value: dict[str, object]) -> None:
+            value["query"]["tenant_id"] = "alpha-v2"
+            for candidate in value["candidates"]:
+                if candidate["tenant_id"] == "alpha":
+                    candidate["tenant_id"] = "alpha-v2"
+
+        def swap_first_ranks(value: dict[str, object]) -> None:
+            value["candidates"][0]["first_rank"] = 2
+            value["candidates"][1]["first_rank"] = 1
+
+        mutations = {
+            "query_id": lambda value: value["query"].__setitem__("id", "q-refund-time-v2"),
+            "query_text": lambda value: value["query"].__setitem__(
+                "text", "退款审核通过后多久原路到账"
+            ),
+            "query_tenant": change_query_tenant,
+            "query_groups": lambda value: value["query"].__setitem__(
+                "subject_groups", ["guests", "reviewers"]
+            ),
+            "authorization_revision": lambda value: value["query"].__setitem__(
+                "authorization_revision", "authz-alpha-r8"
+            ),
+            "as_of": lambda value: value["query"].__setitem__("as_of", "2026-07-15"),
+            "candidate_id": lambda value: value["candidates"][0].__setitem__(
+                "id", "d-01-membership-v2"
+            ),
+            "canonical_document_id": lambda value: value["candidates"][0].__setitem__(
+                "canonical_document_id", "doc-membership-v2"
+            ),
+            "candidate_title": lambda value: value["candidates"][0].__setitem__(
+                "title", "会员续费规则（修订）"
+            ),
+            "candidate_text": lambda value: value["candidates"][0].__setitem__(
+                "text", "会员自动续费可在扣费前关闭。"
+            ),
+            "candidate_tenant": lambda value: value["candidates"][0].__setitem__(
+                "tenant_id", "beta"
+            ),
+            "candidate_acl": lambda value: value["candidates"][0].__setitem__(
+                "acl", ["employees", "guests", "reviewers"]
+            ),
+            "candidate_status": lambda value: value["candidates"][0].__setitem__(
+                "status", "draft"
+            ),
+            "effective_from": lambda value: value["candidates"][0].__setitem__(
+                "effective_from", "2025-01-02"
+            ),
+            "effective_to": lambda value: value["candidates"][0].__setitem__(
+                "effective_to", "2027-01-01"
+            ),
+            "source_revision": lambda value: value["candidates"][0].__setitem__(
+                "source_revision", "r1b"
+            ),
+            "first_rank": swap_first_ranks,
+            "first_score": lambda value: value["candidates"][0].__setitem__(
+                "first_score", 0.92
+            ),
+            "settings": lambda value: value["settings"].__setitem__(
+                "candidate_window", 7
+            ),
+            "qrels": lambda value: value["qrels"].__setitem__(
+                "d-02-refund-apply", 2
+            ),
+            "must_not_return": lambda value: value.__setitem__(
+                "must_not_return", ["d-07-beta-private", "d-08-expired-policy"]
+            ),
+        }
+        for label, mutate in mutations.items():
+            value = raw_fixture()
+            mutate(value)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "fixture.json"
+                path.write_text(
+                    json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2)
+                    + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                changed = lab.run_pipeline(lab.load_fixture(path), failure_mode="none")
+            with self.subTest(field=label):
+                self.assertNotEqual(
+                    baseline["evidence"]["fixture_sha256"],
+                    changed["evidence"]["fixture_sha256"],
+                )
+                self.assertNotEqual(
+                    baseline["evidence"]["evidence_sha256"],
+                    changed["evidence"]["evidence_sha256"],
+                )
+
+    def test_evidence_fingerprint_binds_runtime_overrides(self) -> None:
+        baseline = lab.run_pipeline(self.fixture, failure_mode="none")
+        changed = lab.run_pipeline(
+            self.fixture,
+            failure_mode="none",
+            candidate_window=5,
+        )
+        self.assertEqual(
+            baseline["evidence"]["fixture_sha256"],
+            changed["evidence"]["fixture_sha256"],
+        )
+        self.assertNotEqual(
+            baseline["evidence"]["evidence_sha256"],
+            changed["evidence"]["evidence_sha256"],
         )
 
     def test_small_window_sets_a_lower_candidate_recall_ceiling(self) -> None:
@@ -358,6 +492,12 @@ class PipelineTests(unittest.TestCase):
         for values in calls:
             with self.subTest(values=values), self.assertRaises(lab.RerankerError):
                 lab.run_pipeline(self.fixture, **values)
+        fixture = replace(
+            self.fixture,
+            query=replace(self.fixture.query, authorization_revision=""),
+        )
+        with self.assertRaisesRegex(lab.RerankerError, "authorization_revision"):
+            lab.run_pipeline(fixture, failure_mode="none")
 
 
 class CliTests(unittest.TestCase):
@@ -368,7 +508,7 @@ class CliTests(unittest.TestCase):
             [sys.executable, "-B", "-W", "error", *args],
             cwd=HERE,
             env=environment,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -376,9 +516,19 @@ class CliTests(unittest.TestCase):
             [sys.executable, "-B", "-O", "-W", "error", *args],
             cwd=HERE,
             env=environment,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+        )
+        self.assertEqual(
+            normal.returncode,
+            0,
+            normal.stderr.decode("utf-8", errors="replace"),
+        )
+        self.assertEqual(
+            optimized.returncode,
+            0,
+            optimized.stderr.decode("utf-8", errors="replace"),
         )
         self.assertEqual(normal.stdout, optimized.stdout)
         self.assertEqual(normal.stderr, b"")
@@ -410,6 +560,25 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bad.json"
             path.write_text("{}\n", encoding="utf-8")
+            process = subprocess.run(
+                [sys.executable, "-B", str(SCRIPT), "--fixture", str(path)],
+                cwd=HERE,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(process.returncode, 2)
+        self.assertEqual(process.stdout, b"")
+        self.assertIn(b"error:", process.stderr)
+        self.assertNotIn(b"Traceback", process.stderr)
+
+    def test_cli_overflowing_score_returns_controlled_error(self) -> None:
+        value = raw_fixture()
+        value["candidates"][0]["first_score"] = 10**400
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "overflow.json"
+            path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
             process = subprocess.run(
                 [sys.executable, "-B", str(SCRIPT), "--fixture", str(path)],
                 cwd=HERE,

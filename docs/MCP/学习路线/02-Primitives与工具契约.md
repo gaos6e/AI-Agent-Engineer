@@ -6,7 +6,7 @@ aliases:
 tags:
   - MCP
   - Tool-Calling
-source_checked: 2026-07-14
+source_checked: 2026-07-19
 ---
 
 # MCP Primitives 与工具契约
@@ -36,11 +36,11 @@ source_checked: 2026-07-14
 
 | 能力 | 适合什么 | 示例 | 主要控制主体 |
 | --- | --- | --- | --- |
-| roots | 告诉 server 当前允许关注的文件根 | `file:///D:/project` | host/用户决定范围 |
+| roots | 声明 host 希望 server 关注的根范围；不是授权或沙箱边界 | `file:///D:/project` | host/用户决定协调范围；系统权限执行真实限制 |
 | sampling | server 请求 host 的模型生成 | 让 host 选择模型总结结果 | host 保留模型、权限和审查 |
 | elicitation | server 经 client 向用户要额外信息 | 选择输出语言、打开外部授权页 | 用户可接受、拒绝或取消 |
 
-这两组能力不能互换。比如 resource 让 client 读取 server 的内容；root 则让 server 查询 client 愿意暴露的文件边界。
+这两组能力不能互换。比如 resource 让 client 读取 server 的内容；root 则让 server 查询 client 建议其关注的文件范围。Roots 不能代替操作系统权限、沙箱、路径校验或授权策略。
 
 ## 如何选择 server feature
 
@@ -54,31 +54,34 @@ source_checked: 2026-07-14
 - 可选 `outputSchema`：结构化输出的 JSON Schema；
 - 可选 `annotations` 与 `execution.taskSupport`。
 
-```json
-{
-  "name": "lookup_weather",
-  "description": "读取离线样例天气；不访问网络。",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "city": {"type": "string", "minLength": 1},
-      "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
-    },
-    "required": ["city"],
-    "additionalProperties": false
-  },
-  "outputSchema": {
-    "type": "object",
-    "properties": {
-      "temperature": {"type": "number"},
-      "conditions": {"type": "string"},
-      "unit": {"type": "string"}
-    },
-    "required": ["temperature", "conditions", "unit"],
-    "additionalProperties": false
-  }
+```jsonc
+{ // 一个 server 对 tools/list 等响应中可声明的教学工具契约
+  "name": "lookup_weather", // 工具稳定名称；模型只可建议，host/server 仍决定是否允许调用
+  "description": "读取离线样例天气；不访问网络。", // 描述能力与边界，帮助选择而不构成授权
+  "inputSchema": { // 调用方必须提供的参数 JSON Schema
+    "type": "object", // 顶层参数必须是对象，避免位置参数歧义
+    "properties": { // 声明每个允许字段的约束
+      "city": {"type": "string", "minLength": 1}, // 城市必须为非空文本
+      "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]} // 单位只能从两个明确枚举中选择
+    }, // 结束参数字段定义
+    "required": ["city"], // city 缺失时请求应在执行前被拒绝
+    "additionalProperties": false // 禁止未声明参数悄悄扩大工具的能力面
+  }, // 结束输入 schema
+  "outputSchema": { // server 返回结果也采用可验证的输出契约
+    "type": "object", // 返回值必须为对象，而不是自由文本
+    "properties": { // 声明可由 client/host 读取的结果字段
+      "temperature": {"type": "number"}, // 温度允许小数等数值
+      "conditions": {"type": "string"}, // 天气描述是文本
+      "unit": {"type": "string"} // 回显单位，避免调用方猜测数值的量纲
+    }, // 结束输出字段定义
+    "required": ["temperature", "conditions", "unit"], // 三项都存在才构成完整成功结果
+    "additionalProperties": false // 输出也不应夹带未审阅字段或提示注入载荷
+  } // 结束输出 schema
 }
 ```
+
+> [!note] JSONC 教学表示
+> 行尾 `//` 解释 schema 的控制边界；发送给只接受严格 JSON 的实现前，请删除这些注释。
 
 若定义了 `outputSchema`，server 必须让 `structuredContent` 符合它，client 应验证。为兼容旧客户端，规范建议同时在文本 content 中提供序列化结果。Schema 解决“结构是否可处理”，description 解决“模型是否选对工具”，两者都不等于权限控制。
 
@@ -94,9 +97,13 @@ source_checked: 2026-07-14
 当内容需要浏览、读取、分页、缓存、订阅或复用时，resource 比“一个返回大段文本的 tool”更清晰。注意：
 
 - URI 是身份边界，不要靠显示名称唯一标识。
-- 列表可能分页，不能假设一次得到全部资源。
-- `listChanged` 与单项 `subscribe` 是不同 sub-capability。
+- 稳定 `2025-11-25` 的核心方法是 `resources/list`、`resources/read`、`resources/templates/list`、`resources/subscribe`、`resources/unsubscribe`；不存在通用 `resources/delete`。
+- list 与 templates/list 都可能返回 opaque `nextCursor`，不能假设一次得到全部资源，也不能解析 cursor 的内部含义。
+- `resources.listChanged` 与单项 `resources.subscribe` 是两个独立 sub-capability；前者通知“可见列表可能变化”，后者只允许对成功订阅的 URI 接收 `notifications/resources/updated`。
+- subscribe request 发出不等于订阅已经生效，必须等成功 response；failed unsubscribe 也不能提前删除本地状态。
+- updated URI 可能是已订阅资源的 sub-resource，但协议不提供“字符串前缀就是父子”的授权规则；生产系统应使用服务端资源模型或显式关系。
 - resource 内容是不可信输入，可能含提示注入；保留来源并限制进入模型的内容。
+- capability 只说明协议功能可用，不证明当前 subject 对某 URI 获得授权；仍要检查 token、scope、tenant/owner 与撤销状态。
 
 ### Prompt：可复用交互模板
 
@@ -189,7 +196,7 @@ Tasks 在 `2025-11-25` 引入，当前仍标记为实验性。它不是新的业
 
 ## 参考资料
 
-以下均为 MCP 第一方资料，获取/复核日期：2026-07-14。
+以下均为 MCP 第一方资料。规范链接获取/复核于 2026-07-14；Roots 的非安全边界说明于 2026-07-19 复核。
 
 - [Server Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
 - [Server Resources](https://modelcontextprotocol.io/specification/2025-11-25/server/resources)
@@ -198,3 +205,4 @@ Tasks 在 `2025-11-25` 引入，当前仍标记为实验性。它不是新的业
 - [Client Sampling](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling)
 - [Client Elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation)
 - [Tasks utility](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
+- [MCP Client concepts](https://modelcontextprotocol.io/docs/learn/client-concepts)

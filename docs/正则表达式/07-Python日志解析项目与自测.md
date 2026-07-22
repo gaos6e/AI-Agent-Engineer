@@ -43,10 +43,13 @@ source_baseline:
 
 ## 运行
 
+以下命令从同时包含 `docs/` 与 `.website/` 的项目根目录运行：
+
 ```powershell
-Set-Location 'X:\path\to\your-vault\Knowledge\AI Agent Engineer\docs\正则表达式'
+Push-Location -LiteralPath 'docs\正则表达式'
 python .\examples\log_parser.py
 python -m unittest discover -s .\examples -p 'test_*.py' -v
+Pop-Location
 ```
 
 预期：

@@ -26,6 +26,8 @@ PERMANENT_CATEGORIES = frozenset(
 COMPLETION_STATUSES = frozenset({"completed", "refused", "truncated"})
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$")
 MAX_USER_TEXT_CHARS = 100_000
+MAX_STREAM_EVENTS = 4_096
+MAX_STREAM_TEXT_CHARS = 100_000
 
 
 class ClientError(RuntimeError):
@@ -106,6 +108,38 @@ class RetryExhaustedError(ClientError):
 
 class StreamProtocolError(ClientError):
     """The canonical stream violated its local event contract."""
+
+
+class StreamLimitError(StreamProtocolError):
+    """A bounded stream resource exceeded the local contract."""
+
+    def __init__(
+        self,
+        resource: str,
+        *,
+        limit: int,
+        observed: int,
+        request_id: str | None,
+        partial_text: str,
+    ) -> None:
+        if resource not in {"events", "text_chars"}:
+            raise ValueError(f"unsupported stream resource: {resource!r}")
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        if not isinstance(observed, int) or isinstance(observed, bool) or observed <= limit:
+            raise ValueError("observed must be an integer greater than limit")
+        if request_id is not None:
+            _require_identifier(request_id, "request_id")
+        if not isinstance(partial_text, str):
+            raise ValueError("partial_text must be a string")
+        super().__init__(f"stream {resource} exceeds {limit} (observed {observed})")
+        self.category = "resource-limit"
+        self.resource = resource
+        self.limit = limit
+        self.observed = observed
+        self.request_id = request_id
+        self.partial_text = partial_text
+        self.retryable = False
 
 
 class StreamInterruptedError(ClientError):
@@ -495,9 +529,18 @@ def consume_canonical_stream(events: Iterable[dict[str, Any]]) -> StreamResult:
     state = "init"
     request_id: str | None = None
     parts: list[str] = []
+    text_chars = 0
     result: StreamResult | None = None
 
-    for event in events:
+    for event_index, event in enumerate(events, start=1):
+        if event_index > MAX_STREAM_EVENTS:
+            raise StreamLimitError(
+                "events",
+                limit=MAX_STREAM_EVENTS,
+                observed=event_index,
+                request_id=request_id,
+                partial_text="".join(parts),
+            )
         if not isinstance(event, dict):
             raise StreamProtocolError("each stream event must be an object")
         if result is not None:
@@ -524,6 +567,15 @@ def consume_canonical_stream(events: Iterable[dict[str, Any]]) -> StreamResult:
             text = event["text"]
             if not isinstance(text, str):
                 raise StreamProtocolError("delta text must be a string")
+            text_chars += len(text)
+            if text_chars > MAX_STREAM_TEXT_CHARS:
+                raise StreamLimitError(
+                    "text_chars",
+                    limit=MAX_STREAM_TEXT_CHARS,
+                    observed=text_chars,
+                    request_id=request_id,
+                    partial_text="".join(parts),
+                )
             parts.append(text)
         elif event_type == "response.failed":
             _require_event_fields(

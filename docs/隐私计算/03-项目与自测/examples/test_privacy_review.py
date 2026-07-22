@@ -89,7 +89,7 @@ class PrivacyReviewTests(unittest.TestCase):
 
     def test_10_invalid_field_classification_rejected(self) -> None:
         value = self.valid()
-        value["data_fields"][0]["classification"] = "anonymous"
+        value["data_fields"][0]["privacy_class"] = "anonymous"
         self.expect_contract_error(value)
 
     def test_11_field_boolean_must_be_bool(self) -> None:
@@ -132,9 +132,9 @@ class PrivacyReviewTests(unittest.TestCase):
         value["data_flows"][0]["fields"] = ["missing"]
         self.expect_contract_error(value)
 
-    def test_19_flow_raw_must_be_bool(self) -> None:
+    def test_19_flow_protection_must_be_known(self) -> None:
         value = self.valid()
-        value["data_flows"][0]["raw"] = 0
+        value["data_flows"][0]["protection"] = "magic"
         self.expect_contract_error(value)
 
     def test_20_duplicate_flow_id_rejected(self) -> None:
@@ -192,9 +192,9 @@ class PrivacyReviewTests(unittest.TestCase):
         value["controls"]["access_control"] = 1
         self.expect_contract_error(value)
 
-    def test_31_collusion_threshold_must_be_positive(self) -> None:
+    def test_31_collusion_threshold_must_be_below_participant_count(self) -> None:
         value = self.valid()
-        value["threat_model"]["collusion_threshold"] = 0
+        value["threat_model"]["collusion_threshold"] = 4
         self.expect_contract_error(value)
 
     def test_32_invalid_risk_severity_rejected(self) -> None:
@@ -304,6 +304,162 @@ class PrivacyReviewTests(unittest.TestCase):
     def test_50_report_does_not_echo_record_level_data(self) -> None:
         report = app.run_from_path(app.DEFAULT_SCENARIO)
         self.assertNotIn("person_name", json.dumps(report["findings"]))
+
+    def test_51_pure_dp_delta_zero_is_valid(self) -> None:
+        value = self.valid()
+        value["release"]["delta_limit"] = "0"
+        for mechanism in value["release"]["mechanisms"]:
+            mechanism["delta"] = "0"
+        validated = app.validate_scenario(value)
+        self.assertEqual(app.budget_totals(validated)[1], Decimal("0"))
+
+    def test_52_risk_policy_must_cover_every_severity(self) -> None:
+        value = self.valid()
+        value["risk_policy"]["review_severities"] = ["medium"]
+        self.expect_contract_error(value)
+
+    def test_53_fail_open_policy_mutation_is_rejected(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        value["risk_policy"] = {"block_severities": ["low"], "review_severities": []}
+        self.expect_contract_error(value)
+
+    def test_54_public_direct_identifier_output_is_rejected(self) -> None:
+        value = self.valid()
+        value["data_fields"].append(
+            {
+                "name": "person_id",
+                "privacy_class": "direct_identifier",
+                "output_role": "linkage_key",
+                "necessary": True,
+                "contribution_bound": 1,
+            }
+        )
+        value["release"]["outputs"][0]["fields"].append("person_id")
+        self.expect_contract_error(value)
+
+    def test_55_unnecessary_sensitive_field_triggers_minimization_finding(self) -> None:
+        value = self.valid()
+        value["data_fields"].append(
+            {
+                "name": "diagnosis",
+                "privacy_class": "sensitive_attribute",
+                "output_role": "not_released",
+                "necessary": False,
+                "contribution_bound": 1,
+            }
+        )
+        report = app.build_report(app.validate_scenario(value))
+        self.assertIn("PR-001", {item["id"] for item in report["findings"]})
+
+    def test_56_raw_centralization_is_derived_from_flows(self) -> None:
+        value = app.validate_scenario(copy.deepcopy(self.vulnerable))
+        self.assertEqual(app.raw_centralization_targets(value), ["central-server"])
+
+    def test_57_mpc_flag_must_match_mpc_share_flows(self) -> None:
+        value = self.valid()
+        value["processing"]["mpc"] = False
+        self.expect_contract_error(value)
+
+    def test_58_mpc_cannot_be_claimed_without_mpc_share_flow(self) -> None:
+        value = self.valid()
+        for flow in value["data_flows"]:
+            flow["protection"] = "locally_aggregated"
+        self.expect_contract_error(value)
+
+    def test_59_protocol_participant_reference_must_exist(self) -> None:
+        value = self.valid()
+        value["processing"]["protocol_participants"][0] = "missing"
+        self.expect_contract_error(value)
+
+    def test_60_update_validation_is_not_required_without_training(self) -> None:
+        value = app.validate_scenario(self.valid())
+        self.assertFalse(value["controls"]["update_validation"])
+        self.assertNotIn("PR-011", {item["id"] for item in app.review(value)})
+        self.assertNotIn("PR-012", {item["id"] for item in app.review(value)})
+
+    def test_61_malicious_clients_alone_do_not_imply_federated_training(self) -> None:
+        value = self.valid()
+        value["threat_model"]["malicious_clients"] = True
+        findings = app.review(app.validate_scenario(value))
+        self.assertNotIn("PR-011", {item["id"] for item in findings})
+
+    def test_62_local_training_must_match_update_flows(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        value["processing"]["local_training"] = False
+        self.expect_contract_error(value)
+
+    def test_63_secure_aggregation_must_match_secure_update_flows(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        value["processing"]["secure_aggregation"] = True
+        self.expect_contract_error(value)
+
+    def test_64_hardened_region_is_quasi_identifier_dimension(self) -> None:
+        region = self.valid()["data_fields"][0]
+        self.assertEqual(region["privacy_class"], "quasi_identifier")
+        self.assertEqual(region["output_role"], "dimension")
+
+    def test_65_linkage_evaluation_is_required_for_public_quasi_dimension(self) -> None:
+        value = self.valid()
+        value["controls"]["linkage_evaluation"] = False
+        findings = app.review(app.validate_scenario(value))
+        self.assertIn("PR-002", {item["id"] for item in findings})
+
+    def test_66_structured_incomplete_adjacency_triggers_finding(self) -> None:
+        value = app.validate_scenario(copy.deepcopy(self.vulnerable))
+        self.assertIn("PR-005", {item["id"] for item in app.review(value)})
+
+    def test_67_release_output_unknown_field_is_rejected(self) -> None:
+        value = self.valid()
+        value["release"]["outputs"][0]["fields"] = ["missing"]
+        self.expect_contract_error(value)
+
+    def test_68_release_public_flag_must_match_outputs(self) -> None:
+        value = self.valid()
+        value["release"]["public"] = False
+        self.expect_contract_error(value)
+
+    def test_69_enabled_protocol_requires_security_model(self) -> None:
+        value = self.valid()
+        value["processing"]["protocol_security"] = "none"
+        self.expect_contract_error(value)
+
+    def test_70_protocol_metadata_is_na_when_no_protocol_enabled(self) -> None:
+        value = copy.deepcopy(self.vulnerable)
+        value["processing"]["protocol_evidence"] = True
+        self.expect_contract_error(value)
+
+    def test_71_missing_protocol_evidence_requires_review(self) -> None:
+        value = self.valid()
+        value["processing"]["protocol_evidence"] = False
+        findings = app.review(app.validate_scenario(value))
+        self.assertIn("PR-012", {item["id"] for item in findings})
+
+    def test_72_report_preserves_non_goals_and_output_projection(self) -> None:
+        report = app.run_from_path(app.HARDENED_SCENARIO)
+        self.assertEqual(report["non_goals"], self.hardened["non_goals"])
+        self.assertEqual(report["release_outputs"], self.hardened["release"]["outputs"])
+
+    def test_73_decision_defensively_rejects_unclassified_finding(self) -> None:
+        value = self.valid()
+        value["risk_policy"] = {"block_severities": ["critical"], "review_severities": []}
+        synthetic_finding = app.finding("X", "x", "high", "x", ["x"], ["x"])
+        with self.assertRaises(app.ContractError):
+            app.decision(value, [synthetic_finding])
+
+    def test_74_invalid_output_role_is_rejected(self) -> None:
+        value = self.valid()
+        value["data_fields"][0]["output_role"] = "identifier"
+        self.expect_contract_error(value)
+
+    def test_75_homomorphic_encryption_requires_ciphertext_flow(self) -> None:
+        value = self.valid()
+        value["processing"]["homomorphic_encryption"] = True
+        self.expect_contract_error(value)
+
+    def test_76_not_released_field_cannot_enter_output_projection(self) -> None:
+        value = self.valid()
+        value["data_fields"][0]["output_role"] = "not_released"
+        self.expect_contract_error(value)
 
 
 if __name__ == "__main__":

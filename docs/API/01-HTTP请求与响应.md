@@ -6,6 +6,7 @@ tags:
   - HTTP
 aliases:
   - HTTP API 基础
+source_checked: 2026-07-22
 ---
 
 # HTTP 请求与响应
@@ -65,14 +66,14 @@ scheme       host         path            query
 Python 中用 `params=` 传 query，不手工拼 `?` 和 `&`：
 
 ```python
-import requests
+import requests  # 导入 Requests 库，用它安全编码 query 参数并发送 HTTP 请求。
 
-response = requests.get(
-    "https://example.com/v1/tasks",
-    params={"cursor": "page-2", "limit": 20},
-    timeout=(3.05, 15),
+response = requests.get(  # 发起 GET 请求；示例地址只用于说明参数编码，不应直接当生产端点。
+    "https://example.com/v1/tasks",  # 基础 URL 不手工拼接 query string。
+    params={"cursor": "page-2", "limit": 20},  # 让库负责把游标和页大小正确 URL 编码。
+    timeout=(3.05, 15),  # 分别限制连接与读取等待时间，避免无限阻塞。
 )
-print(response.request.url)
+print(response.request.url)  # 打印实际发送的 URL，观察 params 如何变成 query 参数。
 ```
 
 ### 3. Headers
@@ -96,12 +97,12 @@ headers 是不直接属于业务正文的元数据。字段名大小写不敏感
 GET 通常用 query 参数；创建或执行操作常用 JSON body：
 
 ```python
-payload = {"title": "学习 API", "priority": 2}
+payload = {"title": "学习 API", "priority": 2}  # 用 Python 字典表示将被 JSON 序列化的创建请求体。
 
-response = requests.post(
-    "https://example.com/v1/tasks",
-    json=payload,
-    timeout=(3.05, 30),
+response = requests.post(  # 发起创建操作；生产代码还需按契约决定是否使用幂等键。
+    "https://example.com/v1/tasks",  # 写入目标资源的示例地址。
+    json=payload,  # Requests 负责 JSON 编码并设置合适的 Content-Type。
+    timeout=(3.05, 30),  # 写入操作通常读取时间更长，但仍必须设置上限。
 )
 ```
 
@@ -136,13 +137,18 @@ X-Request-ID: req_123
 ### Headers 与 body
 
 ```python
-content_type = response.headers.get("Content-Type", "")
-request_id = response.headers.get("X-Request-ID")
+media_type = (  # 从 Content-Type 中取出不含 charset 等参数的主 media type。
+    response.headers.get("Content-Type", "")  # header 缺失时先使用空字符串，而不是抛 KeyError。
+    .split(";", 1)[0]  # 将 `application/json; charset=utf-8` 截成 `application/json`。
+    .strip()  # 删除服务端 header 两端可能存在的空白。
+    .lower()  # 统一大小写，便于与标准 media type 比较。
+)
+request_id = response.headers.get("X-Request-ID")  # 保存可安全记录的服务端诊断 ID，不记录凭据。
 
-response.raise_for_status()
-if "application/json" not in content_type.lower():
-    raise ValueError("预期 JSON，实际收到其他内容")
-data = response.json()
+response.raise_for_status()  # 先把 4xx/5xx 转成异常，避免把错误页误当成成功数据。
+if media_type != "application/json" and not media_type.endswith("+json"):  # 同时接受供应商定义的 `application/*+json` 类型。
+    raise ValueError("预期 JSON，实际收到其他内容")  # 不对 HTML 错误页等非 JSON 内容直接调用 .json()。
+data = response.json()  # 只在 HTTP 成功且 media type 合理后解析 JSON；还应继续校验 schema。
 ```
 
 `response.json()` 成功只证明 body 能解析成 JSON，不证明 HTTP 或业务成功；因此应先按状态码处理，再校验 schema。反过来，有些 204 响应没有 body，不能无条件调用 `.json()`。
@@ -177,11 +183,11 @@ data = response.json()
 4. 用 Requests 构造一个 `PreparedRequest` 并打印 URL 和 headers，但不要真的发送：
 
 ```python
-from requests import Request, Session
+from requests import Request, Session  # 导入只构造请求的 Request 与负责准备请求的 Session。
 
-request = Request("GET", "https://example.com/items", params={"q": "AI Agent"})
-prepared = Session().prepare_request(request)
-print(prepared.url)
+request = Request("GET", "https://example.com/items", params={"q": "AI Agent"})  # 创建尚未发送的 GET 请求对象。
+prepared = Session().prepare_request(request)  # 让 Session 应用默认 header 与 URL 参数编码，但不产生网络流量。
+print(prepared.url)  # 检查最终 URL，确认空格等字符已被正确编码。
 ```
 
 ## 自测
@@ -196,4 +202,4 @@ print(prepared.url)
 - [RFC 9110: HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html)，尤其是消息、方法和状态码章节。
 - [Requests Quickstart](https://docs.python-requests.org/en/stable/user/quickstart/)。
 
-获取日期：2026-07-14。下一步：[[API/02-Requests客户端与契约阅读|Requests 客户端、Session 与契约阅读]]。
+获取日期：2026-07-22。下一步：[[API/02-Requests客户端与契约阅读|Requests 客户端、Session 与契约阅读]]。

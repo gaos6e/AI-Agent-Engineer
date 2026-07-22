@@ -64,6 +64,16 @@
       "reference_assets": []
     }
   ],
+  "lineage": {
+    "source_revision": "brief-video-task-flow-001-r1",
+    "transform_id": "transform-video-task-flow-001-r1",
+    "release_id": "release-video-task-flow-001-candidate"
+  },
+  "governance": {
+    "object_acl_required": true,
+    "deletion_propagation_plan": "撤权或删除时使镜头候选、代理文件、成片派生物、缓存和可访问链接不可用，并保留最小化审计事件",
+    "evidence_policy": "evidence_supported"
+  },
   "audio": {
     "mode": "post_production",
     "narration": "任务被拆分、执行并完成。",
@@ -92,8 +102,8 @@
     "real_person": false,
     "person_consent": "not_applicable",
     "human_review_required": true,
-    "provenance_plan": "保存逐镜头请求、输入和输出哈希；发布前验证最终资产的 C2PA 状态",
-    "disclosure_plan": "成片说明为 AI 辅助生成，并保留人工剪辑与字幕记录"
+    "provenance_plan": "保存 source_revision、逐镜头 transform_id、release_id、输入和输出哈希；发布前验证最终资产的 C2PA 状态",
+    "disclosure_plan": "成片说明为 AI 辅助生成，并保留人工剪辑与字幕记录；外部事实性陈述仅在独立证据支持时发布"
   },
   "acceptance": [
     {
@@ -128,7 +138,7 @@
     },
     {
       "dimension": "safety",
-      "criterion": "无真人、误导性事实或敏感内容",
+      "criterion": "无真人、敏感内容或由生成视频单独支撑的事实性表达",
       "hard_failure": true
     },
     {
@@ -154,6 +164,6 @@
     "provider": "offline-no-provider",
     "model": "offline-no-model",
     "version": "video-job-validator-v1",
-    "documentation_checked_on": "2026-07-14"
+    "documentation_checked_on": "2026-07-22"
   }
 }

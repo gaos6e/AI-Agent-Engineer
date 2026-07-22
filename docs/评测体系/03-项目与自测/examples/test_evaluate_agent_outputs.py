@@ -112,6 +112,50 @@ class EvaluationPipelineTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertNotEqual(first, changed)
 
+    def test_full_evidence_digest_binds_evaluator_contract_and_inputs(self) -> None:
+        first = evaluator.full_evidence_sha256(
+            evaluator.EVALUATOR_VERSION,
+            self.dataset,
+            self.rubric,
+            self.pass_predictions,
+            "candidate-pass",
+        )
+        changed = evaluator.full_evidence_sha256(
+            "different-evaluator-contract",
+            self.dataset,
+            self.rubric,
+            self.pass_predictions,
+            "candidate-pass",
+        )
+        self.assertEqual(64, len(first))
+        self.assertNotEqual(first, changed)
+
+    def test_evidence_digest_golden_vector_locks_the_documented_byte_profile(self) -> None:
+        self.assertEqual(
+            evaluator.EVIDENCE_DIGEST_FORMAT,
+            "python-json-sorted-utf8-v1",
+        )
+        actual = evaluator.full_evidence_sha256(
+            {
+                "z": "\u6c49\u5b57",
+                "a": [1, 2.5],
+                "nested": {"\u03b2": "\u503c"},
+            },
+            "release-v1",
+        )
+        self.assertEqual(
+            actual,
+            "ee2f7ef27b87716fd2359ee2f42aae77a38d58792636bf959292c885242152d6",
+        )
+
+    def test_evidence_digest_rejects_nonfinite_value(self) -> None:
+        with self.assertRaisesRegex(evaluator.ContractError, "finite JSON"):
+            evaluator.full_evidence_sha256(math.nan)
+
+    def test_evidence_digest_rejects_lone_surrogate(self) -> None:
+        with self.assertRaisesRegex(evaluator.ContractError, "UTF-8"):
+            evaluator.full_evidence_sha256({"text": "\ud800"})
+
     def test_duplicate_case_id_is_rejected(self) -> None:
         dataset = copy.deepcopy(self.dataset)
         dataset["cases"][1]["id"] = dataset["cases"][0]["id"]
@@ -269,13 +313,67 @@ class EvaluationPipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(evaluator.ContractError, "duplicate key"):
                 evaluator.load_json(path)
 
+    def test_invalid_utf8_bytes_are_a_contract_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad-utf8.json"
+            path.write_bytes(b'{"value":"\xed\xa0\x80"}')
+            with self.assertRaisesRegex(evaluator.ContractError, "valid UTF-8"):
+                evaluator.load_json(path)
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = evaluator.main(["--dataset", str(path)])
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("valid UTF-8", stderr.getvalue())
+
+    def test_escaped_lone_surrogate_is_a_contract_error_at_load_and_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "surrogate.json"
+            path.write_text('{"value": "\\ud800"}', encoding="utf-8")
+            with self.assertRaisesRegex(evaluator.ContractError, "Unicode surrogate"):
+                evaluator.load_json(path)
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = evaluator.main(["--dataset", str(path)])
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("Unicode surrogate", stderr.getvalue())
+
+    def test_overflowing_json_integer_is_a_contract_error(self) -> None:
+        rubric = evaluator.load_json(evaluator.DEFAULT_RUBRIC)
+        self.assertIsInstance(rubric, dict)
+        rubric["gates"]["max_mean_cost_usd"] = 10**400
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "overflowing-rubric.json"
+            path.write_text(json.dumps(rubric), encoding="utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = evaluator.main(["--rubric", str(path)])
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("representable as a finite number", stderr.getvalue())
+
     def test_report_contains_fingerprint_and_limitations(self) -> None:
         decision = evaluator.evaluate(
             self.dataset, self.rubric, self.pass_predictions, "candidate-pass"
         )
         report = evaluator.decision_to_dict(decision)
         self.assertEqual(len(report["evidence_fingerprint"]), 16)
-        self.assertEqual(len(report["limitations"]), 3)
+        self.assertEqual(len(report["evidence_sha256"]), 64)
+        self.assertTrue(
+            report["evidence_sha256"].startswith(report["evidence_fingerprint"])
+        )
+        self.assertEqual(
+            report["evidence_digest_format"], evaluator.EVIDENCE_DIGEST_FORMAT
+        )
+        self.assertEqual(report["evaluator_version"], evaluator.EVALUATOR_VERSION)
+        self.assertEqual(len(report["limitations"]), 5)
+        self.assertIn("trusted harness receipts", report["limitations"][3])
 
     def test_predictions_only_cover_frozen_test(self) -> None:
         expected = {

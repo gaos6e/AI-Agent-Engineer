@@ -1,13 +1,16 @@
 {
-  "schema_version": 1,
-  "policy_version": "promotion-lab-v2",
+  "schema_version": 2,
+  "policy_version": "promotion-lab-v3",
   "deployment": {
     "release_id": "release-2026-07-14-01",
     "model_id": "candidate-safe",
     "artifact_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
-    "baseline_model_id": "champion-v7"
+    "baseline_model_id": "champion-v7",
+    "promotion_evidence_fingerprint": "1b9dbc98b8543458ab531b3916d174c6fac5034cd53cd8d5b95711e27ae2e43a"
   },
   "reference": {
+    "model_id": "candidate-safe",
+    "artifact_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
     "critical_slice_recall": 0.77,
     "p95_latency_ms": 98.0,
     "error_rate": 0.005
@@ -15,8 +18,10 @@
   "windows": [
     {
       "window_id": "window-healthy",
+      "phase": "canary",
       "sample_count": 2000,
-      "label_coverage": 0.8,
+      "labeled_count": 1600,
+      "critical_labeled_count": 320,
       "signals": {
         "error_rate": 0.006,
         "p95_latency_ms": 101.0,
@@ -26,8 +31,10 @@
     },
     {
       "window_id": "window-drift-no-label",
+      "phase": "canary",
       "sample_count": 1800,
-      "label_coverage": 0.12,
+      "labeled_count": 216,
+      "critical_labeled_count": 40,
       "signals": {
         "error_rate": 0.007,
         "p95_latency_ms": 103.0,
@@ -37,8 +44,10 @@
     },
     {
       "window_id": "window-quality-regression",
+      "phase": "canary",
       "sample_count": 2200,
-      "label_coverage": 0.82,
+      "labeled_count": 1804,
+      "critical_labeled_count": 360,
       "signals": {
         "error_rate": 0.008,
         "p95_latency_ms": 105.0,
@@ -48,15 +57,29 @@
     },
     {
       "window_id": "window-technical-failure",
+      "phase": "canary",
       "sample_count": 900,
-      "label_coverage": 0.2,
+      "labeled_count": 180,
+      "critical_labeled_count": 30,
       "signals": {
         "error_rate": 0.05,
         "p95_latency_ms": 165.0,
         "input_drift_score": 0.04,
         "critical_slice_recall": null
       }
+    },
+    {
+      "window_id": "window-shadow-technical-failure",
+      "phase": "shadow",
+      "sample_count": 900,
+      "labeled_count": 720,
+      "critical_labeled_count": 140,
+      "signals": {
+        "error_rate": 0.04,
+        "p95_latency_ms": 150.0,
+        "input_drift_score": 0.03,
+        "critical_slice_recall": 0.76
+      }
     }
   ]
 }
-

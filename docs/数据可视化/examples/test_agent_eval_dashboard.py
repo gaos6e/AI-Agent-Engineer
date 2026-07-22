@@ -51,6 +51,7 @@ class AgentEvalDashboardTests(unittest.TestCase):
         mutations = (
             ("success", lambda raw: raw["versions"][0].update(success_count=201), "cannot exceed"),
             ("overlap", lambda raw: raw["versions"][0].update(timeout_count=60), "overlap"),
+            ("all-timeout", lambda raw: raw["versions"][0].update(success_count=0, timeout_count=200), "at least one completed"),
             ("latency", lambda raw: raw["versions"][0].update(p95_latency_ms=100), "must be >="),
             ("cost", lambda raw: raw["versions"][0].update(mean_cost_usd=-1), "finite and >="),
         )
@@ -139,8 +140,7 @@ class AgentEvalDashboardTests(unittest.TestCase):
             dashboard.write_alt_text(data, alt)
             self.assertEqual(png.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
             width, height = struct.unpack(">II", png.read_bytes()[16:24])
-            self.assertGreater(width, 1000)
-            self.assertGreater(height, 700)
+            self.assertEqual((width, height), (1980, 1332))
             self.assertIn("<svg", svg.read_text(encoding="utf-8")[:1000])
             self.assertIn("Wilson 95%", alt.read_text(encoding="utf-8"))
 

@@ -5,7 +5,12 @@ aliases:
   - 学习
 source: https://docs.langchain.com/oss/python/learn
 source_md: https://docs.langchain.com/oss/python/learn.md
+source_url: https://docs.langchain.com/oss/python/learn
 retrieved: 2026-05-07
+source_checked: 2026-07-21
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
 tags:
   - langchain
   - python
@@ -14,6 +19,9 @@ license: MIT
 ---
 
 # 学习
+
+> [!warning] 冻结的来源导航，不是当前课程或可执行基线
+> 本页及其链接的译文快照于 2026-05-07 获取，用来保留 LangChain 官方学习入口、来源和 MIT 许可，并不保证导入、模型 ID、集成包、环境变量或生产建议仍然有效。先学习 [[LangChain/00-目录|本库的当前路线]]；再把本页当作按主题回到当前官方文档的导航。涉及 RAG、SQL、代码执行、外部消息或密钥时，不能直接复制示例运行，必须先完成数据/工具授权、依赖锁定、测试与安全审查。
 
 > 帮助您入门的教程、概念指南和资源。
 

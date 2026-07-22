@@ -18,7 +18,7 @@ source_checked: 2026-07-14
 ## 三个不同问题
 
 - **VAD（Voice Activity Detection）**：某时间段是否有人声。
-- **说话人日志/分离（speaker diarization）**：回答“谁在什么时候说话”，通常输出匿名标签 `speaker_0`、`speaker_1`。
+- **说话人分段标注（speaker diarization）**：回答“谁在什么时候说话”，通常输出匿名标签 `speaker_0`、`speaker_1`；它不同于把重叠声源拆成独立音轨的 speaker separation。
 - **说话人识别/验证**：把声音与现实身份关联，风险和授权要求更高。
 
 diarization 标签不是身份。不能因为 `speaker_0` 在几段出现就声称知道其姓名。

@@ -319,14 +319,53 @@ def candidate_errors(candidate: Any, spec: dict[str, Any]) -> list[str]:
     elif candidate.get("expected_action") != condition["expected_action"]:
         errors.append("expected-action-mismatch")
     provenance = candidate.get("provenance")
-    if not isinstance(provenance, dict) or set(provenance) != PROVENANCE_FIELDS:
-        errors.append("invalid-provenance-fields")
-    else:
-        if provenance.get("contains_real_data") is not spec["generator"]["contains_real_data"]:
-            errors.append("provenance-source-mismatch")
+    errors.extend(
+        provenance_errors(
+            provenance,
+            spec,
+            language=language,
+            scenario=scenario,
+        )
+    )
     text = candidate.get("input")
     if isinstance(text, str) and (EMAIL_PATTERN.search(text) or PHONE_PATTERN.search(text)):
         errors.append("possible-personal-data-pattern")
+    return errors
+
+
+def provenance_errors(
+    provenance: Any,
+    spec: dict[str, Any],
+    *,
+    language: Any,
+    scenario: Any,
+) -> list[str]:
+    """Validate that sample-level lineage agrees with the frozen generator contract.
+
+    Having the expected keys is not enough: a stale generator version or a template
+    identifier from another condition would make a record look traceable while
+    pointing at the wrong production evidence.
+    """
+
+    if not isinstance(provenance, dict) or set(provenance) != PROVENANCE_FIELDS:
+        return ["invalid-provenance-fields"]
+
+    errors: list[str] = []
+    generator = spec["generator"]
+    if provenance["generator_type"] != generator["type"]:
+        errors.append("provenance-generator-type-mismatch")
+    if provenance["generator_version"] != generator["version"]:
+        errors.append("provenance-generator-version-mismatch")
+    if provenance["contains_real_data"] is not generator["contains_real_data"]:
+        errors.append("provenance-source-mismatch")
+
+    template_id = provenance["template_id"]
+    expected_prefix = f"{language}/{scenario}/"
+    if not isinstance(template_id, str) or not template_id.startswith(expected_prefix):
+        errors.append("provenance-template-id-mismatch")
+    variables = provenance["variables"]
+    if not isinstance(variables, dict) or not variables:
+        errors.append("provenance-variables-invalid")
     return errors
 
 
@@ -402,8 +441,14 @@ def verify_records(records: list[dict[str, Any]], spec: dict[str, Any]) -> dict[
         "development_and_test_exist": {record["split"] for record in records} == {"development", "test"},
         "required_conditions_covered": actual_coverage == required_coverage,
         "all_records_marked_synthetic": all(record["synthetic"] is True for record in records),
-        "provenance_is_explicit": all(
-            set(record["provenance"]) == PROVENANCE_FIELDS for record in records
+        "provenance_matches_generator_contract": all(
+            not provenance_errors(
+                record["provenance"],
+                spec,
+                language=record["language"],
+                scenario=record["scenario"],
+            )
+            for record in records
         ),
     }
     failed = [name for name, passed in checks.items() if not passed]

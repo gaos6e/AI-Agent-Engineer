@@ -5,7 +5,12 @@ aliases:
   - 数据分析
 source: https://docs.langchain.com/oss/python/deepagents/data-analysis
 source_md: https://docs.langchain.com/oss/python/deepagents/data-analysis.md
+source_url: https://docs.langchain.com/oss/python/deepagents/data-analysis
 retrieved: 2026-05-07
+source_checked: 2026-07-21
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
 tags:
   - langchain
   - python
@@ -14,6 +19,9 @@ license: MIT
 ---
 
 # 数据分析
+
+> [!warning] 冻结参考：代码执行、文件和 Slack 都是外部能力
+> 本页是 2026-05-07 的译文快照，不能作为当前 Deep Agents API 或部署配置的保证。任何可执行代码、上传文件、网络访问、artifact 下载和 Slack 发送都必须有隔离 sandbox、最小权限凭据、输出审查、资源预算和审计；本地 shell 不应因示例存在而默认对不可信输入开放。需要实现时先核对本页 `source` 的当前版本，并把真实服务集成放在受控项目环境而非此知识库示例中。
 
 > 构建一个代理来分析数据文件、生成可视化并共享结果
 

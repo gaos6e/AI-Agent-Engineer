@@ -250,6 +250,27 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertEqual("noop", result.action)
         self.assertEqual(1, self.connection.execute("SELECT count(*) FROM tombstones").fetchone()[0])
 
+    def test_same_sequence_delete_reason_conflict_is_rejected(self) -> None:
+        self.insert_and_publish()
+        subject.delete_document(
+            self.connection,
+            "tenant-a",
+            "policy:leave",
+            2,
+            reason_code="source_deleted",
+            run_id="delete-1",
+        )
+
+        with self.assertRaisesRegex(subject.StoreError, "删除原因冲突"):
+            subject.delete_document(
+                self.connection,
+                "tenant-a",
+                "policy:leave",
+                2,
+                reason_code="user_request",
+                run_id="delete-conflict",
+            )
+
     def test_delete_for_missing_document_creates_tombstone(self) -> None:
         result = subject.delete_document(
             self.connection,
@@ -385,6 +406,101 @@ class KnowledgeStoreTests(unittest.TestCase):
         subject.project_next_event(self.connection)
         self.assertEqual(2, self.search()[0]["revision_number"])
 
+    def test_superseded_unpublished_revision_is_not_materialized(self) -> None:
+        subject.upsert_record(
+            self.connection, self.record(), self.config, run_id="run-1"
+        )
+        subject.upsert_record(
+            self.connection,
+            self.record(sequence=2, version="v2", content="请假政策第二版"),
+            self.config,
+            run_id="run-2",
+        )
+
+        subject.project_next_event(self.connection)
+
+        self.assertEqual([], self.search())
+        self.assertEqual(
+            0,
+            self.connection.execute(
+                "SELECT count(*) FROM search_revisions"
+            ).fetchone()[0],
+        )
+        subject.project_next_event(self.connection)
+        self.assertEqual(2, self.search()[0]["revision_number"])
+        self.assertEqual(
+            1,
+            self.connection.execute(
+                "SELECT count(*) FROM search_revisions"
+            ).fetchone()[0],
+        )
+
+    def test_pending_upsert_is_not_materialized_after_delete(self) -> None:
+        subject.upsert_record(
+            self.connection, self.record(), self.config, run_id="run-1"
+        )
+        subject.delete_document(
+            self.connection,
+            "tenant-a",
+            "policy:leave",
+            2,
+            reason_code="source_deleted",
+            run_id="delete-1",
+        )
+
+        subject.project_next_event(self.connection)
+
+        self.assertEqual([], self.search())
+        self.assertEqual(
+            0,
+            self.connection.execute(
+                "SELECT count(*) FROM search_revisions"
+            ).fetchone()[0],
+        )
+        subject.project_next_event(self.connection)
+        self.assertEqual(
+            1,
+            subject.purge_deleted_canonical_content(
+                self.connection, tenant_id="tenant-a", document_id="policy:leave"
+            ),
+        )
+
+    def test_outbox_revision_identity_mismatch_is_rejected_before_projection(self) -> None:
+        first = subject.upsert_record(
+            self.connection, self.record(), self.config, run_id="run-a"
+        )
+        subject.upsert_record(
+            self.connection,
+            self.record(
+                tenant="tenant-b",
+                document="policy:other",
+                content="其他租户文档",
+            ),
+            self.config,
+            run_id="run-b",
+        )
+        other_revision_id = self.connection.execute(
+            "SELECT revision_id FROM revisions WHERE tenant_id = 'tenant-b'"
+        ).fetchone()[0]
+        self.connection.execute(
+            "UPDATE outbox SET revision_id = ? WHERE event_id = ?",
+            (other_revision_id, first.event_id),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "身份不一致"):
+            subject.project_next_event(self.connection)
+
+        self.assertEqual(
+            0,
+            self.connection.execute(
+                "SELECT count(*) FROM search_revisions"
+            ).fetchone()[0],
+        )
+        event = self.connection.execute(
+            "SELECT processed FROM outbox WHERE event_id = ?", (first.event_id,)
+        ).fetchone()
+        self.assertEqual(0, event["processed"])
+
     def test_reconcile_reports_pending_then_passes_after_drain(self) -> None:
         subject.upsert_record(self.connection, self.record(), self.config, run_id="run-1")
 
@@ -394,6 +510,153 @@ class KnowledgeStoreTests(unittest.TestCase):
         report = subject.require_reconciled(self.connection)
         self.assertEqual(0, report["pending_events"])
         self.assertEqual(0, report["missing_published_projection"])
+
+    def test_reconcile_recomputes_canonical_body_hash(self) -> None:
+        self.insert_and_publish()
+        self.connection.execute(
+            "UPDATE revisions SET content = 'tampered canonical body'"
+        )
+
+        report = subject.reconcile(self.connection)
+        self.assertEqual(1, report["canonical_content_hash_mismatch"])
+        with self.assertRaisesRegex(
+            subject.StoreError, "canonical_content_hash_mismatch"
+        ):
+            subject.require_reconciled(self.connection)
+
+    def test_reconcile_recomputes_search_body_hash(self) -> None:
+        self.insert_and_publish()
+        self.connection.execute(
+            "UPDATE search_revisions SET content = 'tampered search body'"
+        )
+
+        report = subject.reconcile(self.connection)
+        self.assertEqual(1, report["search_content_hash_mismatch"])
+        with self.assertRaisesRegex(subject.StoreError, "search_content_hash_mismatch"):
+            subject.require_reconciled(self.connection)
+
+    def test_query_fails_closed_on_search_body_tamper(self) -> None:
+        self.insert_and_publish()
+        self.connection.execute(
+            "UPDATE search_revisions SET content = '请假敏感投影'"
+        )
+
+        with self.assertRaisesRegex(subject.StoreError, "search_content_hash_mismatch"):
+            self.search(term="敏感")
+
+    def test_query_fails_closed_on_projection_acl_grant_tamper(self) -> None:
+        self.insert_and_publish(self.record(groups=("admins",), content="内部安全策略"))
+        revision_id = self.connection.execute(
+            "SELECT published_revision_id FROM documents"
+        ).fetchone()[0]
+        self.connection.execute(
+            "INSERT INTO search_acl(revision_id, group_id) VALUES (?, 'guests')",
+            (revision_id,),
+        )
+
+        self.assertEqual([], self.search(groups=("guests",), term="安全"))
+        report = subject.reconcile(self.connection)
+        self.assertEqual(1, report["published_acl_mismatch"])
+        with self.assertRaisesRegex(subject.StoreError, "published_acl_mismatch"):
+            subject.require_reconciled(self.connection)
+
+    def test_unauthorized_candidates_do_not_consume_query_limit(self) -> None:
+        subject.upsert_record(
+            self.connection,
+            self.record(
+                document="a-private",
+                content="共享检索词 私有正文",
+                groups=("admins",),
+            ),
+            self.config,
+            run_id="private",
+        )
+        subject.upsert_record(
+            self.connection,
+            self.record(
+                document="z-public",
+                content="共享检索词 公开正文",
+                groups=("employees",),
+            ),
+            self.config,
+            run_id="public",
+        )
+        subject.drain_outbox(self.connection)
+
+        result = subject.search_visible(
+            self.connection,
+            tenant_id="tenant-a",
+            subject_groups=("employees",),
+            term="共享检索词",
+            limit=1,
+        )
+        self.assertEqual(["z-public"], [item["document_id"] for item in result])
+        self.assertNotIn("私有正文", json.dumps(result, ensure_ascii=False))
+
+    def test_query_recomputes_canonical_acl_state_hash(self) -> None:
+        self.insert_and_publish(self.record(groups=("admins",), content="内部安全策略"))
+        revision_id = self.connection.execute(
+            "SELECT published_revision_id FROM documents"
+        ).fetchone()[0]
+        for table in ("revision_acl", "search_acl"):
+            self.connection.execute(
+                f"DELETE FROM {table} WHERE revision_id = ?", (revision_id,)
+            )
+            self.connection.execute(
+                f"INSERT INTO {table}(revision_id, group_id) VALUES (?, 'guests')",
+                (revision_id,),
+            )
+
+        with self.assertRaisesRegex(
+            subject.StoreError, "canonical_source_state_hash_mismatch"
+        ):
+            self.search(groups=("guests",), term="安全")
+        report = subject.reconcile(self.connection)
+        self.assertEqual(1, report["canonical_source_state_hash_mismatch"])
+
+    def test_reconcile_recomputes_build_state_hash(self) -> None:
+        self.insert_and_publish()
+        self.connection.execute(
+            "UPDATE revisions SET pipeline_version = 'tampered-pipeline'"
+        )
+
+        report = subject.reconcile(self.connection)
+        self.assertEqual(1, report["canonical_build_state_hash_mismatch"])
+        with self.assertRaisesRegex(
+            subject.StoreError, "canonical_build_state_hash_mismatch"
+        ):
+            subject.require_reconciled(self.connection)
+
+    def test_query_and_acl_resource_limits_fail_closed(self) -> None:
+        oversized_groups = tuple(
+            f"g-{index}" for index in range(subject.MAX_ACL_GROUPS + 1)
+        )
+        with self.assertRaisesRegex(subject.StoreError, "allowed_groups"):
+            subject.upsert_record(
+                self.connection,
+                self.record(groups=oversized_groups),
+                self.config,
+                run_id="too-many-acl-groups",
+            )
+        with self.assertRaisesRegex(subject.StoreError, "subject_groups"):
+            self.search(groups=oversized_groups)
+
+        self.insert_and_publish()
+        subject.upsert_record(
+            self.connection,
+            self.record(document="policy:second"),
+            self.config,
+            run_id="run-2",
+        )
+        subject.drain_outbox(self.connection)
+        with self.assertRaisesRegex(subject.StoreError, "候选窗口"):
+            subject.search_visible(
+                self.connection,
+                tenant_id="tenant-a",
+                subject_groups=("employees",),
+                term="请假",
+                limit=1,
+            )
 
     def test_reconcile_rejects_active_document_with_no_publish_path(self) -> None:
         subject.upsert_record(self.connection, self.record(), self.config, run_id="run-1")
@@ -499,6 +762,10 @@ class KnowledgeStoreTests(unittest.TestCase):
             set(schema["required"]),
         )
         self.assertEqual(100000, schema["properties"]["content"]["x-maxUtf8Bytes"])
+        self.assertEqual(
+            subject.MAX_ACL_GROUPS,
+            schema["properties"]["allowed_groups"]["maxItems"],
+        )
 
     def test_main_output_is_deterministic_json_with_reconciled_state(self) -> None:
         first = io.StringIO()

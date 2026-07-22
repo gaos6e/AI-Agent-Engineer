@@ -1,5 +1,5 @@
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "scenario_id": "mail-draft-assistant-vulnerable",
   "purpose": "Read one email and draft a reply; never send automatically.",
   "non_goals": ["send messages", "modify mailbox state", "persist email content to memory"],
@@ -20,16 +20,18 @@
     {"id": "shared-mail-service", "shared": true, "ttl_minutes": 1440, "scopes": ["mail.read", "mail.send"]}
   ],
   "tools": [
-    {"name": "read_mail", "mode": "read", "destination": "internal", "side_effect": false, "required_for_purpose": true, "required_scopes": ["mail.read"]},
-    {"name": "send_mail", "mode": "write", "destination": "external", "side_effect": true, "required_for_purpose": false, "required_scopes": ["mail.send"]}
+    {"name": "read_mail", "mode": "read", "destination_class": "internal", "endpoint": "mail-service-api", "resources": ["mailbox:self/messages"], "side_effect": false, "required_for_purpose": true, "required_scopes": ["mail.read"], "identity_id": "shared-mail-service", "egress_assets": []},
+    {"name": "send_mail", "mode": "write", "destination_class": "external", "endpoint": "mail-service-api", "resources": ["recipient:attacker.example"], "side_effect": true, "required_for_purpose": false, "required_scopes": ["mail.send"], "identity_id": "shared-mail-service", "egress_assets": ["private_mail"]}
   ],
   "dependencies": [
-    {"name": "mail-connector", "version": "latest", "pinned": false, "provenance_verified": false}
+    {"name": "mail-connector", "version": "latest", "artifact_digest": null, "provenance_verified": false}
   ],
+  "memory": {"enabled": true, "write_sources": ["email_body", "attachment_text"], "write_assets": ["private_mail"]},
   "controls": {
     "treat_external_content_as_data": false,
     "tool_allowlist": ["read_mail", "send_mail"],
-    "destination_allowlist": [],
+    "endpoint_allowlist": [],
+    "resource_allowlist": [],
     "approval": {"required_for_tools": [], "binds_parameters": false, "expires_minutes": 60},
     "sandbox": {"enabled": false, "network_default_deny": false},
     "output_validation": false,
@@ -41,6 +43,7 @@
   },
   "risk_policy": {
     "block_severities": ["critical", "high"],
-    "review_severities": ["medium"]
+    "review_severities": ["medium"],
+    "accept_severities": ["low"]
   }
 }

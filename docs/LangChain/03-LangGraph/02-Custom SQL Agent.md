@@ -5,7 +5,12 @@ aliases:
   - 自定义 SQL 代理
 source: https://docs.langchain.com/oss/python/langgraph/sql-agent
 source_md: https://docs.langchain.com/oss/python/langgraph/sql-agent.md
+source_url: https://docs.langchain.com/oss/python/langgraph/sql-agent
 retrieved: 2026-05-07
+source_checked: 2026-07-21
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
 tags:
   - langchain
   - python
@@ -14,6 +19,9 @@ license: MIT
 ---
 
 # 自定义 SQL 代理
+
+> [!warning] 冻结参考：显式节点不等于安全 SQL 执行
+> 本页快照于 2026-05-07；其中 provider、模型和图 API 均须以 `source` 的当前文档重新核验。即使图上有查询检查或人工节点，模型生成的 SQL 仍是不可信输入：数据库连接必须最小权限/只读，服务端必须限制对象、语法、成本和结果大小，并对高风险动作应用审批、幂等和审计。不要在笔记或脚本中写入真实 API key、数据库连接串或生产数据。
 
 在本教程中，我们将构建一个自定义代理，它可以使用 LangGraph 回答有关 SQL 数据库的问题。
 
@@ -179,7 +187,7 @@ from langchain.chat_models import init_chat_model
 # 参考链接：https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 
 model = init_chat_model(
-    "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "anthropic.claude-sonnet-4-6",
     model_provider="bedrock_converse",
 )
 ```
@@ -188,7 +196,7 @@ model = init_chat_model(
 from langchain_aws import ChatBedrock
 
 # 这里创建具体 provider 的聊天模型对象；保留 provider 名称，便于和官方文档对照。
-model = ChatBedrock(model="anthropic.claude-3-5-sonnet-20240620-v1:0")
+model = ChatBedrock(model="anthropic.claude-sonnet-4-6")
 ```
 #### Hugging Face
 👉 阅读 [HuggingFace 聊天模型集成文档](https://docs.langchain.com/oss/python/integrations/chat/huggingface/)

@@ -501,6 +501,26 @@ body[data-slug="404"] .popover-hint {
   color: #000;
 }
 
+// Mermaid's expand affordance must remain discoverable on touch devices,
+// where :hover is unavailable.  Keep a WCAG-sized target and a visible focus
+// ring even when the upstream plugin defaults to opacity: 0.
+pre > .expand-button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+pre > .expand-button:focus-visible {
+  opacity: 1;
+  outline: 3px solid var(--aae-ink);
+  outline-offset: 2px;
+}
+
+@media (hover: none), (max-width: 800px) {
+  pre > .expand-button {
+    opacity: 1;
+  }
+}
+
 @media (max-width: 1200px) {
   .page > #quartz-body {
     column-gap: 1rem;

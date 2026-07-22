@@ -7,7 +7,7 @@ tags:
   - crewai
   - tools
   - structured-output
-source_checked: 2026-07-14
+source_checked: 2026-07-21
 ---
 
 # Tools 边界与结构化输出
@@ -41,23 +41,27 @@ source_checked: 2026-07-14
 官方 Tools 页面给出两种主要方法：继承 `BaseTool` 并声明 Pydantic `args_schema`，或使用 `@tool` 装饰函数。以下是用于阅读的最小形状，未在本库真实安装环境执行：
 
 ```python
-from typing import Type
-from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
+from typing import Type  # 为 args_schema 的类对象声明类型。
+from crewai.tools import BaseTool  # 导入 CrewAI 自定义工具的基类。
+from pydantic import BaseModel, Field  # 用 Pydantic 定义并约束工具输入。
 
-class LocalSearchInput(BaseModel):
-    topic: str = Field(min_length=1, max_length=120)
+class LocalSearchInput(BaseModel):  # 声明工具只接受经过类型与长度校验的参数。
+    topic: str = Field(min_length=1, max_length=120)  # 拒绝空主题和异常长的输入。
 
-class LocalSearchTool(BaseTool):
-    name: str = "search_approved_local_sources"
-    description: str = "Search only the approved local source catalog."
-    args_schema: Type[BaseModel] = LocalSearchInput
+class LocalSearchTool(BaseTool):  # 实现一个只读、边界清晰的本地检索工具。
+    name: str = "search_approved_local_sources"  # 使用单一动作名称，避免模糊的万能工具。
+    description: str = "Search only the approved local source catalog."  # 向模型说明允许的数据范围。
+    args_schema: Type[BaseModel] = LocalSearchInput  # 绑定上方 schema，让运行时先验证输入。
 
-    def _run(self, topic: str) -> str:
-        return search_catalog(topic)
+    def _run(self, topic: str) -> str:  # 定义同步执行入口；真实实现还需授权与审计。
+        return search_catalog(topic)  # 只调用应用控制的来源目录检索函数。
 ```
 
 `search_catalog` 是你自己的受控实现。返回 JSON 字符串前要明确 schema；不要在异常中泄露文件系统、凭据或服务端堆栈。官方页面也展示同步/异步工具和 `cache_function`，但缓存只能用于确认可复用的读操作，不能缓存付款、发送等副作用结果。
+
+## 异步工具不改变提交语义
+
+当前官方 Tools 页面同时支持 `async def` 的 `@tool` 函数和异步 `_run`。这解决的是调用方等待网络、文件 I/O 时不阻塞其他协程；它**不**证明远端请求在超时或 cancellation 后没有完成。对写操作，取消、连接断开或超时都应进入 `unknown_commit`，先按幂等键查询回执，而不是因为函数被取消就安全重发。并发还会放大共享额度、同一资源竞争和日志关联问题，因此每次调用都要带稳定的 operation ID、deadline 和审计关联 ID。
 
 ## 读写工具分离
 
@@ -82,21 +86,21 @@ class LocalSearchTool(BaseTool):
 概念示例：
 
 ```python
-from pydantic import BaseModel
-from crewai import Task
+from pydantic import BaseModel  # 导入结构化输出模型的基类。
+from crewai import Task  # 导入用于声明任务输出合同的 Task。
 
-class Claim(BaseModel):
-    text: str
-    source_ids: list[str]
+class Claim(BaseModel):  # 表示一条需要可追溯来源的研究断言。
+    text: str  # 保存断言正文；事实正确性还需外部检查。
+    source_ids: list[str]  # 保存支撑该断言的稳定来源标识列表。
 
-class ResearchResult(BaseModel):
-    claims: list[Claim]
-    unknowns: list[str]
+class ResearchResult(BaseModel):  # 定义研究任务的整体结构化结果。
+    claims: list[Claim]  # 收集所有带来源的断言对象。
+    unknowns: list[str]  # 显式记录证据不足，避免模型补造结论。
 
-task = Task(
-    description="Extract claims only from approved sources.",
-    expected_output="Claims with source IDs plus explicit unknowns.",
-    output_pydantic=ResearchResult,
+task = Task(  # 创建一项按 Pydantic 模型验收输出的研究任务。
+    description="Extract claims only from approved sources.",  # 限定可使用的证据边界。
+    expected_output="Claims with source IDs plus explicit unknowns.",  # 用自然语言补充模型应遵守的结果要求。
+    output_pydantic=ResearchResult,  # 要求框架将结果解析为上方的结构化模型。
 )
 ```
 
@@ -129,6 +133,13 @@ task = Task(
   }
 }
 ```
+
+字段阅读：
+
+- `ok` 是调用是否成功的机器可读总开关，失败时下游不应继续当作正常结果。
+- `error.category` 是稳定错误类别，决定是否可以重试或必须转人工。
+- `error.retryable` 让重试策略不必从自然语言错误消息中猜测。
+- `error.message` 面向调用方说明失败原因；生产环境应避免包含凭据、路径或内部堆栈。
 
 ## 外部内容是不可信数据
 
@@ -167,7 +178,7 @@ task = Task(
 
 ## 参考资料
 
-- [CrewAI Tools](https://docs.crewai.com/en/concepts/tools)（页面标签 `v1.14.0`；核对：2026-07-14）
+- [CrewAI Tools](https://docs.crewai.com/en/concepts/tools)（动态文档；同步/异步工具与缓存边界核对：2026-07-21）
 - [CrewAI Tasks](https://docs.crewai.com/en/concepts/tasks)（页面标签 `v1.12.1`；核对：2026-07-14）
 - [CrewAI Agents](https://docs.crewai.com/en/concepts/agents)（页面标签 `v1.14.6`；核对：2026-07-14）
 - [[Agentic Design Patterns/00-初学者路线/04-工具记忆与状态边界|工具、记忆与状态边界]]

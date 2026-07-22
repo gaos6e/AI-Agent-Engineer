@@ -50,6 +50,99 @@
   min-height: 0;
 }
 
+.aae-course-nav__tracks {
+  margin: 0 0 1.2rem;
+  padding: 0 0.85rem 0.85rem 0.2rem;
+  border-bottom: 1px solid var(--aae-hairline);
+}
+
+.aae-course-nav__tracks > h2,
+.aae-course-nav__catalog-label {
+  margin: 0 0 0.5rem;
+  color: var(--aae-ink-soft);
+  font: 700 0.7rem/1.2 var(--aae-font-mono);
+  letter-spacing: 0.08em;
+}
+
+.aae-course-nav__catalog-label {
+  padding: 0 0.85rem 0.25rem 0.2rem;
+}
+
+.aae-course-nav__track {
+  border-top: 1px solid var(--aae-hairline);
+}
+
+.aae-course-nav__track:last-child {
+  border-bottom: 1px solid var(--aae-hairline);
+}
+
+.aae-course-nav__track > summary {
+  display: grid;
+  min-height: 2.55rem;
+  grid-template-columns: 0.8rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--aae-radius-sm);
+  color: var(--aae-ink-soft);
+}
+
+.aae-course-nav__track > summary:hover {
+  background: var(--aae-surface-soft);
+  color: var(--aae-ink);
+}
+
+.aae-course-nav__track > summary > strong {
+  color: var(--aae-ink);
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.aae-course-nav__track > ol {
+  padding: 0.15rem 0 0.55rem 1.2rem !important;
+}
+
+.aae-course-nav__track li > a {
+  display: grid;
+  min-height: 2.15rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: var(--aae-radius-sm);
+  color: var(--aae-ink-soft);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.aae-course-nav__track li > a:hover {
+  background: var(--aae-surface-soft);
+  color: var(--aae-ink);
+}
+
+.aae-course-nav__track li > a > strong {
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aae-course-nav__track li > a > span {
+  padding: 0.2rem 0.38rem;
+  border-radius: 999px;
+  background: var(--aae-surface-soft);
+  font: 700 0.62rem/1 var(--aae-font-mono);
+}
+
+.aae-course-nav__track li > a > span[data-track-kind="core"] {
+  background: color-mix(in srgb, var(--aae-lilac) 72%, var(--aae-canvas));
+  color: #000;
+}
+
+.aae-course-nav__track li > a > span[data-track-kind="optional"] {
+  opacity: 0.72;
+}
+
 .aae-course-nav details,
 .aae-course-nav ol,
 .aae-course-nav li {
@@ -362,6 +455,7 @@
 
   .aae-course-nav__course > summary,
   .aae-course-nav__overview,
+  .aae-course-nav__track li > a,
   .aae-course-nav__folder > details > summary,
   .aae-course-nav__page > a {
     min-height: 2.75rem;

@@ -6,7 +6,7 @@ aliases:
 tags:
   - MCP
   - 调试
-source_checked: 2026-07-14
+source_checked: 2026-07-19
 ---
 
 # MCP Inspector、调试与版本管理
@@ -46,7 +46,7 @@ source_checked: 2026-07-14
 官方文档在 2026-07-14 给出的通用形式是：
 
 ```powershell
-npx @modelcontextprotocol/inspector <server-command> <arg1> <arg2>
+npx @modelcontextprotocol/inspector "<server-command>" "<arg1>" "<arg2>" # 由 npx 启动 Inspector；尖括号占位符必须替换为已核对的真实 server 命令与参数。
 ```
 
 例如检查本地 Python server，可把最后部分替换为项目 README 中真实、已核对的启动命令。不要直接复制未知包名或示例路径。`npx` 可能联网下载依赖并执行代码；在企业或敏感环境中先审查包、版本与来源，必要时固定版本并在隔离环境运行。
@@ -129,10 +129,10 @@ capability_decision, duration_ms, outcome, retry_or_cancel
 | --- | --- | --- | --- |
 | initialize | 支持的版本与能力 | 不支持版本/缺能力 | 双方 version/capability |
 | tools | 合法参数 | 缺参、错类型、未知字段 | schema、result/error |
-| resources | 列表/读取 | 无效 URI、越界、超大内容 | URI、MIME、大小限制 |
+| resources | list/read/templates、成功订阅→updated→重读→unsubscribe | 无效 URI/template/cursor/Base64、越界、总量超限、缺 sub-capability、失败订阅、撤销后旧通知 | URI/MIME/大小、capability、订阅状态、脱敏授权决策 |
 | prompts | 合法参数 | 缺失参数 | 返回 messages 与来源 |
 | notifications | 声明后收到 | 未声明 sub-capability | 方向与方法 |
-| 安全 | 测试账户允许 | 无权限用户、高风险拒绝 | 授权决策与脱敏审计 |
+| 安全 | 测试账户允许 | 错 audience/resource/tenant/scope、失效 token、旧授权修订、Roots 冒充 ACL | 授权决策与脱敏审计 |
 
 涉及 sampling、elicitation、roots 或 Tasks 时，Inspector/host 是否实现 client features 会随工具版本变化。没有观察到相应 UI 或消息时，应记录“当前工具未验证”，不要推断协议不存在。
 

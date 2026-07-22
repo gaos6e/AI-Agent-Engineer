@@ -17,16 +17,26 @@ XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
 LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 TOP_FIELDS = {"schema_version", "policy", "requests"}
 POLICY_FIELDS = {
+    "policy_revision",
     "max_characters",
-    "allowed_voices",
+    "voice_catalog",
     "allowed_rates",
     "allowed_emphasis",
+    "disclosure_required",
+}
+VOICE_PROFILE_FIELDS = {
+    "voice_id",
+    "supported_locales",
+    "allowed_purposes",
+    "authorization_reference",
 }
 REQUEST_FIELDS = {
-    "request_id",
+    "operation_id",
     "locale",
     "voice_id",
     "source_text",
+    "source_revision",
+    "acl_reference",
     "rate",
     "emphasis",
     "purpose",
@@ -81,12 +91,46 @@ def _validate_string_list(value: Any, *, context: str) -> list[str]:
     return value
 
 
+def _validate_voice_catalog(value: Any) -> dict[str, dict[str, Any]]:
+    """Validate the local policy catalogue, not any supplier's voice directory."""
+    if not isinstance(value, list) or not value:
+        raise FixtureError("policy.voice_catalog must be a non-empty array")
+    catalog: dict[str, dict[str, Any]] = {}
+    for index, raw_profile in enumerate(value):
+        context = f"policy.voice_catalog[{index}]"
+        profile = _require_exact_fields(
+            raw_profile, VOICE_PROFILE_FIELDS, context=context
+        )
+        for field in ("voice_id", "authorization_reference"):
+            if not isinstance(profile[field], str) or not profile[field].strip():
+                raise FixtureError(f"{context}.{field} must be a non-empty string")
+        locales = _validate_string_list(
+            profile["supported_locales"], context=f"{context}.supported_locales"
+        )
+        if any(not LOCALE_PATTERN.fullmatch(locale) for locale in locales):
+            raise FixtureError(
+                f"{context}.supported_locales must use the documented BCP 47 teaching subset"
+            )
+        _validate_string_list(
+            profile["allowed_purposes"], context=f"{context}.allowed_purposes"
+        )
+        voice_id = profile["voice_id"]
+        if voice_id in catalog:
+            raise FixtureError("policy.voice_catalog voice_id values must be unique")
+        catalog[voice_id] = profile
+    return catalog
+
+
 def validate_fixture(payload: Any) -> dict[str, Any]:
     """Validate schema and types; allowlist findings are evaluated separately."""
     root = _require_exact_fields(payload, TOP_FIELDS, context="fixture")
-    if root["schema_version"] != "1.0":
-        raise FixtureError("schema_version must be '1.0'")
+    if root["schema_version"] != "1.1":
+        raise FixtureError("schema_version must be '1.1'")
     policy = _require_exact_fields(root["policy"], POLICY_FIELDS, context="policy")
+    if not isinstance(policy["policy_revision"], str) or not policy[
+        "policy_revision"
+    ].strip():
+        raise FixtureError("policy.policy_revision must be a non-empty string")
     max_characters = policy["max_characters"]
     if (
         not isinstance(max_characters, int)
@@ -94,11 +138,13 @@ def validate_fixture(payload: Any) -> dict[str, Any]:
         or max_characters <= 0
     ):
         raise FixtureError("policy.max_characters must be a positive integer")
-    _validate_string_list(policy["allowed_voices"], context="policy.allowed_voices")
+    _validate_voice_catalog(policy["voice_catalog"])
     _validate_string_list(policy["allowed_rates"], context="policy.allowed_rates")
     _validate_string_list(
         policy["allowed_emphasis"], context="policy.allowed_emphasis"
     )
+    if not isinstance(policy["disclosure_required"], bool):
+        raise FixtureError("policy.disclosure_required must be a boolean")
 
     requests = root["requests"]
     if not isinstance(requests, list) or not requests:
@@ -194,59 +240,80 @@ def validate_generated_ssml(ssml: str) -> list[str]:
 
 
 def build_plan(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Build auditable plans; this function never calls a TTS engine."""
+    """Build auditable plans; this function never calls TTS or an ACL service."""
     validate_fixture(payload)
     errors: list[str] = []
     plans: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     policy = payload["policy"]
-    allowed_voices = set(policy["allowed_voices"])
+    voice_catalog = _validate_voice_catalog(policy["voice_catalog"])
     allowed_rates = set(policy["allowed_rates"])
     allowed_emphasis = set(policy["allowed_emphasis"])
 
     for request in payload["requests"]:
-        request_id = request["request_id"]
+        operation_id = request["operation_id"]
         item_errors: list[str] = []
-        if request_id in seen_ids:
-            item_errors.append(f"duplicate request_id: {request_id}")
-        seen_ids.add(request_id)
-        if request["voice_id"] not in allowed_voices:
-            item_errors.append(f"{request_id}: voice_id is not allowed")
+        if operation_id in seen_ids:
+            item_errors.append(f"duplicate operation_id: {operation_id}")
+        seen_ids.add(operation_id)
+        voice_profile = voice_catalog.get(request["voice_id"])
+        if voice_profile is None:
+            item_errors.append(f"{operation_id}: voice_id is not allowed")
+        else:
+            if request["locale"] not in voice_profile["supported_locales"]:
+                item_errors.append(f"{operation_id}: locale is not supported by voice_id")
+            if request["purpose"] not in voice_profile["allowed_purposes"]:
+                item_errors.append(f"{operation_id}: purpose is not allowed for voice_id")
+            if (
+                request["authorization_reference"]
+                != voice_profile["authorization_reference"]
+            ):
+                item_errors.append(
+                    f"{operation_id}: authorization_reference does not match voice policy"
+                )
         if request["rate"] not in allowed_rates:
-            item_errors.append(f"{request_id}: rate is not allowed")
+            item_errors.append(f"{operation_id}: rate is not allowed")
         if request["emphasis"] not in allowed_emphasis:
-            item_errors.append(f"{request_id}: emphasis is not allowed")
+            item_errors.append(f"{operation_id}: emphasis is not allowed")
         if len(request["source_text"]) > policy["max_characters"]:
-            item_errors.append(f"{request_id}: source_text exceeds max_characters")
+            item_errors.append(f"{operation_id}: source_text exceeds max_characters")
 
         ssml = build_ssml(request)
         item_errors.extend(
-            f"{request_id}: {message}" for message in validate_generated_ssml(ssml)
+            f"{operation_id}: {message}" for message in validate_generated_ssml(ssml)
         )
         errors.extend(item_errors)
         plans.append(
             {
-                "request_id": request_id,
+                "operation_id": operation_id,
                 "locale": request["locale"],
                 "voice_id": request["voice_id"],
                 "purpose": request["purpose"],
+                "source_revision": request["source_revision"],
+                "acl_reference": request["acl_reference"],
                 "authorization_reference": request["authorization_reference"],
+                "policy_revision": policy["policy_revision"],
+                "disclosure_required": policy["disclosure_required"],
                 "source_text_sha256": hashlib.sha256(
                     request["source_text"].encode("utf-8")
                 ).hexdigest(),
-                "ssml": ssml,
+                "ssml_sha256": hashlib.sha256(ssml.encode("utf-8")).hexdigest(),
+                "ssml_profile": "ssml-1.1-teaching-subset-v1",
                 "generation_status": "not_generated",
                 "plan_valid": not item_errors,
             }
         )
 
     return {
-        "plan_schema_version": "1.0",
+        "plan_schema_version": "1.1",
         "source_schema_version": payload["schema_version"],
         "items": plans,
         "audio_generated": False,
+        "source_text_exposed": False,
         "notes": [
             "synthetic plan and portable SSML subset only",
+            "no raw source text or SSML is printed in the plan",
+            "acl_reference is structurally recorded only; object authorization was not evaluated",
             "no audio, network, external resource, model, or TTS service was used",
         ],
     }, errors

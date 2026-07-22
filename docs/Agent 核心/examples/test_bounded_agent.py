@@ -17,7 +17,9 @@ from bounded_agent import (
     DeterministicPolicy,
     IdempotencyConflict,
     OfflineToolHost,
+    PermanentToolError,
     SimulatedCrash,
+    TransientToolError,
     canonical_json,
     make_approval,
     run_demo,
@@ -72,6 +74,23 @@ class HappyPathTests(unittest.TestCase):
         self.assertEqual(result.phase, "completed")
         self.assertEqual(host.close_count, 1)
 
+    def test_resume_executes_frozen_action_without_calling_policy(self) -> None:
+        host, runtime, state = paused_run()
+
+        class MustNotRunPolicy:
+            calls = 0
+
+            def propose(self, state: AgentState) -> ActionProposal:
+                self.calls += 1
+                raise AssertionError("a waiting approval must execute the frozen action")
+
+        policy = MustNotRunPolicy()
+        runtime.policy = policy
+        result = runtime.run(state, approvals=[make_approval(state)])
+        self.assertEqual(result.phase, "completed")
+        self.assertEqual(policy.calls, 0)
+        self.assertEqual(host.close_count, 1)
+
     def test_completion_contains_external_receipt(self) -> None:
         _, runtime, state = paused_run()
         result = runtime.run(state, approvals=[make_approval(state)])
@@ -94,8 +113,27 @@ class HappyPathTests(unittest.TestCase):
 
     def test_no_approval_keeps_safe_pause(self) -> None:
         host, runtime, state = paused_run()
+        initial_step = state.step
         result = runtime.run(state)
         self.assertEqual(result.phase, "waiting_approval")
+        self.assertEqual(result.step, initial_step)
+        self.assertEqual(host.close_count, 0)
+
+    def test_already_closed_ticket_completes_without_a_write(self) -> None:
+        host = OfflineToolHost(
+            tickets={
+                "ticket-7": {
+                    "status": "closed",
+                    "customer_note": "already handled",
+                }
+            }
+        )
+        result = BoundedAgentRuntime(host).run(
+            AgentState(run_id="r", ticket_id="ticket-7")
+        )
+        self.assertEqual(result.phase, "completed")
+        self.assertEqual(result.stop_reason, "already_satisfied")
+        self.assertEqual(result.completed_action_ids, ["lookup-current-ticket"])
         self.assertEqual(host.close_count, 0)
 
 
@@ -113,7 +151,11 @@ class ApprovalTests(unittest.TestCase):
     def test_stale_state_version_rejects_approval(self) -> None:
         host, runtime, state = paused_run()
         approval = make_approval(state)
-        state.state_version += 1
+        state.transition(
+            "waiting_approval",
+            "external_state_changed",
+            {"reason": "test"},
+        )
         result = runtime.run(state, approvals=[approval])
         self.assertEqual(result.phase, "waiting_approval")
         self.assertEqual(result.stop_reason, "invalid_approval")
@@ -130,16 +172,62 @@ class ApprovalTests(unittest.TestCase):
     def test_wrong_fingerprint_is_rejected(self) -> None:
         host, runtime, state = paused_run()
         valid = make_approval(state)
-        wrong = Approval(valid.action_id, "0" * 64, valid.state_version, "approve", valid.expires_after_step)
+        wrong = Approval(
+            valid.action_id,
+            "0" * 64,
+            valid.state_version,
+            "approve",
+            valid.expires_after_step,
+            valid.scope,
+        )
         result = runtime.run(state, approvals=[wrong])
         self.assertEqual(result.phase, "waiting_approval")
+        self.assertEqual(host.close_count, 0)
+
+    def test_wrong_scope_is_rejected(self) -> None:
+        host, runtime, state = paused_run()
+        valid = make_approval(state)
+        wrong = Approval(
+            valid.action_id,
+            valid.action_fingerprint,
+            valid.state_version,
+            valid.decision,
+            valid.expires_after_step,
+            "ticket-8",
+        )
+        result = runtime.run(state, approvals=[wrong])
+        self.assertEqual(result.phase, "waiting_approval")
+        self.assertEqual(result.stop_reason, "invalid_approval")
         self.assertEqual(host.close_count, 0)
 
     def test_unknown_decision_is_rejected(self) -> None:
         host, runtime, state = paused_run()
         valid = make_approval(state)
-        wrong = Approval(valid.action_id, valid.action_fingerprint, valid.state_version, "maybe", valid.expires_after_step)
+        wrong = Approval(
+            valid.action_id,
+            valid.action_fingerprint,
+            valid.state_version,
+            "maybe",
+            valid.expires_after_step,
+            valid.scope,
+        )
         result = runtime.run(state, approvals=[wrong])
+        self.assertEqual(result.stop_reason, "invalid_approval")
+        self.assertEqual(host.close_count, 0)
+
+    def test_malformed_approval_expiry_is_rejected_without_crashing(self) -> None:
+        host, runtime, state = paused_run()
+        valid = make_approval(state)
+        malformed = Approval(
+            valid.action_id,
+            valid.action_fingerprint,
+            valid.state_version,
+            valid.decision,
+            "tomorrow",  # type: ignore[arg-type]
+            valid.scope,
+        )
+        result = runtime.run(state, approvals=[malformed])
+        self.assertEqual(result.phase, "waiting_approval")
         self.assertEqual(result.stop_reason, "invalid_approval")
         self.assertEqual(host.close_count, 0)
 
@@ -165,6 +253,7 @@ class ApprovalTests(unittest.TestCase):
         host, runtime, state = paused_run()
         result = runtime.run(state, cancel_requested=True)
         self.assertEqual(result.phase, "cancelled")
+        self.assertIsNone(result.pending_action)
         self.assertEqual(host.close_count, 0)
 
 
@@ -232,10 +321,69 @@ class CheckpointTests(unittest.TestCase):
         with self.assertRaisesRegex(CheckpointError, "duplicates"):
             AgentState.restore(changed_checkpoint(state, completed_action_ids=duplicate))
 
+    def test_non_string_completed_action_id_is_rejected(self) -> None:
+        _, _, state = paused_run()
+        with self.assertRaisesRegex(CheckpointError, "non-empty strings"):
+            AgentState.restore(changed_checkpoint(state, completed_action_ids=[{}]))
+
     def test_malformed_pending_action_is_checkpoint_error(self) -> None:
         _, _, state = paused_run()
         with self.assertRaisesRegex(CheckpointError, "pending action fields"):
             AgentState.restore(changed_checkpoint(state, pending_action={"tool": "close_ticket"}))
+
+    def test_waiting_checkpoint_requires_a_pending_action(self) -> None:
+        _, _, state = paused_run()
+        with self.assertRaisesRegex(CheckpointError, "requires pending_action"):
+            AgentState.restore(changed_checkpoint(state, pending_action=None))
+
+    def test_pending_action_is_forbidden_outside_waiting_phase(self) -> None:
+        _, _, state = paused_run()
+        with self.assertRaisesRegex(CheckpointError, "only valid while waiting"):
+            AgentState.restore(changed_checkpoint(state, phase="observed"))
+
+    def test_waiting_checkpoint_requires_prior_lookup_evidence(self) -> None:
+        _, _, state = paused_run()
+        with self.assertRaisesRegex(CheckpointError, "prior lookup"):
+            AgentState.restore(
+                changed_checkpoint(
+                    state,
+                    completed_action_ids=[],
+                    observations=[],
+                )
+            )
+
+    def test_waiting_checkpoint_requires_a_bound_lookup_observation(self) -> None:
+        _, _, state = paused_run()
+        malformed_observations = copy.deepcopy(state.observations)
+        malformed_observations[0]["source"] = "tool:another_lookup"
+        with self.assertRaisesRegex(CheckpointError, "prior lookup evidence"):
+            AgentState.restore(
+                changed_checkpoint(state, observations=malformed_observations)
+            )
+
+    def test_waiting_checkpoint_requires_the_bound_close_action(self) -> None:
+        _, _, state = paused_run()
+        malformed_action = copy.deepcopy(state.pending_action)
+        malformed_action["action_id"] = "another-close-action"
+        with self.assertRaisesRegex(CheckpointError, "bound close action"):
+            AgentState.restore(changed_checkpoint(state, pending_action=malformed_action))
+
+    def test_completed_checkpoint_requires_receipt_evidence(self) -> None:
+        _, runtime, state = paused_run()
+        completed = runtime.run(state, approvals=[make_approval(state)])
+        malformed_receipt = copy.deepcopy(completed.evidence)
+        malformed_receipt[0]["result"] = {}
+        for evidence in ([], malformed_receipt):
+            with self.subTest(evidence=evidence):
+                with self.assertRaisesRegex(CheckpointError, "receipt evidence"):
+                    AgentState.restore(changed_checkpoint(completed, evidence=evidence))
+
+    def test_checkpoint_rejects_a_broken_event_chain(self) -> None:
+        _, _, state = paused_run()
+        events = copy.deepcopy(state.events)
+        events[0]["sequence"] = 99
+        with self.assertRaisesRegex(CheckpointError, "event sequence"):
+            AgentState.restore(changed_checkpoint(state, events=events))
 
 
 class BudgetAndFailureTests(unittest.TestCase):
@@ -252,6 +400,15 @@ class BudgetAndFailureTests(unittest.TestCase):
         result = runtime.run(state, approvals=[make_approval(state)])
         self.assertEqual(result.phase, "budget_exhausted")
         self.assertEqual(result.stop_reason, "max_tool_calls")
+        self.assertEqual(host.close_count, 0)
+
+    def test_receipt_lookup_counts_toward_tool_budget(self) -> None:
+        budget = Budget(max_steps=8, max_tool_calls=2, max_consecutive_failures=2)
+        host, runtime, state = paused_run(budget=budget)
+        result = runtime.run(state, approvals=[make_approval(state)])
+        self.assertEqual(result.phase, "budget_exhausted")
+        self.assertEqual(result.stop_reason, "max_tool_calls")
+        self.assertEqual(result.tool_calls, 2)
         self.assertEqual(host.close_count, 0)
 
     def test_one_transient_failure_is_retried(self) -> None:
@@ -311,6 +468,115 @@ class BudgetAndFailureTests(unittest.TestCase):
         )
         self.assertEqual(result.phase, "failed")
         self.assertIn("different ticket", result.events[-1]["details"]["error"])
+
+    def test_policy_cannot_use_a_valid_tool_with_an_unbound_action_id(self) -> None:
+        class UnboundActionPolicy:
+            def propose(self, state: AgentState) -> ActionProposal:
+                if state.phase == "start":
+                    return ActionProposal(
+                        "lookup-current-ticket",
+                        "lookup_ticket",
+                        {"ticket_id": state.ticket_id},
+                        "read",
+                    )
+                return ActionProposal(
+                    "another-close-action",
+                    "close_ticket",
+                    {"ticket_id": state.ticket_id},
+                    "write",
+                    f"{state.run_id}:{state.ticket_id}:close:v1",
+                )
+
+        host = OfflineToolHost()
+        result = BoundedAgentRuntime(host, policy=UnboundActionPolicy()).run(
+            AgentState(run_id="r", ticket_id="ticket-7")
+        )
+        self.assertEqual(result.phase, "failed")
+        self.assertEqual(result.stop_reason, "policy_violation")
+        self.assertEqual(host.close_count, 0)
+
+    def test_malformed_action_arguments_fail_closed(self) -> None:
+        class MalformedPolicy:
+            def propose(self, state: AgentState) -> ActionProposal:
+                return ActionProposal(
+                    "x",
+                    "lookup_ticket",
+                    None,  # type: ignore[arg-type]
+                    "read",
+                )
+
+        result = BoundedAgentRuntime(
+            OfflineToolHost(), policy=MalformedPolicy()
+        ).run(AgentState(run_id="r", ticket_id="ticket-7"))
+        self.assertEqual(result.phase, "failed")
+        self.assertEqual(result.stop_reason, "policy_violation")
+
+    def test_malformed_lookup_result_fails_closed(self) -> None:
+        class WrongTargetToolHost(OfflineToolHost):
+            def lookup_ticket(self, ticket_id: str) -> dict[str, object]:
+                self.lookup_count += 1
+                return {
+                    "ticket_id": "ticket-8",
+                    "status": "open",
+                    "customer_note": "wrong target",
+                }
+
+        host = WrongTargetToolHost()
+        result = BoundedAgentRuntime(host).run(
+            AgentState(run_id="r", ticket_id="ticket-7")
+        )
+        self.assertEqual(result.phase, "failed")
+        self.assertEqual(result.stop_reason, "invalid_tool_result")
+        self.assertEqual(host.close_count, 0)
+
+    def test_malformed_receipt_result_fails_closed(self) -> None:
+        class MalformedReceiptHost(OfflineToolHost):
+            def get_receipt(self, idempotency_key: str, ticket_id: str) -> dict[str, object]:
+                return {"ticket_id": ticket_id, "status": "closed"}
+
+        host, runtime, state = paused_run(tools=MalformedReceiptHost())
+        result = runtime.run(state, approvals=[make_approval(state)])
+        self.assertEqual(result.phase, "failed")
+        self.assertEqual(result.stop_reason, "tool_result_uncertain")
+        self.assertTrue(result.events[-1]["details"]["requires_reconciliation"])
+        self.assertEqual(host.close_count, 0)
+
+    def test_malformed_close_result_requires_reconciliation(self) -> None:
+        class MalformedCloseHost(OfflineToolHost):
+            def close_ticket(self, ticket_id: str, idempotency_key: str) -> dict[str, object]:
+                super().close_ticket(ticket_id, idempotency_key)
+                return {"ticket_id": ticket_id, "status": "closed"}
+
+        host, runtime, state = paused_run(tools=MalformedCloseHost())
+        result = runtime.run(state, approvals=[make_approval(state)])
+        self.assertEqual(result.phase, "failed")
+        self.assertEqual(result.stop_reason, "tool_result_uncertain")
+        self.assertEqual(host.close_count, 1)
+        self.assertEqual(
+            result.events[-1]["details"]["idempotency_key"],
+            "run-test:ticket-7:close:v1",
+        )
+        self.assertTrue(result.events[-1]["details"]["requires_reconciliation"])
+
+    def test_write_tool_errors_do_not_escape_or_execute(self) -> None:
+        class FailingReceiptHost(OfflineToolHost):
+            def __init__(self, error: AgentError) -> None:
+                super().__init__()
+                self.error = error
+
+            def get_receipt(self, idempotency_key: str, ticket_id: str) -> None:
+                raise self.error
+
+        for error, expected_phase, expected_reason in (
+            (TransientToolError("temporary receipt outage"), "waiting_approval", "approval_required"),
+            (PermanentToolError("receipt access denied"), "failed", "permanent_tool_error"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                host, runtime, state = paused_run(tools=FailingReceiptHost(error))
+                result = runtime.run(state, approvals=[make_approval(state)])
+                self.assertEqual(result.phase, expected_phase)
+                self.assertEqual(result.stop_reason, expected_reason)
+                self.assertEqual(host.close_count, 0)
 
 
 class IdempotencyAndRecoveryTests(unittest.TestCase):

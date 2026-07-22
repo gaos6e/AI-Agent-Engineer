@@ -1,7 +1,7 @@
 ---
 title: 特征值、SVD 与最小二乘项目
-tags: [ai-agent-engineer, 线性代数, project]
-aliases: [SVD 与降维]
+tags: [ ai-agent-engineer, 线性代数, project ]
+aliases: [ SVD 与降维 ]
 source_checked: 2026-07-14
 source_baseline:
   - MIT OpenCourseWare 18.06SC Linear Algebra

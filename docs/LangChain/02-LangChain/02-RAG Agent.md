@@ -5,7 +5,12 @@ aliases:
   - RAG 代理
 source: https://docs.langchain.com/oss/python/langchain/rag
 source_md: https://docs.langchain.com/oss/python/langchain/rag.md
+source_url: https://docs.langchain.com/oss/python/langchain/rag
 retrieved: 2026-05-07
+source_checked: 2026-07-21
+content_origin: third-party
+content_status: frozen-reference
+attribution: LangChain project documentation contributors
 tags:
   - langchain
   - python
@@ -14,6 +19,9 @@ license: MIT
 ---
 
 # RAG 代理
+
+> [!warning] 冻结参考：不要直接当作可运行或生产 RAG 模板
+> 本页是 2026-05-07 的官方译文快照。下方示意会下载网页、依赖 provider/向量存储配置并假设存在 `vector_store`；它没有验证当前包 API、私有数据授权、来源追踪、检索质量或 prompt-injection 防护。学习时先完成 [[LangChain/00-初学者路线/04-Retrieval与RAG组件|当前 Retrieval 与 RAG 组件路线]]，需要实现时以本页 `source` 链接的当前官方版本、项目 lockfile 和 [[RAG/00-目录|RAG]] 的数据与评测要求为准。
 
 ## 概述
 
@@ -296,7 +304,7 @@ from langchain.chat_models import init_chat_model
 # 参考链接：https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 
 model = init_chat_model(
-    "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "anthropic.claude-sonnet-4-6",
     model_provider="bedrock_converse",
 )
 ```
@@ -305,7 +313,7 @@ model = init_chat_model(
 from langchain_aws import ChatBedrock
 
 # 这里创建具体 provider 的聊天模型对象；保留 provider 名称，便于和官方文档对照。
-model = ChatBedrock(model="anthropic.claude-3-5-sonnet-20240620-v1:0")
+model = ChatBedrock(model="anthropic.claude-sonnet-4-6")
 ```
 #### Hugging Face
 👉 阅读 [HuggingFace 聊天模型集成文档](https://docs.langchain.com/oss/python/integrations/chat/huggingface/)
@@ -563,7 +571,7 @@ import os
 if not os.environ.get("VOYAGE_API_KEY"):
     os.environ["VOYAGE_API_KEY"] = getpass.getpass("Enter API key for Voyage AI: ")
 
-from langchain-voyageai import VoyageAIEmbeddings
+from langchain_voyageai import VoyageAIEmbeddings
 
 # embedding 模型会把文本转换成向量，这是 semantic search 和 RAG 检索的基础。
 embeddings = VoyageAIEmbeddings(model="voyage-3")

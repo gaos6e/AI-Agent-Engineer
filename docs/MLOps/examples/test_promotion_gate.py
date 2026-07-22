@@ -55,7 +55,7 @@ class CandidateFixtureTests(GateTestCase):
 
     def test_schema_version_is_strict(self) -> None:
         fixture = copy.deepcopy(self.candidates)
-        fixture["schema_version"] = 2
+        fixture["schema_version"] = 3
         with self.assertRaises(gate.GateError):
             gate.validate_candidates_fixture(fixture)
 
@@ -113,6 +113,18 @@ class CandidateFixtureTests(GateTestCase):
         with self.assertRaises(gate.GateError):
             gate.load_json(path)
 
+    def test_duplicate_json_key_is_rejected(self) -> None:
+        path = self.root / "duplicate.json"
+        path.write_text('{"schema_version": 2, "schema_version": 2}', encoding="utf-8")
+        with self.assertRaisesRegex(gate.GateError, "duplicate JSON key"):
+            gate.load_json(path)
+
+    def test_nonstandard_json_constant_is_rejected(self) -> None:
+        path = self.root / "nan.json"
+        path.write_text('{"value": NaN}', encoding="utf-8")
+        with self.assertRaisesRegex(gate.GateError, "non-standard JSON constant"):
+            gate.load_json(path)
+
 
 class PromotionDecisionTests(GateTestCase):
     def decide(self, candidate: dict[str, object]) -> dict[str, object]:
@@ -161,7 +173,7 @@ class PromotionDecisionTests(GateTestCase):
 
     def test_decision_records_policy_version(self) -> None:
         decision = self.decide(self.candidate("candidate-safe"))
-        self.assertEqual(decision["policy_version"], "promotion-lab-v2")
+        self.assertEqual(decision["policy_version"], "promotion-lab-v3")
 
     def test_evidence_fingerprint_is_deterministic(self) -> None:
         first = self.decide(self.candidate("candidate-safe"))
@@ -191,6 +203,26 @@ class ObservationFixtureTests(GateTestCase):
         with self.assertRaises(gate.GateError):
             gate.validate_observations_fixture(fixture, self.candidates)
 
+    def test_stale_promotion_fingerprint_is_rejected(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        fixture["deployment"]["promotion_evidence_fingerprint"] = "0" * 64
+        with self.assertRaisesRegex(gate.GateError, "stale or mismatched"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
+    def test_blocked_candidate_cannot_be_declared_deployed(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        blocked = self.candidate("candidate-regression")
+        fixture["deployment"]["model_id"] = blocked["candidate_id"]
+        fixture["deployment"]["artifact_digest"] = blocked["artifact"]["digest"]
+        with self.assertRaisesRegex(gate.GateError, "did not pass"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
+    def test_reference_must_bind_to_deployed_artifact(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        fixture["reference"]["artifact_digest"] = "sha256:" + "f" * 64
+        with self.assertRaisesRegex(gate.GateError, "reference artifact"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
     def test_duplicate_window_is_rejected(self) -> None:
         fixture = copy.deepcopy(self.observations)
         fixture["windows"][1]["window_id"] = fixture["windows"][0]["window_id"]
@@ -203,6 +235,24 @@ class ObservationFixtureTests(GateTestCase):
         with self.assertRaises(gate.GateError):
             gate.validate_observations_fixture(fixture, self.candidates)
 
+    def test_unknown_release_phase_is_rejected(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        fixture["windows"][0]["phase"] = "production"
+        with self.assertRaisesRegex(gate.GateError, "must be one of"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
+    def test_labeled_count_cannot_exceed_sample_count(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        fixture["windows"][0]["labeled_count"] = 2001
+        with self.assertRaisesRegex(gate.GateError, "must not exceed sample_count"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
+    def test_critical_count_cannot_exceed_labeled_count(self) -> None:
+        fixture = copy.deepcopy(self.observations)
+        fixture["windows"][0]["critical_labeled_count"] = 1601
+        with self.assertRaisesRegex(gate.GateError, "must not exceed labeled_count"):
+            gate.validate_observations_fixture(fixture, self.candidates)
+
 
 class OperationalDecisionTests(GateTestCase):
     def assess(self, observation: dict[str, object]) -> dict[str, object]:
@@ -211,6 +261,7 @@ class OperationalDecisionTests(GateTestCase):
             self.observations["reference"],
             self.candidates["policy"],
             self.candidates["policy_version"],
+            self.observations["deployment"],
         )
 
     def test_healthy_window_continues(self) -> None:
@@ -219,7 +270,7 @@ class OperationalDecisionTests(GateTestCase):
     def test_drift_without_labels_requires_investigation(self) -> None:
         decision = self.assess(self.window("window-drift-no-label"))
         self.assertEqual(decision["action"], "investigate")
-        self.assertTrue(any("label coverage" in item for item in decision["reasons"]))
+        self.assertTrue(any("label_coverage" in item for item in decision["reasons"]))
 
     def test_label_backed_regression_rolls_back_and_reviews_retraining(self) -> None:
         decision = self.assess(self.window("window-quality-regression"))
@@ -238,6 +289,26 @@ class OperationalDecisionTests(GateTestCase):
         observation["signals"]["critical_slice_recall"] = 0.2
         decision = self.assess(observation)
         self.assertEqual(decision["action"], "investigate")
+
+    def test_small_window_cannot_auto_continue(self) -> None:
+        observation = self.window("window-healthy")
+        observation["sample_count"] = 400
+        observation["labeled_count"] = 320
+        observation["critical_labeled_count"] = 120
+        decision = self.assess(observation)
+        self.assertEqual(decision["action"], "investigate")
+        self.assertTrue(any("sample_count" in item for item in decision["reasons"]))
+
+    def test_small_critical_slice_cannot_confirm_quality(self) -> None:
+        observation = self.window("window-quality-regression")
+        observation["critical_labeled_count"] = 10
+        decision = self.assess(observation)
+        self.assertEqual(decision["action"], "investigate")
+
+    def test_shadow_technical_failure_blocks_rollout(self) -> None:
+        decision = self.assess(self.window("window-shadow-technical-failure"))
+        self.assertEqual(decision["action"], "block_rollout_and_investigate")
+        self.assertEqual(decision["phase"], "shadow")
 
     def test_quality_regression_without_drift_rolls_back_to_investigate(self) -> None:
         observation = self.window("window-quality-regression")
@@ -283,7 +354,7 @@ class CliTests(GateTestCase):
         code, payload = self.call_main("audit")
         self.assertEqual(code, 0)
         self.assertEqual(len(payload["candidate_decisions"]), 2)
-        self.assertEqual(len(payload["operational_decisions"]), 4)
+        self.assertEqual(len(payload["operational_decisions"]), 5)
 
     def test_unknown_candidate_returns_error(self) -> None:
         code, payload = self.call_main("candidate", "--id", "missing")
@@ -293,4 +364,3 @@ class CliTests(GateTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

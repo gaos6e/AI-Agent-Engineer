@@ -1,10 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "query": {
     "id": "q-refund-time",
     "text": "退款审核通过后多久到账",
     "tenant_id": "alpha",
     "subject_groups": ["guests"],
+    "authorization_revision": "authz-alpha-r7",
     "as_of": "2026-07-14"
   },
   "settings": {

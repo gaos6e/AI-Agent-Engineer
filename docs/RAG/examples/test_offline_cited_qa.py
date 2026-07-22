@@ -28,7 +28,11 @@ class FixtureContractTests(unittest.TestCase):
 
     def test_fixture_loads(self) -> None:
         self.assertEqual([], rag.validate_fixture(self.fixture))
-        self.assertEqual("1.0", self.fixture["schema_version"])
+        self.assertEqual("2.0", self.fixture["schema_version"])
+        self.assertEqual(
+            "offline-rag-harness-v3",
+            self.fixture["evaluation_policy"]["harness_revision"],
+        )
 
     def test_duplicate_json_key_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -44,6 +48,35 @@ class FixtureContractTests(unittest.TestCase):
             with self.assertRaises(rag.FixtureError):
                 rag.load_fixture(path)
 
+    def test_surrogate_and_huge_integer_are_fixture_contract_errors(self) -> None:
+        with self.assertRaisesRegex(rag.FixtureError, "非法 Unicode"):
+            rag.strict_json_loads(r'{"value":"\ud800"}')
+
+        changed = copy.deepcopy(self.fixture)
+        changed["evaluation_policy"]["min_case_pass_rate"] = 10**400
+        errors = rag.validate_fixture(changed)
+        self.assertTrue(any("min_case_pass_rate" in error for error in errors))
+        self.assertFalse(rag._finite_number(10**400))
+
+    def test_fixture_size_and_json_depth_are_bounded_before_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "oversized.json"
+            path.write_bytes(b" " * (rag.MAX_FIXTURE_BYTES + 1))
+            with self.assertRaisesRegex(rag.FixtureError, "不得超过"):
+                rag.load_fixture(path)
+
+        nested = "[" * (rag.MAX_JSON_DEPTH + 1) + "0" + "]" * (
+            rag.MAX_JSON_DEPTH + 1
+        )
+        with self.assertRaisesRegex(rag.FixtureError, "嵌套"):
+            rag.strict_json_loads(nested)
+
+    def test_fixture_io_error_does_not_echo_local_path(self) -> None:
+        missing = Path("do-not-disclose-this-local-path") / "fixture.json"
+        with self.assertRaises(rag.FixtureError) as captured:
+            rag.load_fixture(missing)
+        self.assertNotIn(str(missing), str(captured.exception))
+
     def test_unknown_root_field_is_rejected(self) -> None:
         changed = copy.deepcopy(self.fixture)
         changed["unexpected"] = True
@@ -53,6 +86,17 @@ class FixtureContractTests(unittest.TestCase):
         changed = copy.deepcopy(self.fixture)
         changed["pipeline"]["retrieval_limit"] = True
         self.assertTrue(any("retrieval_limit" in error for error in rag.validate_fixture(changed)))
+
+    def test_pipeline_and_fixture_collection_limits_are_bounded(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        changed["pipeline"]["retrieval_limit"] = rag.MAX_STAGE_LIMIT + 1
+        self.assertTrue(
+            any("retrieval_limit" in error for error in rag.validate_fixture(changed))
+        )
+
+        changed = copy.deepcopy(self.fixture)
+        changed["documents"] = changed["documents"] * (rag.MAX_DOCUMENTS + 1)
+        self.assertTrue(any("documents" in error for error in rag.validate_fixture(changed)))
 
     def test_fact_statement_must_exist_verbatim(self) -> None:
         changed = copy.deepcopy(self.fixture)
@@ -72,12 +116,49 @@ class FixtureContractTests(unittest.TestCase):
     def test_reversed_effective_window_is_rejected(self) -> None:
         changed = copy.deepcopy(self.fixture)
         changed["documents"][0]["effective_to"] = "2025-01-01"
-        self.assertTrue(any("早于" in error for error in rag.validate_fixture(changed)))
+        self.assertTrue(any("[effective_from" in error for error in rag.validate_fixture(changed)))
+
+    def test_empty_effective_window_is_rejected(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        changed["documents"][0]["effective_to"] = changed["documents"][0]["effective_from"]
+        self.assertTrue(any("[effective_from" in error for error in rag.validate_fixture(changed)))
 
     def test_acl_must_be_sorted_and_unique(self) -> None:
         changed = copy.deepcopy(self.fixture)
         changed["documents"][0]["acl"] = ["public", "public"]
         self.assertTrue(any("已排序且无重复" in error for error in rag.validate_fixture(changed)))
+
+    def test_subject_groups_are_trusted_nonempty_resolved_groups(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        changed["queries"][0]["subject_groups"] = []
+        self.assertTrue(any("公共访问" in error for error in rag.validate_fixture(changed)))
+
+    def test_forbidden_canary_must_come_from_forbidden_document(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        changed["queries"][0]["forbidden_output_substrings"] = ["不存在的秘密"]
+        self.assertTrue(any("测试 canary" in error for error in rag.validate_fixture(changed)))
+
+    def test_evaluation_threshold_rejects_nonfinite_number(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        changed["evaluation_policy"]["min_status_accuracy"] = float("nan")
+        self.assertTrue(any("有限数值" in error for error in rag.validate_fixture(changed)))
+
+    def test_json_type_errors_are_reported_as_fixture_contract_errors(self) -> None:
+        mutations = (
+            ("document id", lambda value: value["documents"][0].__setitem__("id", [])),
+            ("document status", lambda value: value["documents"][0].__setitem__("status", [])),
+            ("query route", lambda value: value["queries"][0].__setitem__("route", {})),
+            (
+                "query expected status",
+                lambda value: value["queries"][0].__setitem__("expected_status", []),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(self.fixture)
+                mutate(changed)
+                errors = rag.validate_fixture(changed)
+                self.assertTrue(errors)
 
 
 class PipelineComponentTests(unittest.TestCase):
@@ -110,11 +191,18 @@ class PipelineComponentTests(unittest.TestCase):
         self.assertIn("S3", visible_ids)
         self.assertNotIn("S7", visible_ids)
 
-    def test_public_documents_are_visible_without_groups(self) -> None:
+    def test_resolved_public_group_can_read_public_documents(self) -> None:
         visible, _, _ = rag.filter_documents(self.documents, self.query("Q-refund"))
         visible_ids = {document["id"] for document in visible}
         self.assertIn("S1", visible_ids)
         self.assertIn("S2", visible_ids)
+
+    def test_effective_to_is_exclusive(self) -> None:
+        query = copy.deepcopy(self.query("Q-refund"))
+        query["as_of"] = "2026-01-01"
+        visible, _, decisions = rag.filter_documents(self.documents, query)
+        self.assertNotIn("S4", {document["id"] for document in visible})
+        self.assertIn("outside_effective_window", decisions["S4"])
 
     def test_retrieval_uses_only_filtered_documents(self) -> None:
         query = self.query("Q-refund")
@@ -172,6 +260,9 @@ class EndToEndTests(unittest.TestCase):
     def query(self, query_id: str) -> dict[str, object]:
         return next(query for query in self.fixture["queries"] if query["id"] == query_id)
 
+    def execution(self, query_id: str, failure: str = "none") -> dict[str, object]:
+        return rag.execute_pipeline(self.fixture, query_id, failure=failure)
+
     def test_refund_answer_is_extractively_cited(self) -> None:
         result = rag.run_pipeline(self.fixture, "Q-refund")
         self.assertEqual("answered", result["status"])
@@ -207,62 +298,577 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual([], result["citations"])
 
     def test_tool_route_short_circuits_retrieval(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-order-live")
-        self.assertEqual("tool_required", result["status"])
-        self.assertEqual([], result["trace"]["retrieved"])
-        self.assertEqual([], result["trace"]["selected"])
+        execution = self.execution("Q-order-live")
+        self.assertEqual("tool_required", execution["response"]["status"])
+        self.assertEqual([], execution["audit_trace"]["retrieved"])
+        self.assertEqual([], execution["audit_trace"]["selected"])
 
     def test_retrieval_error_refuses(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund", failure="retrieval_error")
-        self.assertEqual("dependency_unavailable", result["status"])
-        self.assertTrue(result["trace"]["degraded"])
-        self.assertEqual([], result["claims"])
+        execution = self.execution("Q-refund", failure="retrieval_error")
+        self.assertEqual("dependency_unavailable", execution["response"]["status"])
+        self.assertTrue(execution["audit_trace"]["degraded"])
+        self.assertEqual([], execution["response"]["claims"])
 
     def test_reranker_error_uses_retrieval_order(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund", failure="reranker_error")
-        self.assertEqual("answered", result["status"])
-        self.assertEqual("reranker_error:retrieval_order", result["trace"]["fallback"])
+        execution = self.execution("Q-refund", failure="reranker_error")
+        self.assertEqual("answered", execution["response"]["status"])
+        self.assertEqual(
+            "reranker_error:retrieval_order", execution["audit_trace"]["fallback"]
+        )
 
     def test_generation_error_does_not_emit_evidence_claims(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund", failure="generation_error")
-        self.assertEqual("generation_unavailable", result["status"])
-        self.assertEqual([], result["claims"])
-        self.assertGreater(len(result["trace"]["selected"]), 0)
+        execution = self.execution("Q-refund", failure="generation_error")
+        self.assertEqual("generation_unavailable", execution["response"]["status"])
+        self.assertEqual([], execution["response"]["claims"])
+        self.assertGreater(len(execution["audit_trace"]["selected"]), 0)
 
     def test_unknown_citation_is_detected(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund")
-        changed = copy.deepcopy(result)
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
         changed["citations"][0]["fact_id"] = "F-unknown"
-        errors = rag.validate_result(self.fixture, self.query("Q-refund"), changed)
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
         self.assertTrue(any("未知 fact" in error for error in errors))
 
     def test_unsupported_claim_is_detected(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund")
-        changed = copy.deepcopy(result)
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
         changed["claims"][0]["text"] = "退款保证立即到账。"
-        errors = rag.validate_result(self.fixture, self.query("Q-refund"), changed)
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
         self.assertTrue(any("逐字支持" in error for error in errors))
 
+    def test_every_claim_citation_must_support_the_claim_verbatim(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
+        changed["citations"].append(
+            {
+                "document_id": "S2",
+                "fact_id": "F-duplicate-action",
+                "source_revision": "payments-v2",
+            }
+        )
+        changed["claims"][0]["citations"].append(
+            {"document_id": "S2", "fact_id": "F-duplicate-action"}
+        )
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
+        self.assertTrue(any("每条 citation" in error for error in errors))
+
+    def test_duplicate_citation_within_claim_is_rejected(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
+        changed["claims"][0]["citations"].append(
+            copy.deepcopy(changed["claims"][0]["citations"][0])
+        )
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
+        self.assertTrue(any("claim citation 重复" in error for error in errors))
+
     def test_revision_tampering_is_detected(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund")
-        changed = copy.deepcopy(result)
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
         changed["citations"][0]["source_revision"] = "wrong"
-        errors = rag.validate_result(self.fixture, self.query("Q-refund"), changed)
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
         self.assertTrue(any("source_revision" in error for error in errors))
 
-    def test_forbidden_document_id_in_trace_is_detected(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-phone-guest")
-        changed = copy.deepcopy(result)
-        changed["trace"]["fallback"] = "debug:S3"
-        errors = rag.validate_result(self.fixture, self.query("Q-phone-guest"), changed)
-        self.assertTrue(any("泄露" in error for error in errors))
+    def test_answer_text_must_be_rendered_from_validated_claims(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
+        changed["answer"] = "退款保证当天到账，而且一定免手续费。"
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
+        self.assertTrue(any("确定性渲染" in error for error in errors))
 
-    def test_result_extra_field_is_detected(self) -> None:
-        result = rag.run_pipeline(self.fixture, "Q-refund")
-        changed = copy.deepcopy(result)
+    def test_private_body_canary_is_detected_without_document_id(self) -> None:
+        execution = self.execution("Q-phone-guest")
+        changed = copy.deepcopy(execution["response"])
+        changed["answer"] = "内部故障升级电话为 010-5550-0100，仅供值班工程师使用。"
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-phone-guest"),
+            changed,
+            execution["audit_trace"],
+        )
+        self.assertTrue(any("canary" in error for error in errors))
+
+    def test_public_response_does_not_contain_privileged_trace(self) -> None:
+        response = rag.run_pipeline(self.fixture, "Q-phone-guest")
+        self.assertEqual(rag.RESPONSE_FIELDS, set(response))
+        self.assertNotIn("filter_summary", response)
+        self.assertNotIn("retrieved", response)
+
+    def test_internal_trace_is_explicitly_privileged_and_versioned(self) -> None:
+        execution = self.execution("Q-phone-guest")
+        trace = execution["audit_trace"]
+        self.assertEqual("privileged_audit", trace["visibility"])
+        self.assertEqual("auth-policy-v3", trace["authorization_revision"])
+        self.assertIn("acl_denied", trace["filter_summary"]["reasons"])
+
+    def test_unauthorized_corpus_change_cannot_change_public_response(self) -> None:
+        before = rag.run_pipeline(self.fixture, "Q-phone-guest")
+        changed_fixture = copy.deepcopy(self.fixture)
+        changed_fixture["documents"].append(
+            {
+                "id": "S-private-extra",
+                "canonical_document_id": "private-extra",
+                "title": "额外私有电话",
+                "text": "额外私有电话为 010-0000-0000。",
+                "tenant_id": "tenant-a",
+                "acl": ["finance"],
+                "status": "published",
+                "effective_from": "2026-01-01",
+                "effective_to": None,
+                "source_revision": "private-extra-v1",
+                "authority": 99,
+                "facts": [
+                    {
+                        "fact_id": "F-private-extra",
+                        "topic": "incident_phone",
+                        "statement": "额外私有电话为 010-0000-0000。",
+                        "value": "010-0000-0000",
+                        "unit": "phone",
+                    }
+                ],
+            }
+        )
+        after = rag.run_pipeline(changed_fixture, "Q-phone-guest")
+        self.assertEqual(before, after)
+
+    def test_internal_trace_rejects_unauthorized_selected_document(self) -> None:
+        execution = self.execution("Q-phone-guest")
+        changed = copy.deepcopy(execution)
+        changed["audit_trace"]["selected"].append(
+            {"document_id": "S3", "rank": 99, "score": 1.0, "chars": 10}
+        )
+        errors = rag.validate_execution(
+            self.fixture,
+            rag._runtime_query(self.query("Q-phone-guest")),
+            changed,
+        )
+        self.assertTrue(any("未授权" in error for error in errors))
+
+    def test_response_json_scalar_types_return_contract_errors(self) -> None:
+        execution = self.execution("Q-refund")
+        mutations = (
+            ("status", lambda value: value.__setitem__("status", [])),
+            ("citations container", lambda value: value.__setitem__("citations", None)),
+            ("claims container", lambda value: value.__setitem__("claims", {})),
+            (
+                "top citation document id",
+                lambda value: value["citations"][0].__setitem__("document_id", []),
+            ),
+            (
+                "top citation fact id",
+                lambda value: value["citations"][0].__setitem__("fact_id", {}),
+            ),
+            (
+                "top citation source revision",
+                lambda value: value["citations"][0].__setitem__(
+                    "source_revision", []
+                ),
+            ),
+            (
+                "claim id",
+                lambda value: value["claims"][0].__setitem__("claim_id", []),
+            ),
+            (
+                "claim citation document id",
+                lambda value: value["claims"][0]["citations"][0].__setitem__(
+                    "document_id", []
+                ),
+            ),
+            (
+                "claim citation fact id",
+                lambda value: value["claims"][0]["citations"][0].__setitem__(
+                    "fact_id", {}
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(execution["response"])
+                mutate(changed)
+                errors = rag.validate_result(
+                    self.fixture,
+                    self.query("Q-refund"),
+                    changed,
+                    execution["audit_trace"],
+                )
+                self.assertTrue(errors)
+
+    def test_trace_json_scalar_types_return_contract_errors(self) -> None:
+        execution = self.execution("Q-refund")
+        mutations = (
+            ("failure", lambda value: value["audit_trace"].__setitem__("failure", [])),
+            ("route", lambda value: value["audit_trace"].__setitem__("route", {})),
+            (
+                "retrieved document id",
+                lambda value: value["audit_trace"]["retrieved"][0].__setitem__(
+                    "document_id", []
+                ),
+            ),
+            (
+                "retrieved rank",
+                lambda value: value["audit_trace"]["retrieved"][0].__setitem__(
+                    "rank", {}
+                ),
+            ),
+            (
+                "selected score",
+                lambda value: value["audit_trace"]["selected"][0].__setitem__(
+                    "score", []
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(execution)
+                mutate(changed)
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query("Q-refund")),
+                    changed,
+                )
+                self.assertTrue(errors)
+
+    def test_trace_pipeline_revisions_are_bound_to_fixture(self) -> None:
+        execution = self.execution("Q-refund")
+        revision_fields = (
+            "pipeline_revision",
+            "retrieval_revision",
+            "rerank_revision",
+            "context_policy_revision",
+            "answer_policy_revision",
+        )
+        for field in revision_fields:
+            with self.subTest(field=field):
+                changed = copy.deepcopy(execution)
+                changed["audit_trace"][field] = "tampered-revision"
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query("Q-refund")),
+                    changed,
+                )
+                self.assertTrue(any(field in error for error in errors))
+
+    def test_degraded_fallback_and_failure_status_are_bound(self) -> None:
+        mutations = (
+            (
+                "none cannot claim degradation",
+                "Q-refund",
+                "none",
+                lambda value: value["audit_trace"].__setitem__("degraded", True),
+            ),
+            (
+                "retrieval fallback is fixed",
+                "Q-refund",
+                "retrieval_error",
+                lambda value: value["audit_trace"].__setitem__(
+                    "fallback", "retrieval_error:free_generate"
+                ),
+            ),
+            (
+                "reranker degradation is recorded",
+                "Q-refund",
+                "reranker_error",
+                lambda value: value["audit_trace"].__setitem__("degraded", False),
+            ),
+            (
+                "generation failure cannot masquerade as insufficient evidence",
+                "Q-refund",
+                "generation_error",
+                lambda value: value.__setitem__(
+                    "response",
+                    rag._response(
+                        value["audit_trace"]["trace_id"],
+                        "insufficient_evidence",
+                        [],
+                        [],
+                    ),
+                ),
+            ),
+            (
+                "tool route ignores retrieval degradation injection",
+                "Q-order-live",
+                "retrieval_error",
+                lambda value: value["audit_trace"].__setitem__("degraded", True),
+            ),
+        )
+        for label, query_id, failure, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(self.execution(query_id, failure=failure))
+                mutate(changed)
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query(query_id)),
+                    changed,
+                )
+                self.assertTrue(
+                    any(
+                        "route/failure" in error
+                        for error in errors
+                    )
+                )
+
+    def test_response_and_trace_id_are_bound_to_deterministic_runtime(self) -> None:
+        conflict = copy.deepcopy(self.execution("Q-conflict"))
+        first_claim = conflict["response"]["claims"][0]
+        first_reference = first_claim["citations"][0]
+        first_citation = next(
+            citation
+            for citation in conflict["response"]["citations"]
+            if citation["document_id"] == first_reference["document_id"]
+            and citation["fact_id"] == first_reference["fact_id"]
+        )
+        conflict["response"] = rag._response(
+            conflict["audit_trace"]["trace_id"],
+            "answered",
+            [first_claim],
+            [first_citation],
+        )
+
+        refund = copy.deepcopy(self.execution("Q-refund"))
+        refund["response"] = rag._response(
+            refund["audit_trace"]["trace_id"],
+            "insufficient_evidence",
+            [],
+            [],
+        )
+
+        trace_tampered = copy.deepcopy(self.execution("Q-refund"))
+        trace_tampered["audit_trace"]["trace_id"] = "trace-tampered"
+        trace_tampered["response"]["trace_id"] = "trace-tampered"
+
+        for label, query_id, changed in (
+            ("conflict collapsed", "Q-conflict", conflict),
+            ("answer suppressed", "Q-refund", refund),
+            ("trace id", "Q-refund", trace_tampered),
+        ):
+            with self.subTest(label=label):
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query(query_id)),
+                    changed,
+                )
+                self.assertTrue(
+                    any(
+                        "runtime" in error or "pipeline/query" in error
+                        for error in errors
+                    )
+                )
+
+    def test_filter_summary_is_recomputed_from_authorized_corpus(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution)
+        changed["audit_trace"]["filter_summary"]["visible"] += 1
+        errors = rag.validate_execution(
+            self.fixture,
+            rag._runtime_query(self.query("Q-refund")),
+            changed,
+        )
+        self.assertTrue(any("filter_summary" in error for error in errors))
+
+    def test_context_chars_and_selected_item_chars_are_recomputed(self) -> None:
+        execution = self.execution("Q-refund")
+        mutations = (
+            (
+                "aggregate",
+                lambda value: value["audit_trace"].__setitem__(
+                    "context_chars", value["audit_trace"]["context_chars"] + 1
+                ),
+            ),
+            (
+                "selected item",
+                lambda value: value["audit_trace"]["selected"][0].__setitem__(
+                    "chars", value["audit_trace"]["selected"][0]["chars"] + 1
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(execution)
+                mutate(changed)
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query("Q-refund")),
+                    changed,
+                )
+                self.assertTrue(any("chars" in error for error in errors))
+
+    def test_stage_documents_must_be_unique(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution)
+        changed["audit_trace"]["retrieved"].append(
+            copy.deepcopy(changed["audit_trace"]["retrieved"][0])
+        )
+        errors = rag.validate_execution(
+            self.fixture,
+            rag._runtime_query(self.query("Q-refund")),
+            changed,
+        )
+        self.assertTrue(any("retrieved" in error and "重复" in error for error in errors))
+
+    def test_stage_ranks_and_scores_are_bound_across_transformations(self) -> None:
+        execution = self.execution("Q-refund")
+        mutations = (
+            (
+                "retrieved rank",
+                lambda value: value["audit_trace"]["retrieved"][0].__setitem__("rank", 2),
+            ),
+            (
+                "reranked retrieval score",
+                lambda value: value["audit_trace"]["reranked"][0].__setitem__(
+                    "retrieval_score",
+                    value["audit_trace"]["reranked"][0]["retrieval_score"] + 0.1,
+                ),
+            ),
+            (
+                "selected rerank score",
+                lambda value: value["audit_trace"]["selected"][0].__setitem__(
+                    "score", value["audit_trace"]["selected"][0]["score"] + 0.1
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(execution)
+                mutate(changed)
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query("Q-refund")),
+                    changed,
+                )
+                self.assertTrue(errors)
+
+    def test_reranked_selected_and_dropped_items_must_come_from_prior_stage(self) -> None:
+        execution = self.execution("Q-refund")
+        mutations = (
+            (
+                "reranked",
+                lambda value: value["audit_trace"]["reranked"].pop(),
+            ),
+            (
+                "selected",
+                lambda value: value["audit_trace"]["selected"][0].__setitem__(
+                    "document_id", "S10"
+                ),
+            ),
+            (
+                "dropped",
+                lambda value: value["audit_trace"]["dropped"].append(
+                    {"document_id": "S10", "reason": "context_limit"}
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(label=label):
+                changed = copy.deepcopy(execution)
+                mutate(changed)
+                errors = rag.validate_execution(
+                    self.fixture,
+                    rag._runtime_query(self.query("Q-refund")),
+                    changed,
+                )
+                self.assertTrue(errors)
+
+    def test_runtime_pipeline_does_not_read_offline_oracle(self) -> None:
+        expected = rag.run_pipeline(self.fixture, "Q-refund")
+        changed_fixture = copy.deepcopy(self.fixture)
+        changed_query = next(
+            query for query in changed_fixture["queries"] if query["id"] == "Q-refund"
+        )
+        changed_query["expected_status"] = "conflict"
+        actual = rag.run_pipeline(changed_fixture, "Q-refund")
+        self.assertEqual(expected, actual)
+        self.assertIn("status_mismatch", rag.oracle_failure_codes(changed_query, actual))
+
+    def test_authorized_untrusted_document_cannot_change_control_fields(self) -> None:
+        execution = self.execution("Q-untrusted-content")
+        self.assertEqual("answered", execution["response"]["status"])
+        self.assertEqual("knowledge", execution["audit_trace"]["route"])
+        self.assertEqual("tenant-a", self.query("Q-untrusted-content")["tenant_id"])
+
+    def test_layered_evaluation_passes_and_is_fingerprinted(self) -> None:
+        report = rag.evaluate_fixture(self.fixture)
+        self.assertEqual("PASS", report["action"])
+        self.assertEqual(8, report["query_count"])
+        self.assertEqual(1.0, report["metrics"]["retrieval_fact_recall"])
+        self.assertEqual(64, len(report["evidence_fingerprint"]))
+
+    def test_retrieval_and_context_recall_count_expected_facts_not_documents(self) -> None:
+        changed = copy.deepcopy(self.fixture)
+        refund_document = next(
+            document for document in changed["documents"] if document["id"] == "S1"
+        )
+        refund_document["facts"].append(
+            {
+                "fact_id": "F-refund-channel",
+                "topic": "refund_channel",
+                "statement": "退款会原路返回。",
+                "value": "original_channel",
+                "unit": "route",
+            }
+        )
+        refund_document["text"] += "退款会原路返回。"
+        refund_query = next(
+            query for query in changed["queries"] if query["id"] == "Q-refund"
+        )
+        refund_query["expected_fact_ids"].append("F-refund-channel")
+        refund_query["expected_fact_ids"].sort()
+        self.assertEqual([], rag.validate_fixture(changed))
+
+        report = rag.evaluate_fixture(changed)
+
+        refund_case = next(
+            case for case in report["cases"] if case["query_id"] == "Q-refund"
+        )
+        self.assertEqual(1.0, refund_case["retrieval_fact_recall"])
+        self.assertEqual(1.0, refund_case["context_fact_recall"])
+        self.assertEqual(1.0, report["metrics"]["retrieval_fact_recall"])
+        self.assertEqual(1.0, report["metrics"]["context_fact_recall"])
+
+    def test_retrieval_failure_blocks_layered_evaluation(self) -> None:
+        report = rag.evaluate_fixture(self.fixture, failure="retrieval_error")
+        self.assertEqual("BLOCK", report["action"])
+        self.assertIn("gate_failed:case_pass_rate", report["reasons"])
+
+    def test_response_extra_field_is_detected(self) -> None:
+        execution = self.execution("Q-refund")
+        changed = copy.deepcopy(execution["response"])
         changed["debug"] = True
-        errors = rag.validate_result(self.fixture, self.query("Q-refund"), changed)
-        self.assertTrue(any("result" in error for error in errors))
+        errors = rag.validate_result(
+            self.fixture,
+            self.query("Q-refund"),
+            changed,
+            execution["audit_trace"],
+        )
+        self.assertTrue(any("response" in error for error in errors))
 
 
 class CliTests(unittest.TestCase):
@@ -283,15 +889,70 @@ class CliTests(unittest.TestCase):
         completed = self.run_cli("--fixture", str(FIXTURE_PATH), "demo")
         self.assertEqual(0, completed.returncode, completed.stderr)
         payload = json.loads(completed.stdout)
-        self.assertEqual(7, len(payload["results"]))
+        self.assertEqual(8, len(payload["results"]))
+        self.assertNotIn("audit_trace", json.dumps(payload, ensure_ascii=False))
 
     def test_ask_cli_accepts_stable_query_id(self) -> None:
+        absolute_fixture = str(FIXTURE_PATH.resolve())
         completed = self.run_cli(
-            "--fixture", str(FIXTURE_PATH), "ask", "--query-id", "Q-refund"
+            "--fixture", absolute_fixture, "ask", "--query-id", "Q-refund"
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
         payload = json.loads(completed.stdout)
         self.assertEqual("answered", payload["result"]["status"])
+        self.assertNotIn("filter_summary", payload["result"])
+        self.assertNotIn(absolute_fixture, completed.stdout)
+
+    def test_cli_huge_integer_returns_controlled_fixture_error(self) -> None:
+        original = FIXTURE_PATH.read_text(encoding="utf-8")
+        malformed = original.replace(
+            '"min_case_pass_rate": 1.0',
+            '"min_case_pass_rate": ' + "1" + "0" * 400,
+            1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "huge-number.json"
+            fixture.write_text(malformed, encoding="utf-8")
+            completed = self.run_cli("--fixture", str(fixture), "evaluate")
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("min_case_pass_rate", completed.stderr)
+        self.assertNotIn("OverflowError", completed.stderr)
+
+    def test_inspect_requires_explicit_operator_view(self) -> None:
+        completed = self.run_cli(
+            "--fixture", str(FIXTURE_PATH), "inspect", "--query-id", "Q-refund"
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("--operator-view", completed.stderr)
+
+    def test_inspect_returns_privileged_audit_envelope(self) -> None:
+        completed = self.run_cli(
+            "--fixture",
+            str(FIXTURE_PATH),
+            "inspect",
+            "--query-id",
+            "Q-refund",
+            "--operator-view",
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(
+            "privileged_audit",
+            payload["execution"]["audit_trace"]["visibility"],
+        )
+
+    def test_evaluate_cli_uses_gate_exit_codes(self) -> None:
+        passed = self.run_cli("--fixture", str(FIXTURE_PATH), "evaluate")
+        blocked = self.run_cli(
+            "--fixture",
+            str(FIXTURE_PATH),
+            "evaluate",
+            "--failure",
+            "retrieval_error",
+        )
+        self.assertEqual(0, passed.returncode, passed.stderr)
+        self.assertEqual(1, blocked.returncode, blocked.stderr)
+        self.assertEqual("BLOCK", json.loads(blocked.stdout)["report"]["action"])
 
     def test_unknown_query_id_has_nonzero_exit(self) -> None:
         completed = self.run_cli(

@@ -23,7 +23,9 @@ from typing import Any, Iterable, Sequence
 
 PARSER_NAME = "stdlib-document-inspector"
 PARSER_VERSION = "1.0.0"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+LINE_COORDINATE_SPACE = "normalized-text-lines-1-based-inclusive-v1"
 
 EXTENSION_MEDIA_TYPES = {
     ".txt": "text/plain",
@@ -108,7 +110,7 @@ class Element:
     text: str
     text_sha256: str
     order: int
-    location: dict[str, int]
+    location: dict[str, Any]
     section_path: list[str]
     attributes: dict[str, Any]
 
@@ -129,6 +131,29 @@ def _digest_bytes(value: bytes) -> str:
 
 def _digest_text(value: str) -> str:
     return _digest_bytes(value.encode("utf-8"))
+
+
+def _parse_revision_sha256(
+    raw_sha256: str,
+    *,
+    parser: str,
+    parser_version: str,
+    config_sha256: str,
+) -> str:
+    """Bind one successful parse to its raw bytes, parser, version, and config."""
+
+    values = {
+        "raw_sha256": raw_sha256,
+        "parser": parser,
+        "parser_version": parser_version,
+        "config_sha256": config_sha256,
+    }
+    for name, value in values.items():
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{name} 不是合法的 parse revision 输入")
+        if name.endswith("sha256") and SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError(f"{name} 不是合法的 parse revision 输入")
+    return _digest_text(_canonical_json(values))
 
 
 def _normalise_text(value: str) -> str:
@@ -570,18 +595,36 @@ def _classify(path: Path, raw: bytes) -> tuple[str | None, str | None, str, bool
     return declared, signature, method, mismatch
 
 
-def _make_elements(source_id: str, blocks: Sequence[ParsedBlock]) -> list[Element]:
+def _make_elements(
+    parse_revision_sha256: str, blocks: Sequence[ParsedBlock]
+) -> list[Element]:
+    if not isinstance(parse_revision_sha256, str) or not SHA256_PATTERN.fullmatch(
+        parse_revision_sha256
+    ):
+        raise ValueError("parse_revision_sha256 必须是完整小写 SHA-256")
     result: list[Element] = []
     for order, block in enumerate(blocks, start=1):
         text = _normalise_text(block.text)
+        text_sha256 = _digest_text(text)
+        location = {
+            "coordinate_space": LINE_COORDINATE_SPACE,
+            "line_start": block.line_start,
+            "line_end": block.line_end,
+        }
+        identity = {
+            "kind": block.kind,
+            "location": location,
+            "parse_revision_sha256": parse_revision_sha256,
+            "text_sha256": text_sha256,
+        }
         result.append(
             Element(
-                element_id=f"{source_id}:e{order:04d}",
+                element_id=f"elm_{_digest_text(_canonical_json(identity))}",
                 kind=block.kind,
                 text=text,
-                text_sha256=_digest_text(text),
+                text_sha256=text_sha256,
                 order=order,
-                location={"line_start": block.line_start, "line_end": block.line_end},
+                location=location,
                 section_path=list(block.section_path),
                 attributes=dict(block.attributes),
             )
@@ -602,12 +645,33 @@ def _record_base(relative_path: str, size_bytes: int) -> dict[str, Any]:
         "status": "rejected",
         "parser": None,
         "parser_version": None,
+        "parse_revision_sha256": None,
         "elements": [],
         "issues": [],
     }
 
 
-def inspect_file(path: Path, root: Path, limits: Limits, remaining_bytes: int) -> dict[str, Any]:
+def _read_bounded_bytes(path: Path, maximum: int) -> bytes:
+    """Read at most one byte past a budget so a changed file cannot bypass it."""
+
+    if maximum < 0:
+        raise ValueError("读取字节上限不得为负数")
+    with path.open("rb") as handle:
+        raw = handle.read(maximum + 1)
+    if len(raw) > maximum:
+        raise DocumentError(
+            f"读取时文件超过 {maximum} 字节预算；已停止继续读取并拒绝该文件。"
+        )
+    return raw
+
+
+def inspect_file(
+    path: Path,
+    root: Path,
+    limits: Limits,
+    remaining_bytes: int,
+    config_sha256: str,
+) -> dict[str, Any]:
     relative_path = path.relative_to(root).as_posix()
     if path.is_symlink():
         record = _record_base(relative_path, 0)
@@ -649,11 +713,17 @@ def inspect_file(path: Path, root: Path, limits: Limits, remaining_bytes: int) -
         ]
         return record
 
+    max_read_bytes = min(limits.max_file_bytes, remaining_bytes)
     try:
-        raw = path.read_bytes()
+        raw = _read_bounded_bytes(path, max_read_bytes)
     except OSError as exc:
         record["issues"] = [
             asdict(Issue("read_failed", "error", f"读取失败：{type(exc).__name__}"))
+        ]
+        return record
+    except DocumentError as exc:
+        record["issues"] = [
+            asdict(Issue("read_budget_exceeded", "error", str(exc)))
         ]
         return record
 
@@ -711,7 +781,13 @@ def inspect_file(path: Path, root: Path, limits: Limits, remaining_bytes: int) -
         blocks = _parse_blocks(detected, text)
         if not blocks:
             raise DocumentError("解析结果没有可发布元素。")
-        elements = _make_elements(source_id, blocks)
+        parse_revision_sha256 = _parse_revision_sha256(
+            raw_hash,
+            parser=PARSER_NAME,
+            parser_version=PARSER_VERSION,
+            config_sha256=config_sha256,
+        )
+        elements = _make_elements(parse_revision_sha256, blocks)
     except DocumentError as exc:
         record["issues"] = [asdict(Issue("parse_rejected", "error", str(exc)))]
         return record
@@ -722,6 +798,7 @@ def inspect_file(path: Path, root: Path, limits: Limits, remaining_bytes: int) -
             "status": "parsed",
             "parser": PARSER_NAME,
             "parser_version": PARSER_VERSION,
+            "parse_revision_sha256": parse_revision_sha256,
             "elements": [asdict(element) for element in elements],
             "issues": [asdict(issue) for issue in decode_issues],
         }
@@ -785,10 +862,22 @@ def scan_root(root: Path, limits: Limits = Limits()) -> dict[str, Any]:
         )
         files = files[: limits.max_files]
 
+    config = {
+        "limits": asdict(limits),
+        "normalization": "newline-to-LF+Unicode-NFC",
+        "supported_media_types": sorted(SUPPORTED_TEXT_TYPES),
+    }
+    config_sha256 = _digest_text(_canonical_json(config))
     records: list[dict[str, Any]] = []
     consumed = 0
     for path in files:
-        record = inspect_file(path, resolved_root, limits, limits.max_total_bytes - consumed)
+        record = inspect_file(
+            path,
+            resolved_root,
+            limits,
+            limits.max_total_bytes - consumed,
+            config_sha256,
+        )
         records.append(record)
         if record["raw_sha256"] is not None:
             consumed += int(record["size_bytes"])
@@ -814,16 +903,11 @@ def scan_root(root: Path, limits: Limits = Limits()) -> dict[str, Any]:
     else:
         gate = "pass"
 
-    config = {
-        "limits": asdict(limits),
-        "normalization": "newline-to-LF+Unicode-NFC",
-        "supported_media_types": sorted(SUPPORTED_TEXT_TYPES),
-    }
     return {
         "schema_version": SCHEMA_VERSION,
         "parser": {"name": PARSER_NAME, "version": PARSER_VERSION},
         "config": config,
-        "config_sha256": _digest_text(_canonical_json(config)),
+        "config_sha256": config_sha256,
         "root": ".",
         "documents": records,
         "summary": {

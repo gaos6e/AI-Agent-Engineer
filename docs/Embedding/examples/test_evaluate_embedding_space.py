@@ -86,7 +86,13 @@ class ContractAndMathTests(unittest.TestCase):
         self.assertAlmostEqual(math.sqrt(sum(value * value for value in vector)), 1.0)
 
     def test_normalize_rejects_empty_zero_and_nonfinite(self) -> None:
-        for vector in ((), (0.0, 0.0), (math.nan, 1.0), (math.inf, 1.0)):
+        for vector in (
+            (),
+            (0.0, 0.0),
+            (math.nan, 1.0),
+            (math.inf, 1.0),
+            (10**400, 1.0),
+        ):
             with self.subTest(vector=vector), self.assertRaises(lab.EmbeddingError):
                 lab.normalize(vector)
 
@@ -105,6 +111,7 @@ class ContractAndMathTests(unittest.TestCase):
         cases = [
             (((1.0,), (1.0, 2.0)), "cosine"),
             (((1.0, math.inf), (1.0, 2.0)), "dot"),
+            (((10**400,), (1.0,)), "dot"),
             (((1.0,), (1.0,)), "unknown"),
         ]
         for vectors, metric in cases:
@@ -163,6 +170,7 @@ class LoadingTests(JsonFixtureMixin, unittest.TestCase):
         mutations = [
             ([1.0], "维度必须"),
             ([True, 0.0, 0.0, 0.0], "有限数值"),
+            ([10**400, 0.0, 0.0, 0.0], "有限数值"),
             ([0.0, 0.0, 0.0, 0.0], "零向量"),
         ]
         for vector, message in mutations:
@@ -321,6 +329,22 @@ class SearchAndMetricTests(unittest.TestCase):
         with self.assertRaises(lab.EmbeddingError):
             lab.ndcg_at_k(["a"], {"a": 1}, 0)
 
+    def test_metrics_reject_duplicate_ranked_ids_and_invalid_grades(self) -> None:
+        for metric in (
+            lambda: lab.recall_at_k(["a", "a"], {"a": 3, "b": 2}),
+            lambda: lab.reciprocal_rank(["a", "a"], {"a": 3, "b": 2}),
+            lambda: lab.ndcg_at_k(["a", "a"], {"a": 3, "b": 2}, 2),
+        ):
+            with self.subTest(metric=metric), self.assertRaisesRegex(
+                lab.EmbeddingError, "重复"
+            ):
+                metric()
+        for relevance in ({"a": True}, {"a": 0}, {"a": 4}):
+            with self.subTest(relevance=relevance), self.assertRaisesRegex(
+                lab.EmbeddingError, "1..3"
+            ):
+                lab.ndcg_at_k(["a"], relevance, 1)
+
     def test_evaluation_reports_per_query_and_subgroups(self) -> None:
         report = lab.evaluate_space(self.fixture, space_id="toy-v1", k=3)
         self.assertEqual(report["query_count"], 4)
@@ -418,7 +442,7 @@ class MigrationAndCliTests(unittest.TestCase):
             [sys.executable, "-B", "-W", "error", script],
             cwd=HERE,
             env=environment,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -426,9 +450,19 @@ class MigrationAndCliTests(unittest.TestCase):
             [sys.executable, "-B", "-O", "-W", "error", script],
             cwd=HERE,
             env=environment,
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+        )
+        self.assertEqual(
+            normal.returncode,
+            0,
+            normal.stderr.decode("utf-8", errors="replace"),
+        )
+        self.assertEqual(
+            optimized.returncode,
+            0,
+            optimized.stderr.decode("utf-8", errors="replace"),
         )
         self.assertEqual(normal.stdout, optimized.stdout)
         parsed = json.loads(normal.stdout.decode("utf-8"))
@@ -456,7 +490,31 @@ class MigrationAndCliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("k", result.stderr.decode("utf-8"))
 
+    def test_cli_rejects_overflowing_vector_with_controlled_error(self) -> None:
+        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        payload["items"][0]["vector"] = [10**400, 0.0, 0.0, 0.0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "overflow.json"
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(HERE / "evaluate_embedding_space.py"),
+                    "--fixture",
+                    str(path),
+                ],
+                cwd=HERE,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, b"")
+        self.assertIn(b"error:", result.stderr)
+        self.assertNotIn(b"Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

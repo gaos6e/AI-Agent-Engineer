@@ -1,7 +1,7 @@
 ---
 title: 项目结构、CLI 与可复现运行
-tags: [ai-agent-engineer, Python, cli, packaging]
-aliases: [Python 项目结构, Python CLI]
+tags: [ ai-agent-engineer, Python, cli, packaging ]
+aliases: [ Python 项目结构, Python CLI ]
 ---
 
 # 项目结构、CLI 与可复现运行

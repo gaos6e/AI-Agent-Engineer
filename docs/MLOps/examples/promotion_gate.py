@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_CANDIDATES = Path(__file__).with_name("candidates.json")
 DEFAULT_OBSERVATIONS = Path(__file__).with_name("observations.json")
 DECISION_ACTIONS = {
+    "block_rollout_and_investigate",
     "continue",
     "investigate",
     "rollback_and_investigate",
@@ -35,6 +36,20 @@ def canonical_json(value: Any) -> str:
 
 def fingerprint(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting duplicate keys."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise GateError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def reject_nonstandard_constant(value: str) -> None:
+    raise GateError(f"non-standard JSON constant: {value}")
 
 
 def require_exact_keys(value: Any, expected: set[str], label: str) -> Mapping[str, Any]:
@@ -59,6 +74,20 @@ def require_text(value: Any, label: str, maximum: int = 200) -> str:
     if normalized.casefold() == "latest":
         raise GateError(f"{label} must be immutable, not 'latest'")
     return normalized
+
+
+def require_choice(value: Any, label: str, choices: set[str]) -> str:
+    text = require_text(value, label)
+    if text not in choices:
+        raise GateError(f"{label} must be one of {sorted(choices)}")
+    return text
+
+
+def require_fingerprint(value: Any, label: str) -> str:
+    digest = require_text(value, label, 64)
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise GateError(f"{label} must use 64 lowercase hexadecimal characters")
+    return digest
 
 
 def require_number(
@@ -100,7 +129,11 @@ def require_digest(value: Any, label: str) -> str:
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_pairs,
+            parse_constant=reject_nonstandard_constant,
+        )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise GateError(f"cannot load {path}: {exc}") from exc
     if not isinstance(value, dict):
@@ -136,6 +169,9 @@ def validate_policy(value: Any) -> Mapping[str, Any]:
             "max_artifact_size_bytes",
             "max_error_rate",
             "drift_investigation_threshold",
+            "min_observation_samples",
+            "min_labeled_samples_for_quality_decision",
+            "min_critical_labeled_samples_for_quality_decision",
             "min_label_coverage_for_quality_decision",
         },
         "policy",
@@ -156,6 +192,17 @@ def validate_policy(value: Any) -> Mapping[str, Any]:
         require_number(policy[field], f"policy.{field}", minimum=0, maximum=1)
     require_number(policy["max_p95_latency_ms"], "policy.max_p95_latency_ms", minimum=0)
     require_integer(policy["max_artifact_size_bytes"], "policy.max_artifact_size_bytes", 1)
+    require_integer(policy["min_observation_samples"], "policy.min_observation_samples", 1)
+    require_integer(
+        policy["min_labeled_samples_for_quality_decision"],
+        "policy.min_labeled_samples_for_quality_decision",
+        1,
+    )
+    require_integer(
+        policy["min_critical_labeled_samples_for_quality_decision"],
+        "policy.min_critical_labeled_samples_for_quality_decision",
+        1,
+    )
     return policy
 
 
@@ -329,17 +376,28 @@ def validate_observation(value: Any, index: int) -> Mapping[str, Any]:
     label = f"windows[{index}]"
     observation = require_exact_keys(
         value,
-        {"window_id", "sample_count", "label_coverage", "signals"},
+        {
+            "window_id",
+            "phase",
+            "sample_count",
+            "labeled_count",
+            "critical_labeled_count",
+            "signals",
+        },
         label,
     )
     require_text(observation["window_id"], f"{label}.window_id")
+    require_choice(observation["phase"], f"{label}.phase", {"shadow", "canary"})
     require_integer(observation["sample_count"], f"{label}.sample_count", 1)
-    require_number(
-        observation["label_coverage"],
-        f"{label}.label_coverage",
-        minimum=0,
-        maximum=1,
+    require_integer(observation["labeled_count"], f"{label}.labeled_count")
+    require_integer(
+        observation["critical_labeled_count"],
+        f"{label}.critical_labeled_count",
     )
+    if observation["labeled_count"] > observation["sample_count"]:
+        raise GateError(f"{label}.labeled_count must not exceed sample_count")
+    if observation["critical_labeled_count"] > observation["labeled_count"]:
+        raise GateError(f"{label}.critical_labeled_count must not exceed labeled_count")
     signals = require_exact_keys(
         observation["signals"],
         {"error_rate", "p95_latency_ms", "input_drift_score", "critical_slice_recall"},
@@ -380,26 +438,63 @@ def validate_observations_fixture(
 
     deployment = require_exact_keys(
         fixture["deployment"],
-        {"release_id", "model_id", "artifact_digest", "baseline_model_id"},
+        {
+            "release_id",
+            "model_id",
+            "artifact_digest",
+            "baseline_model_id",
+            "promotion_evidence_fingerprint",
+        },
         "deployment",
     )
     require_text(deployment["release_id"], "deployment.release_id")
     require_text(deployment["model_id"], "deployment.model_id")
     require_digest(deployment["artifact_digest"], "deployment.artifact_digest")
     require_text(deployment["baseline_model_id"], "deployment.baseline_model_id")
+    require_fingerprint(
+        deployment["promotion_evidence_fingerprint"],
+        "deployment.promotion_evidence_fingerprint",
+    )
     if deployment["baseline_model_id"] != candidate_fixture["baseline"]["model_id"]:
         raise GateError("deployment baseline_model_id does not match the candidate fixture")
     candidates = {item["candidate_id"]: item for item in candidate_fixture["candidates"]}
     if deployment["model_id"] not in candidates:
         raise GateError("deployment model_id is not a known candidate")
-    if deployment["artifact_digest"] != candidates[deployment["model_id"]]["artifact"]["digest"]:
+    deployed_candidate = candidates[deployment["model_id"]]
+    if deployment["artifact_digest"] != deployed_candidate["artifact"]["digest"]:
         raise GateError("deployment artifact digest does not match the candidate manifest")
+
+    promotion_decision = evaluate_candidate(
+        deployed_candidate,
+        candidate_fixture["baseline"],
+        candidate_fixture["policy"],
+        candidate_fixture["policy_version"],
+    )
+    if promotion_decision["passed"] is not True:
+        raise GateError("deployment candidate did not pass the promotion gate")
+    if (
+        deployment["promotion_evidence_fingerprint"]
+        != promotion_decision["evidence_fingerprint"]
+    ):
+        raise GateError("deployment promotion evidence fingerprint is stale or mismatched")
 
     reference = require_exact_keys(
         fixture["reference"],
-        {"critical_slice_recall", "p95_latency_ms", "error_rate"},
+        {
+            "model_id",
+            "artifact_digest",
+            "critical_slice_recall",
+            "p95_latency_ms",
+            "error_rate",
+        },
         "reference",
     )
+    require_text(reference["model_id"], "reference.model_id")
+    require_digest(reference["artifact_digest"], "reference.artifact_digest")
+    if reference["model_id"] != deployment["model_id"]:
+        raise GateError("reference model_id does not match the deployed candidate")
+    if reference["artifact_digest"] != deployment["artifact_digest"]:
+        raise GateError("reference artifact digest does not match the deployed artifact")
     require_number(reference["critical_slice_recall"], "reference.critical_slice_recall", minimum=0, maximum=1)
     require_number(reference["p95_latency_ms"], "reference.p95_latency_ms", minimum=0)
     require_number(reference["error_rate"], "reference.error_rate", minimum=0, maximum=1)
@@ -422,8 +517,10 @@ def assess_observation(
     reference: Mapping[str, Any],
     policy: Mapping[str, Any],
     policy_version: str,
+    deployment: Mapping[str, Any],
 ) -> dict[str, Any]:
     signals = observation["signals"]
+    phase = observation["phase"]
     reasons: list[str] = []
     technical_failure = False
     if signals["error_rate"] > policy["max_error_rate"]:
@@ -439,10 +536,34 @@ def assess_observation(
         )
 
     drift_detected = signals["input_drift_score"] >= policy["drift_investigation_threshold"]
-    labels_sufficient = (
-        observation["label_coverage"]
-        >= policy["min_label_coverage_for_quality_decision"]
-    )
+    sample_count = observation["sample_count"]
+    labeled_count = observation["labeled_count"]
+    critical_labeled_count = observation["critical_labeled_count"]
+    label_coverage = labeled_count / sample_count
+    evidence_gaps: list[str] = []
+    if sample_count < policy["min_observation_samples"]:
+        evidence_gaps.append(
+            f"sample_count={sample_count} is below {policy['min_observation_samples']}"
+        )
+    if labeled_count < policy["min_labeled_samples_for_quality_decision"]:
+        evidence_gaps.append(
+            "labeled_count="
+            f"{labeled_count} is below {policy['min_labeled_samples_for_quality_decision']}"
+        )
+    if critical_labeled_count < policy["min_critical_labeled_samples_for_quality_decision"]:
+        evidence_gaps.append(
+            "critical_labeled_count="
+            f"{critical_labeled_count} is below "
+            f"{policy['min_critical_labeled_samples_for_quality_decision']}"
+        )
+    if label_coverage < policy["min_label_coverage_for_quality_decision"]:
+        evidence_gaps.append(
+            f"label_coverage={label_coverage:.3f} is below "
+            f"{policy['min_label_coverage_for_quality_decision']:.3f}"
+        )
+    if signals["critical_slice_recall"] is None:
+        evidence_gaps.append("critical_slice_recall is unavailable")
+    labels_sufficient = not evidence_gaps
     quality_regression = False
     minimum_slice = (
         reference["critical_slice_recall"]
@@ -457,32 +578,48 @@ def assess_observation(
             )
 
     if technical_failure:
-        action = "rollback_and_investigate"
+        action = (
+            "block_rollout_and_investigate"
+            if phase == "shadow"
+            else "rollback_and_investigate"
+        )
     elif quality_regression and drift_detected:
-        action = "rollback_and_review_retraining"
-        reasons.append("drift accompanies a label-backed quality regression")
+        if phase == "shadow":
+            action = "block_rollout_and_investigate"
+            reasons.append("shadow evidence blocks exposure before user-facing rollout")
+        else:
+            action = "rollback_and_review_retraining"
+            reasons.append("drift accompanies a label-backed quality regression")
     elif quality_regression:
-        action = "rollback_and_investigate"
+        action = (
+            "block_rollout_and_investigate"
+            if phase == "shadow"
+            else "rollback_and_investigate"
+        )
+    elif evidence_gaps:
+        action = "investigate"
+        reasons.extend(f"evidence insufficient: {gap}" for gap in evidence_gaps)
     elif drift_detected:
         action = "investigate"
-        if not labels_sufficient:
-            reasons.append("drift detected, but label coverage is insufficient for a quality decision")
-        else:
-            reasons.append("drift detected without a confirmed quality regression")
+        reasons.append("drift detected without a confirmed quality regression")
     else:
         action = "continue"
-        reasons.append("no lab rollback or drift threshold was crossed")
+        reasons.append("all operational evidence gates passed")
 
     if action not in DECISION_ACTIONS:
         raise GateError(f"internal action is unsupported: {action}")
     evidence = {
         "observation": observation,
+        "deployment": deployment,
         "reference": reference,
         "policy": policy,
         "policy_version": policy_version,
     }
     return {
         "subject_id": observation["window_id"],
+        "release_id": deployment["release_id"],
+        "phase": phase,
+        "label_coverage": label_coverage,
         "action": action,
         "policy_version": policy_version,
         "evidence_fingerprint": fingerprint(evidence),
@@ -537,6 +674,7 @@ def main(argv: list[str] | None = None) -> int:
                     observations_fixture["reference"],
                     policy,
                     policy_version,
+                    observations_fixture["deployment"],
                 )
                 exit_code = 0 if result["action"] == "continue" else 1
             else:
@@ -557,6 +695,7 @@ def main(argv: list[str] | None = None) -> int:
                             observations_fixture["reference"],
                             policy,
                             policy_version,
+                            observations_fixture["deployment"],
                         )
                         for observation in observations_fixture["windows"]
                     ],
@@ -571,4 +710,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

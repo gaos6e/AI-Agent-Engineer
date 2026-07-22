@@ -39,6 +39,8 @@ TOP_FIELDS = {
     "audience",
     "technical",
     "shots",
+    "lineage",
+    "governance",
     "audio",
     "captions",
     "risk",
@@ -70,10 +72,18 @@ SHOT_FIELDS = {
 }
 ASSET_FIELDS = {
     "asset_id",
+    "source_revision",
     "role",
     "source_reference",
     "content_sha256",
     "rights_reference",
+    "acl_reference",
+}
+LINEAGE_FIELDS = {"source_revision", "transform_id", "release_id"}
+GOVERNANCE_FIELDS = {
+    "object_acl_required",
+    "deletion_propagation_plan",
+    "evidence_policy",
 }
 AUDIO_FIELDS = {
     "mode",
@@ -207,6 +217,20 @@ def validate_contract(package: Any) -> dict[str, Any]:
     for field in ("project_id", "purpose", "audience"):
         if not _nonempty_text(root[field]):
             raise FixtureError(f"{field} 必须是非空字符串")
+
+    lineage = _require_exact_fields(root["lineage"], LINEAGE_FIELDS, context="lineage")
+    for field in LINEAGE_FIELDS:
+        if not _nonempty_text(lineage[field]):
+            raise FixtureError(f"lineage.{field} 必须是非空字符串")
+
+    governance = _require_exact_fields(
+        root["governance"], GOVERNANCE_FIELDS, context="governance"
+    )
+    if not isinstance(governance["object_acl_required"], bool):
+        raise FixtureError("governance.object_acl_required 必须是布尔值")
+    for field in ("deletion_propagation_plan", "evidence_policy"):
+        if not _nonempty_text(governance[field]):
+            raise FixtureError(f"governance.{field} 必须是非空字符串")
 
     technical = _require_exact_fields(
         root["technical"], TECHNICAL_FIELDS, context="technical"
@@ -389,10 +413,14 @@ def audit_package(package: dict[str, Any]) -> list[str]:
             errors.append(f"shots[{index}] 超出总时长。")
         previous_end = end
         for asset in shot["reference_assets"]:
-            if INCOMPLETE_VALUE_PATTERN.search(asset["source_reference"]):
-                errors.append(f"素材 {asset['asset_id']} 的 source_reference 不能保留占位值。")
-            if INCOMPLETE_VALUE_PATTERN.search(asset["rights_reference"]):
-                errors.append(f"素材 {asset['asset_id']} 的 rights_reference 不能保留占位值。")
+            for field in (
+                "source_reference",
+                "source_revision",
+                "rights_reference",
+                "acl_reference",
+            ):
+                if INCOMPLETE_VALUE_PATTERN.search(asset[field]):
+                    errors.append(f"素材 {asset['asset_id']} 的 {field} 不能保留占位值。")
     if abs(previous_end - duration) > EPSILON:
         errors.append("镜头时间线没有完整覆盖 technical.duration_seconds。")
 
@@ -425,6 +453,21 @@ def audit_package(package: dict[str, Any]) -> list[str]:
         "not_required",
     }:
         errors.append("包含真人时必须记录有效的人物同意依据。")
+
+    lineage = package["lineage"]
+    for field in LINEAGE_FIELDS:
+        if INCOMPLETE_VALUE_PATTERN.search(lineage[field]):
+            errors.append(f"lineage.{field} 不能保留占位值。")
+
+    governance = package["governance"]
+    if governance["object_acl_required"] is not True:
+        errors.append("governance.object_acl_required 必须在评分前启用对象级授权/ACL。")
+    if INCOMPLETE_VALUE_PATTERN.search(governance["deletion_propagation_plan"]):
+        errors.append("governance.deletion_propagation_plan 不能保留占位值。")
+    if governance["evidence_policy"] != "evidence_supported":
+        errors.append(
+            "governance.evidence_policy 必须为 'evidence_supported'，不得把生成视频单独当作事实证据。"
+        )
 
     dimensions: set[str] = set()
     for item in package["acceptance"]:

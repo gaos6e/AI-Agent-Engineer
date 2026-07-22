@@ -8,7 +8,8 @@ aliases:
   - 交叉编码器重排
   - Cross Encoder Reranker
 source_checked: 2026-07-14
-source_baseline: "BERT/monoT5/RankT5 原始论文及 Sentence Transformers、Elasticsearch 官方资料截至 2026-07-14"
+source_baseline: "BERT/monoT5/RankT5 原始论文及 Sentence Transformers、Elasticsearch
+  官方资料截至 2026-07-14"
 ---
 
 # Cross-Encoder 重排

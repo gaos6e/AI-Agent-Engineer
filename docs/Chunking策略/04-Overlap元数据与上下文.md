@@ -129,7 +129,14 @@ Anthropic 的 Contextual Retrieval 是生成 chunk-specific context 的一种方
 - content hash；
 - ACL 或租户边界。
 
-是否把 retrieval context 哈希纳入 chunk ID 取决于身份定义：若正文相同但标题前缀变化应重做向量，可以保留 chunk ID、更新 `retrieval_sha256` 与 embedding revision；也可以生成新 ID。两种都可行，关键是写入 ADR、禁止静默复用旧向量。
+是否把 retrieval context 哈希纳入 chunk ID 取决于身份定义：若正文相同但标题前缀变化应重做向量，可以保留 chunk ID、更新 `retrieval_sha256` 与 embedding revision；也可以生成新 ID。两种都可行，但索引层必须有一条不可选的失效规则：
+
+```text
+index_entry_id = H(chunk_id + retrieval_sha256
+                   + index_revision + acl_snapshot_sha256)
+```
+
+因此，即使业务选择保留 `chunk_id`，标题路径、表头或生成式检索上下文变化也会产生新的 `index_entry_id`；索引版本或 ACL 快照变化同样不能复用旧记录。正文身份与索引记录身份分层，才能同时支持稳定引用和确定性重建。本库项目已为这四项绑定及标题/表头变化编写测试；[[RAG/09-项目-从来源到引用证据链|RAG 来源到引用证据链]]继续把该身份接到发布 generation 与 citation。
 
 `ordinal` 仍需保存，用于恢复阅读顺序，但不参与本库示例的 ID 身份。测试会在前面插入无关来源，验证旧 chunks 的 ID 不变。
 
@@ -172,6 +179,7 @@ Anthropic 的 Contextual Retrieval 是生成 chunk-specific context 的一种方
 - [ ] 我分开保存原文、检索文本、派生上下文与各自哈希。
 - [ ] ACL 在召回/评分之前执行，并在 parent 展开时复核。
 - [ ] chunk ID、ordinal、revision 和 embedding revision 各有明确职责。
+- [ ] index entry 身份绑定检索表示、索引版本与 ACL；仅标题/表头变化也会使旧索引记录失效。
 - [ ] 策略升级支持影子重建、对账、原子切换和回滚。
 
 ## 小结与下一步

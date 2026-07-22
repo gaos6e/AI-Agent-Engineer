@@ -1,7 +1,7 @@
 ---
 title: Embedding 与语义检索
-tags: [ai-agent-engineer, 向量, Embedding, retrieval]
-aliases: [向量语义检索]
+tags: [ ai-agent-engineer, 向量, Embedding, retrieval ]
+aliases: [ 向量语义检索 ]
 source_checked: 2026-07-14
 source_baseline:
   - Google Machine Learning Crash Course embeddings

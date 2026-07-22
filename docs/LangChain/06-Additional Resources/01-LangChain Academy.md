@@ -1,23 +1,15 @@
 ---
-title: LangChain Academy
-aliases:
-  - LangChain Academy
-  - LangChain 学院
-source: https://academy.langchain.com/
-source_md: https://docs.langchain.com/oss/python/langchain/academy.md
-retrieved: 2026-05-07
+title: "LangChain Academy"
 tags:
-  - langchain
-  - python
-  - docs/learn
-license: MIT
+  - third-party-reference
+third_party_stub: true
 ---
 
 # LangChain Academy
 
-> 官方课程和练习，用于提升 LangChain 技能。
+> [!info] 本页未复制第三方原文
+> 该上游参考页尚未完成逐页的来源、内容来源和再分发许可标记；公开层先保留安全的来源跳转页。 公开网站仅保留来源跳转页；你仍可在本机 Obsidian 中阅读已有参考资料。
 
-该 Learn 侧栏项会跳转到 LangChain Academy 外部站点。为避免超出 LangChain docs 的 Learn 文档范围，本地仅保留外部资源入口，不抓取 Academy 站点正文。
+[前往上游来源查看本节](<https://academy.langchain.com/>)
 
-- [打开 LangChain Academy](https://academy.langchain.com/)
-- docs 侧栏来源：<https://docs.langchain.com/oss/python/langchain/academy>
+返回 [[LangChain/00-目录|LangChain 学习入口]]。

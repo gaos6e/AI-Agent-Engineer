@@ -198,6 +198,73 @@
   margin-top: var(--aae-section-space);
 }
 
+.aae-role-system {
+  padding: clamp(2.5rem, 5vw, 4rem);
+  border: 1px solid var(--aae-hairline);
+  border-radius: var(--aae-radius-lg);
+  background: var(--aae-surface-soft);
+}
+
+.aae-role-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.aae-role-grid > a {
+  position: relative;
+  display: grid;
+  min-height: 13rem;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 0.75rem;
+  padding: 1.35rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: var(--aae-radius-lg);
+  background: var(--aae-canvas);
+  color: var(--aae-ink);
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.aae-role-grid > a:hover {
+  border-color: var(--aae-ink);
+  color: var(--aae-ink);
+  transform: translateY(-4px);
+}
+
+.aae-role-grid > a > span,
+.aae-role-grid > a > small {
+  font: 650 0.72rem/1.25 var(--aae-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.aae-role-grid > a > strong {
+  max-width: 12ch;
+  font-family: var(--aae-font-display);
+  font-size: 1.45rem;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.aae-role-grid > a > p {
+  margin: 0;
+  color: var(--aae-ink-soft);
+  font-size: 0.96rem;
+  line-height: 1.5;
+}
+
+.aae-role-grid > a > small {
+  color: var(--aae-ink-soft);
+}
+
+.aae-role-grid > a > i {
+  position: absolute;
+  right: 1.2rem;
+  top: 1.15rem;
+  font-style: normal;
+}
+
 .aae-stage-system {
   padding: clamp(2.5rem, 5vw, 4rem);
   border-radius: var(--aae-radius-lg);
@@ -434,6 +501,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .aae-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .aae-course-stage__links {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -460,6 +531,7 @@
   }
 
   .aae-marquee,
+  .aae-role-system,
   .aae-stage-system,
   .aae-publishing-note {
     margin-inline: -0.75rem;
@@ -525,6 +597,11 @@
     padding: 2.5rem 1.25rem;
   }
 
+  .aae-role-system {
+    padding: 2.5rem 1.25rem;
+  }
+
+  .aae-role-grid,
   .aae-stage-grid,
   .aae-course-stage__links {
     grid-template-columns: 1fr;
@@ -541,6 +618,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .aae-button,
+  .aae-role-grid > a,
   .aae-stage-card,
   .aae-course-stage__links a {
     transition: none;

@@ -4,57 +4,68 @@ import styles from "./styles/homepage.scss"
 
 type Course = {
   name: string
-  stage: string
-  order: number
+  domain: string
+  catalogOrder: number
+  tracks: Partial<Record<CourseTrackRole, CourseTrackKind>>
   slug: NonNullable<QuartzComponentProps["fileData"]["slug"]>
 }
 
-const stageCopy: Record<string, { label: string; description: string }> = {
-  "1. 工程基础": {
-    label: "工程基础",
-    description: "建立编程、命令行、版本控制与数据交换的可靠底座。",
-  },
-  "2. 数学与数据基础": {
-    label: "数学与数据基础",
-    description: "用最小数学直觉理解训练、向量、指标和数据质量。",
-  },
-  "3. LLM 应用基础": {
-    label: "LLM 应用基础",
-    description: "从提示词、上下文预算到可维护的模型 API 集成。",
-  },
-  "4. RAG 与知识库": {
-    label: "RAG 与知识库",
-    description: "完成解析、切分、检索、重排与可验证的生成链路。",
-  },
-  "5. 单 Agent 与工具": {
-    label: "单 Agent 与工具",
-    description: "让模型在权限、状态、停止条件和工具契约内可靠行动。",
-  },
-  "6. 框架实践": {
-    label: "框架实践",
-    description: "在理解底层模式后，用框架交付可测试的工程实现。",
-  },
-  "7. 生产化、评测与治理": {
-    label: "生产化、评测与治理",
-    description: "把质量、成本、安全、监控和组织责任放进生命周期。",
-  },
-  "8. 扩展应用与复杂协作": {
-    label: "扩展应用与复杂协作",
-    description: "进入多 Agent、多模态与生成媒体的复杂系统边界。",
-  },
+type CourseTrackRole = "agent_app" | "rag" | "agent_platform" | "multimodal_realtime"
+type CourseTrackKind = "core" | "recommended" | "optional"
+
+const domainCopy = [
+  { id: "foundations", label: "工程与数学基础", description: "建立编程、数据表示、协作与定量判断的可靠底座。" },
+  { id: "model-and-context", label: "模型与上下文", description: "选择模型，并控制提示、上下文预算与 API 边界。" },
+  { id: "retrieval-and-data", label: "检索与数据", description: "完成清洗、解析、切分、检索、重排与引用链路。" },
+  { id: "multimodal", label: "多模态", description: "处理文档视觉、语音、实时交互与生成媒体。" },
+  { id: "agent-runtime", label: "Agent 运行时", description: "约束工具、状态、权限、恢复、协作与停止条件。" },
+  { id: "framework-practice", label: "框架实践", description: "在理解底层合同后选择可替换的装配框架。" },
+  { id: "evaluation-reliability", label: "评测与可靠性", description: "用数据集、grader、可视化和压力样本建立质量证据。" },
+  { id: "safety-governance", label: "安全与治理", description: "把威胁、隐私、责任与合规放进生命周期。" },
+  { id: "production-ops", label: "生产运维", description: "管理发布、回滚、监控和模型或应用制品。" },
+  { id: "frontier-reference", label: "前沿与参考", description: "按观察状态学习快速变化的协议与研究方向。" },
+] as const
+
+const roleCopy: ReadonlyArray<{ id: CourseTrackRole; label: string; description: string }> = [
+  { id: "agent_app", label: "Agent 应用开发", description: "交付有状态、可审批、可恢复的单 Agent。" },
+  { id: "rag", label: "RAG 与知识库", description: "交付有 ACL、引用和分层评测的双管线 RAG。" },
+  { id: "agent_platform", label: "Agent 平台与可靠性", description: "交付带发布门、trace、回滚与治理的运行平台。" },
+  { id: "multimodal_realtime", label: "多模态与实时交互", description: "交付可打断、可调用工具的实时多模态原型。" },
+]
+
+function courseIndexName(file: QuartzComponentProps["fileData"]) {
+  const relativePath = file.relativePath?.replaceAll("\\", "/")
+  return relativePath?.match(/^([^/]+)\/00-目录\.md$/)?.[1]
 }
 
 function getCourses(allFiles: QuartzComponentProps["allFiles"]): Course[] {
-  return allFiles
-    .filter((file) => file.frontmatter?.ai_learning_stage && file.frontmatter?.ai_learning_order)
-    .map((file) => ({
-      name: file.relativePath?.replaceAll("\\", "/").split("/")[0] ?? file.frontmatter!.title,
-      stage: String(file.frontmatter!.ai_learning_stage),
-      order: Number(file.frontmatter!.ai_learning_order),
-      slug: file.slug!,
-    }))
-    .filter((course) => course.slug)
-    .sort((left, right) => left.order - right.order)
+  return allFiles.flatMap((file) => {
+    const name = courseIndexName(file)
+    const schema = Number(file.frontmatter?.ai_learning_schema)
+    const domain = String(file.frontmatter?.ai_learning_domain ?? "").trim()
+    const catalogOrder = Number(file.frontmatter?.ai_learning_catalog_order)
+    if (!name || schema !== 2 || !domain || !Number.isSafeInteger(catalogOrder) || !file.slug) return []
+    const tracks: Partial<Record<CourseTrackRole, CourseTrackKind>> = {}
+    for (const role of roleCopy) {
+      const order = Number(file.frontmatter?.[`ai_learning_track_${role.id}_order`])
+      const kind = String(file.frontmatter?.[`ai_learning_track_${role.id}_kind`] ?? "") as CourseTrackKind
+      if (Number.isSafeInteger(order) && order > 0 && ["core", "recommended", "optional"].includes(kind)) {
+        tracks[role.id] = kind
+      }
+    }
+    return [{ name, domain, catalogOrder, tracks, slug: file.slug }]
+  })
+    .sort((left, right) => left.catalogOrder - right.catalogOrder)
+}
+
+function formatCatalogOrder(order: number) {
+  const display = order / 100
+  return Number.isInteger(display) ? String(display).padStart(2, "0") : String(display)
+}
+
+function numericStat(value: unknown, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps) => {
@@ -62,17 +73,18 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
   const current = fileData.slug
 
   const courses = getCourses(allFiles)
-  const stages = [...new Set(courses.map((course) => course.stage))]
+  const domains = domainCopy.filter((domain) => courses.some((course) => course.domain === domain.id))
   const roadmap = allFiles.find(
     (file) => file.relativePath?.replaceAll("\\", "/") === "All of AI.md",
   )
   const notices = allFiles.find(
     (file) => file.relativePath?.replaceAll("\\", "/") === "THIRD_PARTY_NOTICES.md",
   )
-  const sourceDocuments = Number(fileData.frontmatter?.site_source_document_count ?? 844)
-  const fullDocuments = Number(fileData.frontmatter?.site_full_document_count ?? sourceDocuments)
-  const sourceStubs = Number(fileData.frontmatter?.site_stub_count ?? 0)
-  const assets = Number(fileData.frontmatter?.site_asset_count ?? 0)
+  const discoveredDocuments = allFiles.filter((file) => file.relativePath?.endsWith(".md")).length
+  const sourceDocuments = numericStat(fileData.frontmatter?.site_source_document_count, discoveredDocuments)
+  const fullDocuments = numericStat(fileData.frontmatter?.site_full_document_count, sourceDocuments)
+  const sourceStubs = numericStat(fileData.frontmatter?.site_stub_count, 0)
+  const assets = numericStat(fileData.frontmatter?.site_asset_count, 0)
 
   return (
     <main class="aae-home">
@@ -83,8 +95,8 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
             从零构建、评测与部署 <span>AI Agent</span>
           </h1>
           <p class="aae-hero__lead" data-aae-hero="lead">
-            一套面向真实工程交付的中文学习知识库。沿 8 个阶段完成 53 个学习重点，
-            从 Python、API 与数据底座，走到 RAG、Agent、评测、治理和复杂协作。
+            一套面向真实工程交付的中文学习知识库。按角色路径和能力缺口选择 {courses.length} 个学习重点，
+            覆盖从 Python、API 与数据底座，到 RAG、Agent、评测、治理和复杂协作的 {domains.length} 个知识域。
           </p>
           <div class="aae-hero__actions" data-aae-hero="actions">
             {roadmap?.slug && (
@@ -108,7 +120,7 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
 
       <aside class="aae-marquee" aria-label="知识库规模">
         <dl>
-          <div><dt>08</dt><dd>STAGES</dd></div>
+          <div><dt>{String(domains.length).padStart(2, "0")}</dt><dd>DOMAINS</dd></div>
           <div><dt>{String(courses.length).padStart(2, "0")}</dt><dd>KNOWLEDGE BASES</dd></div>
           <div><dt>{sourceDocuments}</dt><dd>SOURCE DOCUMENTS</dd></div>
           <div><dt>{fullDocuments}</dt><dd>PUBLIC ARTICLES</dd></div>
@@ -116,19 +128,45 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
         <p aria-hidden="true">BUILD · OBSERVE · EVALUATE · SHIP · ITERATE</p>
       </aside>
 
+      <section class="aae-home-section aae-role-system" aria-labelledby="aae-role-title">
+        <div class="aae-section-heading">
+          <div>
+            <p class="aae-eyebrow">ROLE TRACKS</p>
+            <h2 id="aae-role-title">先选交付目标，再补能力</h2>
+          </div>
+          <p>四条路径直接读取课程 v2 元数据；核心、推荐与可选课程各自保留边界，不把建议顺序伪装成硬依赖。</p>
+        </div>
+        <div class="aae-role-grid">
+          {roleCopy.map((role, index) => {
+            const roleCourses = courses.filter((course) => course.tracks[role.id])
+            const core = roleCourses.filter((course) => course.tracks[role.id] === "core").length
+            const recommended = roleCourses.filter((course) => course.tracks[role.id] === "recommended").length
+            const optional = roleCourses.filter((course) => course.tracks[role.id] === "optional").length
+            return roadmap?.slug ? (
+              <a href={resolveRelative(current, roadmap.slug)} data-aae-reveal="role">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{role.label}</strong>
+                <p>{role.description}</p>
+                <small>{core} 核心 · {recommended} 推荐 · {optional} 可选</small>
+                <i aria-hidden="true">↗</i>
+              </a>
+            ) : null
+          })}
+        </div>
+      </section>
+
       <section class="aae-home-section aae-stage-system" aria-labelledby="aae-stage-title">
         <div class="aae-section-heading">
           <div>
             <p class="aae-eyebrow">LEARNING SYSTEM</p>
-            <h2 id="aae-stage-title">八阶段能力路径</h2>
+            <h2 id="aae-stage-title">{domains.length} 个知识域</h2>
           </div>
-          <p>按顺序推进，也可以从当前项目的能力缺口进入；每个阶段都以实践和掌握检查收束。</p>
+          <p>知识域负责稳定归类，角色路径负责学习顺序，硬前置只保留真正无法绕过的完整课程依赖。</p>
         </div>
         <div class="aae-stage-grid">
-          {stages.map((stage, index) => {
-            const stageCourses = courses.filter((course) => course.stage === stage)
-            const first = stageCourses[0]
-            const copy = stageCopy[stage] ?? { label: stage, description: "建立这一阶段的核心工程能力。" }
+          {domains.map((domain, index) => {
+            const domainCourses = courses.filter((course) => course.domain === domain.id)
+            const first = domainCourses[0]
             return (
               <a
                 class="aae-stage-card"
@@ -138,10 +176,10 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
               >
                 <span class="aae-stage-card__number">{String(index + 1).padStart(2, "0")}</span>
                 <span class="aae-stage-card__body">
-                  <strong>{copy.label}</strong>
-                  <span>{copy.description}</span>
+                  <strong>{domain.label}</strong>
+                  <span>{domain.description}</span>
                 </span>
-                <span class="aae-stage-card__count">{stageCourses.length} 个学习重点</span>
+                <span class="aae-stage-card__count">{domainCourses.length} 个学习重点</span>
                 <span class="aae-stage-card__arrow" aria-hidden="true">↗</span>
               </a>
             )
@@ -152,24 +190,23 @@ const Homepage: QuartzComponent = ({ fileData, allFiles }: QuartzComponentProps)
       <section class="aae-home-section aae-course-map" aria-labelledby="aae-course-title">
         <div class="aae-section-heading">
           <div>
-            <p class="aae-eyebrow">53 KNOWLEDGE BASES</p>
+            <p class="aae-eyebrow">{courses.length} KNOWLEDGE BASES</p>
             <h2 id="aae-course-title">全部学习重点</h2>
           </div>
           <p>每个入口都进入统一课程目录；阅读页左栏会保留阶段、课程与真实子目录层级。</p>
         </div>
         <div class="aae-course-map__stages">
-          {stages.map((stage, stageIndex) => {
-            const copy = stageCopy[stage] ?? { label: stage, description: "" }
+          {domains.map((domain, domainIndex) => {
             return (
               <section class="aae-course-stage" data-aae-reveal="course-stage">
                 <header>
-                  <span>{String(stageIndex + 1).padStart(2, "0")}</span>
-                  <h3>{copy.label}</h3>
+                  <span>{String(domainIndex + 1).padStart(2, "0")}</span>
+                  <h3>{domain.label}</h3>
                 </header>
                 <div class="aae-course-stage__links">
-                  {courses.filter((course) => course.stage === stage).map((course) => (
+                  {courses.filter((course) => course.domain === domain.id).map((course) => (
                     <a href={resolveRelative(current, course.slug)}>
-                      <span>{String(course.order).padStart(2, "0")}</span>
+                      <span>{formatCatalogOrder(course.catalogOrder)}</span>
                       <strong>{course.name}</strong>
                       <i aria-hidden="true">↗</i>
                     </a>

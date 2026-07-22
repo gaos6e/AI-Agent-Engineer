@@ -21,6 +21,11 @@ class GovernancePackTests(unittest.TestCase):
     def pack(self) -> dict:
         return app.build_pack(self.scenario())
 
+    def risk_facts(self, **updates: object) -> dict:
+        facts = copy.deepcopy(app.SCENARIO["risk_facts"])
+        facts.update(updates)
+        return facts
+
     def run_main(self, *args: str) -> tuple[int, str, str]:
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -149,37 +154,48 @@ class GovernancePackTests(unittest.TestCase):
         self.expect_scenario_error(value)
 
     def test_24_low_risk_matrix_case(self) -> None:
-        facts = {"severity": 2, "likelihood": 2, "uncertainty": "bounded"}
+        facts = self.risk_facts(
+            severity=2,
+            likelihood=2,
+            consequential_context=False,
+            uncertainty="bounded",
+        )
         result = app.tier_risk(facts)
         self.assertEqual(result["internal_tier"], "low")
         self.assertEqual(result["score"], 4)
 
     def test_25_medium_risk_matrix_case(self) -> None:
-        facts = {"severity": 3, "likelihood": 2, "uncertainty": "bounded"}
+        facts = self.risk_facts(
+            severity=3,
+            likelihood=2,
+            consequential_context=False,
+            uncertainty="bounded",
+        )
         self.assertEqual(app.tier_risk(facts)["internal_tier"], "medium")
 
     def test_26_high_risk_matrix_case(self) -> None:
-        facts = {"severity": 5, "likelihood": 2, "uncertainty": "bounded"}
+        facts = self.risk_facts(severity=5, likelihood=2, uncertainty="bounded")
         self.assertEqual(app.tier_risk(facts)["internal_tier"], "high")
 
     def test_27_consequential_context_forces_high(self) -> None:
-        facts = {
-            "severity": 1, "likelihood": 1, "consequential_context": True,
-            "uncertainty": "bounded",
-        }
+        facts = self.risk_facts(severity=1, likelihood=1, consequential_context=True, uncertainty="bounded")
         result = app.tier_risk(facts)
         self.assertEqual(result["internal_tier"], "high")
         self.assertTrue(any("consequential" in reason for reason in result["reasons"]))
 
     def test_28_autonomous_action_forces_high(self) -> None:
-        facts = {
-            "severity": 1, "likelihood": 1, "autonomous_action": True,
-            "uncertainty": "bounded",
-        }
+        facts = self.risk_facts(
+            severity=1,
+            likelihood=1,
+            consequential_context=False,
+            autonomous_action=True,
+            uncertainty="bounded",
+        )
         self.assertEqual(app.tier_risk(facts)["internal_tier"], "high")
 
     def test_29_risk_boundary_disclaims_legal_classification(self) -> None:
-        self.assertIn("not a statutory", app.tier_risk({"severity": 1, "likelihood": 1})["boundary"])
+        facts = self.risk_facts(severity=1, likelihood=1, consequential_context=False)
+        self.assertIn("not a statutory", app.tier_risk(facts)["boundary"])
 
     def test_30_pack_contains_exact_sections(self) -> None:
         pack = self.pack()
@@ -221,8 +237,8 @@ class GovernancePackTests(unittest.TestCase):
 
     def test_37_source_status_is_current_and_bounded(self) -> None:
         status = self.pack()["source_status"]
-        self.assertEqual(status["as_of"], "2026-07-14")
-        self.assertIn("revision in progress", status["nist_ai_rmf"])
+        self.assertEqual(status["as_of"], "2026-07-22")
+        self.assertIn("revision in progress", status["nist_ai_rmf"]["version_status"])
         self.assertIn("not performed", status["legal_review"])
 
     def test_38_missing_pack_section_rejected(self) -> None:
@@ -298,6 +314,142 @@ class GovernancePackTests(unittest.TestCase):
     def test_50_rendered_pack_contains_no_credential_marker(self) -> None:
         rendered = json.dumps(self.pack(), ensure_ascii=False).lower()
         self.assertFalse(any(marker in rendered for marker in ("api_key", "access_token", "bearer ", "password")))
+
+    def test_51_production_status_is_rejected_at_input(self) -> None:
+        value = self.scenario()
+        value["status"] = "production"
+        self.expect_scenario_error(value)
+
+    def test_52_autonomous_decision_role_is_rejected_at_input(self) -> None:
+        value = self.scenario()
+        value["decision_role"] = "autonomous_final_decision"
+        self.expect_scenario_error(value)
+
+    def test_53_personal_data_must_match_risk_fact(self) -> None:
+        value = self.scenario()
+        value["data"][0]["personal_data"] = True
+        self.expect_scenario_error(value)
+
+    def test_54_sensitive_data_must_match_risk_fact(self) -> None:
+        value = self.scenario()
+        value["data"][0]["sensitive_data"] = True
+        self.expect_scenario_error(value)
+
+    def test_55_tier_risk_rejects_partial_facts(self) -> None:
+        with self.assertRaises(app.GovernanceError):
+            app.tier_risk({"severity": 1, "likelihood": 1})
+
+    def test_56_tier_risk_rejects_truthy_string_flag(self) -> None:
+        facts = self.risk_facts(autonomous_action="false")
+        with self.assertRaises(app.GovernanceError):
+            app.tier_risk(facts)
+
+    def test_57_sensitive_data_requires_privacy_review(self) -> None:
+        facts = self.risk_facts(
+            severity=1,
+            likelihood=1,
+            consequential_context=False,
+            sensitive_or_personal_data=True,
+        )
+        result = app.tier_risk(facts)
+        self.assertEqual(result["internal_tier"], "low")
+        self.assertIn("privacy", result["required_reviews"])
+
+    def test_58_empty_impact_assessment_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["impact_assessment"] = {}
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_59_missing_incident_plan_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["incident_and_hazard_plan"] = None
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_60_source_status_requires_official_url(self) -> None:
+        pack = self.pack()
+        del pack["source_status"]["nist_ai_rmf"]["official_url"]
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_61_mutating_both_version_copies_cannot_bypass_binding(self) -> None:
+        pack = self.pack()
+        pack["component_register"]["approved_version_set"]["MODEL-001"] = "other"
+        pack["approval"]["approved_version_set"]["MODEL-001"] = "other"
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_62_scenario_fingerprint_changes_with_material_fact(self) -> None:
+        original = app.validate_scenario(self.scenario())
+        changed = self.scenario()
+        changed["components"][0]["version"] = "snapshot-v2"
+        changed = app.validate_scenario(changed)
+        self.assertNotEqual(app.scenario_fingerprint(original), app.scenario_fingerprint(changed))
+
+    def test_63_invalid_review_date_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["system_register"]["next_review"] = "21-08-2026"
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_64_expired_approval_date_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["approval"]["expires"] = "2026-07-20"
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_65_monitoring_unknown_field_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["monitoring_plan"][0]["extra"] = "x"
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_66_role_section_missing_nested_field_is_rejected(self) -> None:
+        pack = self.pack()
+        del pack["role_assignment"]["decision_rights"]["emergency_stop"]
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_67_data_register_mutation_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["component_register"]["data"][0]["retention"] = "forever"
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_68_custom_scenario_pack_requires_same_scenario_for_validation(self) -> None:
+        scenario = self.scenario()
+        scenario["components"][0]["version"] = "snapshot-v2"
+        pack = app.build_pack(scenario)
+        app.validate_pack(pack, scenario)
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_69_approval_fingerprint_mutation_is_rejected(self) -> None:
+        pack = self.pack()
+        pack["approval"]["scenario_sha256"] = "0" * 64
+        with self.assertRaises(app.GovernanceError):
+            app.validate_pack(pack)
+
+    def test_70_data_version_must_be_nonempty(self) -> None:
+        value = self.scenario()
+        value["data"][0]["version"] = ""
+        self.expect_scenario_error(value)
+
+    def test_71_data_owner_must_be_nonempty(self) -> None:
+        value = self.scenario()
+        value["data"][0]["owner"] = ""
+        self.expect_scenario_error(value)
+
+    def test_72_vendor_profile_snapshot_must_be_nonempty(self) -> None:
+        value = self.scenario()
+        value["vendor"]["profile_snapshot"] = ""
+        self.expect_scenario_error(value)
+
+    def test_73_vendor_owner_must_be_nonempty(self) -> None:
+        value = self.scenario()
+        value["vendor"]["owner"] = ""
+        self.expect_scenario_error(value)
 
 
 if __name__ == "__main__":

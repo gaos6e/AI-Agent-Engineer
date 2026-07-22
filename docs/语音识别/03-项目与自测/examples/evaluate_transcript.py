@@ -13,7 +13,24 @@ from typing import Any, Callable
 
 
 NORMALIZATION_NAME = "nfkc-casefold-remove-punctuation-v1"
-TOP_FIELDS = {"schema_version", "session_id", "normalization", "segments"}
+TOP_FIELDS = {
+    "schema_version",
+    "session_id",
+    "source_audio",
+    "transcript_revision",
+    "transcript_state",
+    "normalization",
+    "segments",
+}
+SOURCE_AUDIO_FIELDS = {
+    "asset_id",
+    "source_revision",
+    "timestamp_reference",
+    "capture_format",
+    "analysis_format",
+    "audio_available",
+}
+AUDIO_FORMAT_FIELDS = {"container", "codec", "sample_rate_hz", "channels"}
 SEGMENT_FIELDS = {
     "segment_id",
     "start_seconds",
@@ -65,14 +82,54 @@ def _is_finite_number(value: Any) -> bool:
     )
 
 
+def _validate_audio_format(value: Any, *, context: str) -> dict[str, Any]:
+    """Validate descriptive metadata only; this project never decodes media."""
+    audio_format = _require_exact_fields(value, AUDIO_FORMAT_FIELDS, context=context)
+    for field in ("container", "codec"):
+        if not isinstance(audio_format[field], str) or not audio_format[field].strip():
+            raise FixtureError(f"{context}.{field} must be a non-empty string")
+    for field in ("sample_rate_hz", "channels"):
+        number = audio_format[field]
+        if (
+            not isinstance(number, int)
+            or isinstance(number, bool)
+            or number <= 0
+        ):
+            raise FixtureError(f"{context}.{field} must be a positive integer")
+    return audio_format
+
+
 def validate_fixture(payload: Any) -> dict[str, Any]:
     """Validate schema and types; temporal quality checks remain audit findings."""
     root = _require_exact_fields(payload, TOP_FIELDS, context="fixture")
-    if root["schema_version"] != "1.0":
-        raise FixtureError("schema_version must be '1.0'")
+    if root["schema_version"] != "1.1":
+        raise FixtureError("schema_version must be '1.1'")
     session_id = root["session_id"]
     if not isinstance(session_id, str) or not session_id.strip():
         raise FixtureError("session_id must be a non-empty string")
+    source_audio = _require_exact_fields(
+        root["source_audio"], SOURCE_AUDIO_FIELDS, context="source_audio"
+    )
+    for field in ("asset_id", "source_revision"):
+        if not isinstance(source_audio[field], str) or not source_audio[field].strip():
+            raise FixtureError(f"source_audio.{field} must be a non-empty string")
+    if source_audio["timestamp_reference"] != "asset_start":
+        raise FixtureError("source_audio.timestamp_reference must be 'asset_start'")
+    if source_audio["audio_available"] is not False:
+        raise FixtureError(
+            "source_audio.audio_available must be false in this offline fixture"
+        )
+    _validate_audio_format(
+        source_audio["capture_format"], context="source_audio.capture_format"
+    )
+    _validate_audio_format(
+        source_audio["analysis_format"], context="source_audio.analysis_format"
+    )
+    transcript_revision = root["transcript_revision"]
+    if not isinstance(transcript_revision, str) or not transcript_revision.strip():
+        raise FixtureError("transcript_revision must be a non-empty string")
+    if root["transcript_state"] != "committed":
+        raise FixtureError("transcript_state must be 'committed'")
     if root["normalization"] != NORMALIZATION_NAME:
         raise FixtureError(f"normalization must be {NORMALIZATION_NAME!r}")
     segments = root["segments"]
@@ -159,7 +216,7 @@ def tokens_for_cer(text: str) -> list[str]:
 
 def score_pairs(
     pairs: list[tuple[str, str]], tokenizer: Callable[[str], list[str]]
-) -> dict[str, float | int | None]:
+) -> dict[str, float | int | str | None]:
     """Micro-average edit errors over reference units."""
     errors = 0
     reference_units = 0
@@ -172,6 +229,7 @@ def score_pairs(
         "errors": errors,
         "reference_units": reference_units,
         "rate": round(rate, 6) if rate is not None else None,
+        "rate_status": "defined" if rate is not None else "undefined_no_reference_units",
     }
 
 
@@ -218,6 +276,9 @@ def evaluate(payload: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "session_id": payload["session_id"],
+        "source_audio": payload["source_audio"],
+        "transcript_revision": payload["transcript_revision"],
+        "transcript_state": payload["transcript_state"],
         "normalization": NORMALIZATION_NAME,
         "segments": len(segments),
         "micro_wer": score_pairs(all_pairs, tokens_for_wer),
@@ -230,7 +291,7 @@ def evaluate(payload: dict[str, Any]) -> dict[str, Any]:
         "audit_errors": audit_errors,
         "notes": [
             "synthetic transcripts and standard-library scoring only",
-            "no audio, VAD, diarization, network, or ASR model was used",
+            "source audio metadata is synthetic; no audio, VAD, diarization, network, or ASR model was used",
         ],
     }
 
@@ -245,8 +306,28 @@ def run_self_test() -> None:
         raise RuntimeError("normalization self-test failed")
     report = evaluate(
         {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "session_id": "self-test",
+            "source_audio": {
+                "asset_id": "self-test-audio",
+                "source_revision": "self-test-v1",
+                "timestamp_reference": "asset_start",
+                "capture_format": {
+                    "container": "WAV",
+                    "codec": "PCM_S16LE",
+                    "sample_rate_hz": 48000,
+                    "channels": 1,
+                },
+                "analysis_format": {
+                    "container": "RAW",
+                    "codec": "PCM_S16LE",
+                    "sample_rate_hz": 16000,
+                    "channels": 1,
+                },
+                "audio_available": False,
+            },
+            "transcript_revision": "self-test-v1",
+            "transcript_state": "committed",
             "normalization": NORMALIZATION_NAME,
             "segments": [],
         }

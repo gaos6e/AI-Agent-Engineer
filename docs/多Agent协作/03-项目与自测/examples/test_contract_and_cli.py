@@ -32,6 +32,11 @@ def valid_scenario() -> dict:
 
 
 class ContractAndCliTests(unittest.TestCase):
+    @staticmethod
+    def make_running(simulator: app.CollaborationSimulator, task_id: str) -> None:
+        """Put a task in the same state as an in-flight external result."""
+        simulator._transition(task_id, "running", "test_setup")
+
     def write_text(self, text: str) -> Path:
         handle = tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", encoding="utf-8", delete=False
@@ -257,11 +262,14 @@ class ContractAndCliTests(unittest.TestCase):
         second["id"] = "other"
         scenario["tasks"].append(second)
         simulator = app.CollaborationSimulator(scenario)
+        self.make_running(simulator, "job")
+        self.make_running(simulator, "other")
         self.assertTrue(simulator.accept_result("job", "key", {"v": 1}))
         self.assertTrue(simulator.accept_result("other", "key", {"v": 2}))
 
     def test_37_late_result_with_new_key_is_ignored(self) -> None:
         simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
         self.assertTrue(simulator.accept_result("job", "first", {"v": 1}))
         self.assertFalse(simulator.accept_result("job", "second", {"v": 2}))
         self.assertEqual(simulator.events[-1]["event"], "late_result_ignored")
@@ -278,10 +286,136 @@ class ContractAndCliTests(unittest.TestCase):
 
     def test_40_result_payload_is_deep_copied(self) -> None:
         simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
         payload = {"nested": [1]}
         simulator.accept_result("job", "key", payload)
         payload["nested"].append(2)
         self.assertEqual(simulator.tasks["job"]["result"], {"nested": [1]})
+
+    def test_51_result_requires_running_state(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        with self.assertRaisesRegex(app.ScenarioError, r"while pending"):
+            simulator.accept_result("job", "key", {"v": 1})
+
+    def test_52_same_key_with_reordered_json_is_a_safe_duplicate(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
+        self.assertTrue(simulator.accept_result("job", "key", {"a": 1, "b": 2}))
+        self.assertFalse(simulator.accept_result("job", "key", {"b": 2, "a": 1}))
+        self.assertEqual(simulator.tasks["job"]["state"], "succeeded")
+        self.assertEqual(simulator.events[-1]["event"], "duplicate_result_ignored")
+
+    def test_53_same_key_with_different_payload_freezes_for_review(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
+        self.assertTrue(simulator.accept_result("job", "key", {"v": 1}))
+        self.assertFalse(simulator.accept_result("job", "key", {"v": 2}))
+        self.assertEqual(simulator.tasks["job"]["state"], "needs_review")
+        conflict_event = simulator.events[-2]
+        self.assertEqual(conflict_event["event"], "result_conflict_detected")
+        self.assertNotEqual(
+            conflict_event["accepted_result_digest"],
+            conflict_event["received_result_digest"],
+        )
+        self.assertEqual(simulator.events[-1]["to"], "needs_review")
+        self.assertEqual(simulator.run()["status"], "needs_review")
+
+    def test_54_conflict_blocks_pending_dependents(self) -> None:
+        scenario = valid_scenario()
+        downstream = copy.deepcopy(scenario["tasks"][0])
+        downstream.update(id="downstream", requires=["job"])
+        scenario["tasks"].append(downstream)
+        simulator = app.CollaborationSimulator(scenario)
+        self.make_running(simulator, "job")
+        simulator.accept_result("job", "key", {"v": 1})
+        simulator.accept_result("job", "key", {"v": 2})
+        report = simulator.run()
+        self.assertEqual(report["status"], "needs_review")
+        self.assertEqual(report["tasks"]["downstream"]["state"], "blocked")
+
+    def test_55_non_json_result_is_rejected_before_state_change(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
+        with self.assertRaisesRegex(app.ScenarioError, r"JSON-compatible"):
+            simulator.accept_result("job", "key", {"bad": float("nan")})
+        self.assertEqual(simulator.tasks["job"]["state"], "running")
+
+    def test_56_reverse_order_failure_blocks_every_descendant(self) -> None:
+        scenario = valid_scenario()
+        root = scenario["tasks"][0]
+        root.update(id="a", outcome_plan=["permanent_error"])
+        middle = copy.deepcopy(root)
+        middle.update(id="b", requires=["a"], outcome_plan=["success"])
+        leaf = copy.deepcopy(root)
+        leaf.update(id="c", requires=["b"], outcome_plan=["success"])
+        scenario["tasks"] = [leaf, middle, root]
+
+        report = app.CollaborationSimulator(scenario).run()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["tasks"]["a"]["state"], "failed")
+        self.assertEqual(report["tasks"]["b"]["state"], "blocked")
+        self.assertEqual(report["tasks"]["c"]["state"], "blocked")
+        self.assertFalse(
+            any(task["state"] == "pending" for task in report["tasks"].values())
+        )
+
+    def test_57_reverse_order_conflict_blocks_every_descendant(self) -> None:
+        scenario = valid_scenario()
+        root = scenario["tasks"][0]
+        root["id"] = "a"
+        middle = copy.deepcopy(root)
+        middle.update(id="b", requires=["a"])
+        leaf = copy.deepcopy(root)
+        leaf.update(id="c", requires=["b"])
+        scenario["tasks"] = [leaf, middle, root]
+        simulator = app.CollaborationSimulator(scenario)
+        self.make_running(simulator, "a")
+        simulator.accept_result("a", "key", {"value": 1})
+        simulator.accept_result("a", "key", {"value": 2})
+
+        report = simulator.run()
+
+        self.assertEqual(report["status"], "needs_review")
+        self.assertEqual(report["tasks"]["b"]["state"], "blocked")
+        self.assertEqual(report["tasks"]["c"]["state"], "blocked")
+
+    def test_58_illegal_state_transition_is_rejected_without_mutation(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        with self.assertRaisesRegex(app.ScenarioError, r"illegal state transition"):
+            simulator._transition("job", "failed", "test_setup")
+        self.assertEqual(simulator.tasks["job"]["state"], "pending")
+        self.assertEqual(simulator.tasks["job"]["state_version"], 0)
+
+    def test_59_success_cannot_return_to_pending(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
+        simulator.accept_result("job", "key", {"value": 1})
+        with self.assertRaisesRegex(app.ScenarioError, r"illegal state transition"):
+            simulator._transition("job", "pending", "bad_retry")
+        self.assertEqual(simulator.tasks["job"]["state"], "succeeded")
+
+    def test_60_conflict_withholds_public_result_and_keeps_review_evidence(self) -> None:
+        simulator = app.CollaborationSimulator(valid_scenario())
+        self.make_running(simulator, "job")
+        accepted = {"nested": [1]}
+        received = {"nested": [2]}
+        simulator.accept_result("job", "key", accepted)
+        simulator.accept_result("job", "key", received)
+        accepted["nested"].append(99)
+        received["nested"].append(99)
+
+        task = simulator.run()["tasks"]["job"]
+
+        self.assertIsNone(task["result"])
+        self.assertEqual(task["result_trust"], "conflicted")
+        self.assertEqual(task["state_version"], 3)
+        self.assertEqual(len(task["result_conflicts"]), 1)
+        conflict = task["result_conflicts"][0]
+        self.assertEqual(conflict["accepted"]["payload"], {"nested": [1]})
+        self.assertEqual(conflict["received"]["payload"], {"nested": [2]})
+        self.assertEqual(conflict["state_version"], 3)
+        self.assertLess(conflict["detected_event_seq"], len(simulator.events) + 1)
 
     def test_41_events_have_monotonic_sequence_numbers(self) -> None:
         report = app.CollaborationSimulator(valid_scenario()).run()

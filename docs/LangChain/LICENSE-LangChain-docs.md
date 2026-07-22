@@ -1,33 +1,15 @@
 ---
-title: LangChain docs MIT License
-source: https://raw.githubusercontent.com/langchain-ai/docs/main/LICENSE
-retrieved: 2026-05-07
+title: "LangChain docs MIT License"
 tags:
-  - langchain
-  - license
-license: MIT
+  - third-party-reference
+third_party_stub: true
 ---
 
 # LangChain docs MIT License
 
-MIT License
+> [!info] 本页未复制第三方原文
+> 该上游参考页尚未完成逐页的来源、内容来源和再分发许可标记；公开层先保留安全的来源跳转页。 公开网站仅保留来源跳转页；你仍可在本机 Obsidian 中阅读已有参考资料。
 
-Copyright (c) 2025 LangChain
+[前往上游来源查看本节](<https://raw.githubusercontent.com/langchain-ai/docs/main/LICENSE>)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+返回 [[LangChain/00-目录|LangChain 学习入口]]。

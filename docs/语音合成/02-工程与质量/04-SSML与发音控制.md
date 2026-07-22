@@ -6,7 +6,7 @@ tags:
   - ssml
 aliases:
   - Speech Synthesis Markup Language
-source_checked: 2026-07-14
+source_checked: 2026-07-22
 ---
 
 # SSML 与发音控制
@@ -17,7 +17,7 @@ source_checked: 2026-07-14
 
 ## 最小 SSML
 
-SSML（Speech Synthesis Markup Language）是 W3C 推荐标准。合法的独立文档包含 XML 声明，以 `speak` 为根，并使用标准命名空间：
+SSML（Speech Synthesis Markup Language）是 W3C 推荐标准。独立 SSML 文档遵循合法的 XML prolog，随后以带标准命名空间的 `speak` 为根；下面使用 XML 声明作为可读的完整文档示例。供应商 API 也可能只接受 SSML 片段或自行包裹根元素，因此请求形态要按目标接口另行核验：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -55,4 +55,4 @@ SSML（Speech Synthesis Markup Language）是 W3C 推荐标准。合法的独立
 
 ## 下一步与参考
 
-下一步学习 [[语音合成/02-工程与质量/05-声音选择批处理与流式|声音选择、批处理与流式]]。参考 [W3C SSML 1.1](https://www.w3.org/TR/speech-synthesis11/) 与 [W3C Pronunciation Lexicon Specification 1.0](https://www.w3.org/TR/pronunciation-lexicon/)（均为 W3C Recommendation，获取日期：2026-07-14）。
+下一步学习 [[语音合成/02-工程与质量/05-声音选择批处理与流式|声音选择、批处理与流式]]。参考 [W3C SSML 1.1](https://www.w3.org/TR/speech-synthesis11/) 与 [W3C Pronunciation Lexicon Specification 1.0](https://www.w3.org/TR/pronunciation-lexicon/)（均为 W3C Recommendation，获取日期：2026-07-22）。

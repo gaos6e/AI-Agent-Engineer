@@ -143,6 +143,11 @@ def _parse_version(raw: Any, index: int) -> VersionMetrics:
         raise ValueError(f"{context}.timeout_count cannot exceed task_count")
     if success_count + timeout_count > task_count:
         raise ValueError(f"{context}: success_count and timeout_count overlap")
+    completed_count = task_count - success_count - timeout_count
+    if completed_count < 1:
+        raise ValueError(
+            f"{context}: at least one completed run is required for latency metrics"
+        )
     p50 = _require_number(value["p50_latency_ms"], f"{context}.p50_latency_ms")
     p95 = _require_number(value["p95_latency_ms"], f"{context}.p95_latency_ms")
     if p95 < p50:
@@ -518,7 +523,9 @@ def save_dashboard(figure: Figure, output: Path, *, dpi: int = 300) -> None:
         "Title": "Offline Agent Evaluation - synthetic teaching example",
         "Creator": "agent_eval_dashboard.py",
     }
-    figure.savefig(output, dpi=dpi, bbox_inches="tight", metadata=metadata)
+    # Keep the declared 11 x 7.4 inch canvas exact. ``layout="constrained"``
+    # handles spacing; a tight bounding box would silently change final pixels.
+    figure.savefig(output, dpi=dpi, metadata=metadata)
 
 
 def build_alt_text(dataset: EvaluationDataset) -> str:

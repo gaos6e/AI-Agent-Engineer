@@ -7,7 +7,11 @@ tags:
   - Benchmark
   - 项目
   - Python
-source_checked: 2026-07-14
+source_checked: 2026-07-21
+execution_verified: 2026-07-21
+content_origin: original
+content_status: validated
+source_baseline: "Python 3标准库离线fixture与42项unittest；Benchmark设计一手资料截至2026-07-21"
 ---
 
 # 项目：构建可维护 Benchmark
@@ -25,7 +29,7 @@ source_checked: 2026-07-14
 - 关键任务失败优先于总体分数提升，协议不一致优先判`INCOMPARABLE`。
 
 > [!warning] 解释边界
-> 这里只有5个可见的合成测试task，每个3次教学trial；`is_private`演示的是契约字段，不会把本地文件变成真正私有测试。结果不能估计真实用户、供应商模型或生产系统表现，成本单位也不是账单。
+> 这里只有5个可见的合成测试task，每个3次教学trial；`is_private`演示的是契约字段，不会把本地文件变成真正私有测试。family检查只能发现fixture中已声明的跨split污染，不能检测模型训练污染、Agent浏览/RAG运行时发现答案，或反复查询隐藏测试造成的适配。结果不能估计真实用户、供应商模型或生产系统表现，成本单位也不是账单。
 
 ## 项目文件
 
@@ -43,17 +47,17 @@ source_checked: 2026-07-14
 项目没有第三方依赖，可以直接运行Python 3。若要练习隔离环境，请把venv建在vault之外：
 
 ```powershell
-$venvDir = Join-Path $env:TEMP "ai-agent-engineer-benchmark-venv"
-python -m venv $venvDir
-& (Join-Path $venvDir "Scripts\Activate.ps1")
+$venvDir = Join-Path $env:TEMP "ai-agent-engineer-benchmark-venv" # 使用系统临时目录保存练习环境，避免把依赖与缓存写入 vault。
+python -m venv $venvDir # 创建独立解释器；这个标准库项目无需额外安装包。
+& (Join-Path $venvDir "Scripts\Activate.ps1") # 激活环境，使本段后续命令使用隔离的 python。
 # 本项目无需 pip install。
 ```
 
-进入项目目录：
+从同时包含 `docs/` 与 `.website/` 的项目根目录进入示例目录：
 
 ```powershell
-$projectDir = "X:\path\to\your-vault\Knowledge\AI Agent Engineer\docs\Benchmark设计\03-项目与自测\examples"
-Push-Location $projectDir
+$projectDir = (Resolve-Path -LiteralPath 'docs\Benchmark设计\03-项目与自测\examples').Path # 先将示例路径解析为不依赖当前目录的绝对路径。
+Push-Location -LiteralPath $projectDir # 暂时切换到 fixture 所在目录，结尾会恢复原目录。
 ```
 
 所有命令使用`-B`，避免生成`__pycache__`和`.pyc`。
@@ -103,8 +107,8 @@ baseline与candidate在相同task上形成配对差$d_i$，固定种子bootstrap
 ## 运行正常候选
 
 ```powershell
-python -B .\run_benchmark.py
-if ($LASTEXITCODE -ne 0) { throw "PASS fixture exit code mismatch" }
+python -B .\run_benchmark.py # 运行正常候选；-B 保证不产生字节码缓存。
+if ($LASTEXITCODE -ne 0) { throw "PASS fixture exit code mismatch" } # 预期 PASS，因此进程必须返回 0。
 ```
 
 预期`action=PASS`、candidate task success为`1.0`、baseline为`0.6`，且输出包含15个candidate trial和`sha256:`证据指纹。程序只向stdout写JSON。
@@ -112,10 +116,11 @@ if ($LASTEXITCODE -ne 0) { throw "PASS fixture exit code mismatch" }
 ## 运行关键回归
 
 ```powershell
+# 续行反引号必须位于行尾，相关说明单列在命令前，不能追加行尾注释。
 python -B .\run_benchmark.py `
   --results .\benchmark_results_regression.json `
-  --candidate candidate-regression
-if ($LASTEXITCODE -ne 1) { throw "regression fixture exit code mismatch" }
+  --candidate candidate-regression # 载入关键任务失败的候选结果，并固定可读的候选标识。
+if ($LASTEXITCODE -ne 1) { throw "regression fixture exit code mismatch" } # 受控 BLOCK 属于成功运行的拒绝路径，退出码应为 1。
 ```
 
 预期`action=BLOCK`，首要理由包含`test-safety`。candidate总体task success为`0.8`，仍高于baseline的`0.6`；但三次trial都执行了禁止的`refund_order`，关键安全失败不能被排行榜提升抵消。
@@ -123,9 +128,10 @@ if ($LASTEXITCODE -ne 1) { throw "regression fixture exit code mismatch" }
 ## 运行协议不可比
 
 ```powershell
+# 用冻结协议不一致的 spec 验证“不可比”优先于任何指标排名。
 python -B .\run_benchmark.py `
-  --spec .\benchmark_spec_protocol_mismatch.json
-if ($LASTEXITCODE -ne 1) { throw "protocol mismatch exit code mismatch" }
+  --spec .\benchmark_spec_protocol_mismatch.json # 将 max_steps 等合同改成与结果包不一致的 fixture。
+if ($LASTEXITCODE -ne 1) { throw "protocol mismatch exit code mismatch" } # INCOMPARABLE 需以受控的动作退出码 1 返回。
 ```
 
 该spec冻结`max_steps=9`，结果包记录`max_steps=8`。预期`action=INCOMPARABLE`、`comparable=false`且不输出系统指标；不能先排名再把协议差异放进脚注。
@@ -133,9 +139,10 @@ if ($LASTEXITCODE -ne 1) { throw "protocol mismatch exit code mismatch" }
 ## 运行非法数据契约
 
 ```powershell
+# 用跨 split family 的 cases 测试数据集契约，而非测试候选质量。
 python -B .\run_benchmark.py `
-  --cases .\benchmark_cases_contract_error.json
-if ($LASTEXITCODE -ne 2) { throw "contract-error fixture exit code mismatch" }
+  --cases .\benchmark_cases_contract_error.json # 明确替换为故意污染 train/test 的输入。
+if ($LASTEXITCODE -ne 2) { throw "contract-error fixture exit code mismatch" } # JSON/schema/覆盖契约错误必须返回 2。
 ```
 
 预期stderr包含`split contamination`，因为`family-leaked-status`同时出现在train和test。
@@ -143,18 +150,18 @@ if ($LASTEXITCODE -ne 2) { throw "contract-error fixture exit code mismatch" }
 ## 三模式测试与语法检查
 
 ```powershell
-python -B -m unittest -v test_run_benchmark
-if ($LASTEXITCODE -ne 0) { throw "normal tests failed" }
+python -B -m unittest -v test_run_benchmark # 常规模式下发现并详细执行全部单元测试。
+if ($LASTEXITCODE -ne 0) { throw "normal tests failed" } # 普通模式的失败不可继续。
 
-python -B -O -m unittest -v test_run_benchmark
-if ($LASTEXITCODE -ne 0) { throw "optimized tests failed" }
+python -B -O -m unittest -v test_run_benchmark # 用优化模式检查生产逻辑没有依赖 bare assert。
+if ($LASTEXITCODE -ne 0) { throw "optimized tests failed" } # -O 下也必须得到同样的回归结果。
 
-python -B -W error -m unittest -v test_run_benchmark
-if ($LASTEXITCODE -ne 0) { throw "warnings-as-errors tests failed" }
+python -B -W error -m unittest -v test_run_benchmark # 将任何 warning 视为失败，及早暴露兼容性问题。
+if ($LASTEXITCODE -ne 0) { throw "warnings-as-errors tests failed" } # 严格告警模式通过才允许继续。
 
-python -B -c "from pathlib import Path; [compile(p.read_text(encoding='utf-8'), str(p), 'exec') for p in map(Path, ('run_benchmark.py', 'test_run_benchmark.py'))]"
-if ($LASTEXITCODE -ne 0) { throw "syntax check failed" }
-Pop-Location
+python -B -c "from pathlib import Path; [compile(p.read_text(encoding='utf-8'), str(p), 'exec') for p in map(Path, ('run_benchmark.py', 'test_run_benchmark.py'))]" # 在内存编译两份源码，检查语法且不写 .pyc。
+if ($LASTEXITCODE -ne 0) { throw "syntax check failed" } # 编译失败时不要误报告测试完成。
+Pop-Location # 返回调用脚本前的工作目录。
 ```
 
 ## 动手练习
@@ -185,11 +192,11 @@ Pop-Location
 
 ## 项目边界与下一步
 
-项目验证的是离线契约、固定fixture和确定性grader，没有真实模型/API、容器、浏览器、用户模拟器、生产账单或在线监控。真实Agent Benchmark应结合 [[Benchmark设计/02-方法与质量/07-Agent环境状态与多次运行|Agent环境、状态与多次运行]] 构建可重建harness，并用 [[Benchmark设计/02-方法与质量/06-Leaderboard机制与维护|Leaderboard机制与维护]] 管理私有测试和版本。
+项目验证的是离线契约、固定fixture和确定性grader，没有真实模型/API、容器、浏览器、用户模拟器、生产账单或在线监控，也没有黑盒污染检测和提交服务。真实Agent Benchmark应结合 [[Benchmark设计/02-方法与质量/07-Agent环境状态与多次运行|Agent环境、状态与多次运行]] 构建可重建harness，用 [[Benchmark设计/01-基础与设计/03-数据划分泄漏与污染|数据划分、泄漏与污染]] 管理训练暴露、运行时可发现性和未知项，并用 [[Benchmark设计/02-方法与质量/06-Leaderboard机制与维护|Leaderboard机制与维护]] 管理私有测试和版本。
 
 ## 参考资料
 
-以下来源获取/复核于2026-07-14：
+以下来源获取/复核于2026-07-21：
 
 - [MLPerf Inference官方规则](https://github.com/mlcommons/inference_policies/blob/master/inference_rules.adoc)（公平、协议、复现与审计案例；采用时核对当期规则）
 - [SWE-bench官方仓库](https://github.com/SWE-bench/SWE-bench)（容器化可复现harness案例）

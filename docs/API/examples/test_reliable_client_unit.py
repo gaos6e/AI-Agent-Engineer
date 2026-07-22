@@ -186,6 +186,17 @@ class ReliableApiClientUnitTests(unittest.TestCase):
         self.assertEqual(raised.exception.attempts, 1)
         self.assertEqual(len(session.calls), 1)
 
+    def test_tls_error_is_normalized_without_retry(self) -> None:
+        """SSLError 继承 ConnectionError，不能误入可重试传输分支。"""
+
+        session = ScriptedSession(requests.exceptions.SSLError("untrusted certificate"))
+        client = ReliableApiClient("https://api.example.test", session=session)
+        with self.assertRaises(ApiTransportError) as raised:
+            client._request_json("GET", "/status", retry_authorized=True)
+        self.assertEqual(raised.exception.attempts, 1)
+        self.assertIn("TLS", str(raised.exception))
+        self.assertEqual(len(session.calls), 1)
+
     def test_injected_session_remains_caller_owned(self) -> None:
         session = ScriptedSession(json_response(200, {"ok": True}))
         with ReliableApiClient("https://api.example.test", session=session) as client:

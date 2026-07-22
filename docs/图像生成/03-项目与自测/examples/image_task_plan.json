@@ -31,14 +31,24 @@
     "candidate_count": 3
   },
   "reference_assets": [],
+  "lineage": {
+    "source_revision": "brief-img-course-cover-001-r1",
+    "transform_id": "transform-img-course-cover-001-r1",
+    "release_id": "release-img-course-cover-001-candidate"
+  },
+  "governance": {
+    "object_acl_required": true,
+    "deletion_propagation_plan": "撤权或删除时使关联候选、派生输出、缓存和可访问链接不可用，并保留最小化审计事件",
+    "evidence_policy": "evidence_supported"
+  },
   "risk": {
     "rights_confirmed": true,
     "real_person": false,
     "minor": false,
     "sensitive_context": false,
     "human_review_required": true,
-    "provenance_plan": "保留请求、输入与输出哈希；供应商支持时附加并验证 C2PA 内容凭证",
-    "disclosure_plan": "发布页标注为 AI 辅助生成并记录人工排版步骤"
+    "provenance_plan": "保留 source_revision、transform_id、release_id、输入与输出哈希；供应商支持时附加并验证 C2PA 内容凭证",
+    "disclosure_plan": "发布页标注为 AI 辅助生成并记录人工排版步骤；外部事实性陈述仅在独立证据支持时发布"
   },
   "acceptance": [
     {
@@ -63,7 +73,7 @@
     },
     {
       "dimension": "safety",
-      "criterion": "不含真实人物、敏感内容或误导性事实表达",
+      "criterion": "不含真实人物、敏感内容或由生成画面单独支撑的事实性表达",
       "hard_failure": true
     },
     {
@@ -84,6 +94,6 @@
     "adapter_version": "image-plan-auditor-v1",
     "seed_policy": "若供应商支持则记录，但不承诺跨版本确定性",
     "save_normalized_request_hash": true,
-    "documentation_checked_on": "2026-07-14"
+    "documentation_checked_on": "2026-07-22"
   }
 }

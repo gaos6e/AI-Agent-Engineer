@@ -7,7 +7,9 @@ tags:
 aliases:
   - Agent 运行循环
   - Agent Harness
-source_checked: 2026-07-14
+source_checked: 2026-07-21
+content_origin: original
+content_status: dynamic
 ---
 
 # Agent Loop 与环境反馈
@@ -50,6 +52,22 @@ source_checked: 2026-07-14
 
 ## 最小闭环
 
+```mermaid
+flowchart LR
+    G["目标 + 权威状态"] --> C["组装最小 context"]
+    C --> M["模型提出 proposal"]
+    M --> R["runtime：schema / 策略 / 权限 / 预算 / 审批"]
+    R -->|拒绝或等待| W["持久化 waiting / terminal 状态"]
+    R -->|允许| T["工具作用于环境"]
+    T --> O["规范化 observation：来源 + trust label"]
+    O --> S["状态迁移 + event"]
+    S --> V["verifier 检查进展与完成证据"]
+    V -->|继续| C
+    V -->|完成、失败或取消| W
+```
+
+*图 1　模型只提出下一动作，确定性 runtime 才拥有执行与终止控制权。文字替代：目标和权威状态进入模型决策，proposal 依次经过 schema、策略、权限、预算和审批；获准动作产生带来源与信任标签的 observation，写入状态后由 verifier 决定继续或终止。图依据本节的六组件契约以及 ReAct、SWE-agent 原始论文抽象绘制；Mermaid 源码即再生成方式。*
+
 ```text
 goal + authoritative state + selected context
   ↓
@@ -68,23 +86,23 @@ state transition + event + progress/verifier
 对应的伪代码：
 
 ```python
-while state.phase in RUNNABLE:
-    if cancelled() or budget.exhausted(state):
-        return stop_with_reason(state)
+while state.phase in RUNNABLE: # 只有处于可运行阶段的任务才能继续决策循环
+    if cancelled() or budget.exhausted(state): # 先检查用户取消和硬性预算，避免无控制地继续执行
+        return stop_with_reason(state) # 将停止原因写入状态，而不是把它伪装成成功
 
-    context = build_minimal_context(state)
-    proposal = model.decide(context)
-    action = parse_and_validate(proposal)
+    context = build_minimal_context(state) # 只组装本轮决策所需的可信状态与最小上下文
+    proposal = model.decide(context) # 让模型提出“建议”，此处尚未获得执行权限
+    action = parse_and_validate(proposal) # 将建议解析为有限动作类型，并先做结构校验
 
-    if action.requires_human:
-        return checkpoint_and_pause(state, action)
+    if action.requires_human: # 高风险或不确定动作需要人工掌握最终控制权
+        return checkpoint_and_pause(state, action) # 持久化冻结动作后暂停，恢复时不重新猜测动作
 
-    observation = tool_host.execute(action)
-    state = apply_observation(state, normalize(observation))
+    observation = tool_host.execute(action) # 由受控工具宿主实际调用工具，而非直接执行模型文本
+    state = apply_observation(state, normalize(observation)) # 规范化结果并作为一次可审计状态迁移写回
 
-    verdict = verifier.check(state)
-    if verdict.is_terminal:
-        return finish_with_evidence(state, verdict)
+    verdict = verifier.check(state) # 用外部证据检查目标是否真的推进或完成
+    if verdict.is_terminal: # verifier 而不是模型决定是否已到达终态
+        return finish_with_evidence(state, verdict) # 保存完成/失败证据，并返回明确的终止结果
 ```
 
 每个箭头都是接口，也是失败与测试位置。
@@ -108,14 +126,17 @@ ReAct 原始论文研究把 reasoning trace、action 与 environment observation
 
 不要从自由文本猜动作。让 provider adapter 把模型输出转换成有限 union：
 
-```json
-{
-  "kind": "tool_call",
-  "tool": "read_ticket",
-  "arguments": {"ticket_id": "ticket-7"},
-  "reason_summary": "需要读取当前状态后才能决定下一步"
+```jsonc
+{ // 一个供 runtime 解析的结构化动作建议对象
+  "kind": "tool_call", // 动作联合类型；这里表示请求调用工具
+  "tool": "read_ticket", // 仅是模型建议的工具名，runtime 仍会检查 allowlist
+  "arguments": {"ticket_id": "ticket-7"}, // 工具参数；目标 ID 必须再与当前授权范围比对
+  "reason_summary": "需要读取当前状态后才能决定下一步" // 供审计阅读的简短理由，不是隐藏推理链
 }
 ```
+
+> [!note] JSONC 教学表示
+> 本节带行尾说明的 JSON 使用 `jsonc`，`//` 后为中文注释；复制给严格 JSON API 前请删除注释。
 
 还可有 `ask_user`、`finish_candidate`、`refuse`。模型输出解析失败是可分类错误，不应退化为“尽量执行”。
 
@@ -241,7 +262,7 @@ latency, usage, retry, next_phase, stop_reason
 
 ## 参考资料
 
-以下为原始论文或第一方工程资料，获取/复核日期：2026-07-14。
+以下为原始论文或第一方工程资料，获取/复核日期：2026-07-21。
 
 - Yao 等，[ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
 - Yang 等，[SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](https://arxiv.org/abs/2405.15793)

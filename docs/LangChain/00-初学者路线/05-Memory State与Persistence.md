@@ -7,7 +7,9 @@ tags:
   - langgraph
   - memory
   - persistence
-source_checked: 2026-07-14
+source_checked: 2026-07-19
+content_origin: original
+content_status: dynamic
 ---
 
 # Memory、State 与 Persistence
@@ -30,9 +32,13 @@ source_checked: 2026-07-14
 
 ## LangGraph Persistence 的当前事实
 
-官方文档说明：编译图时配置 checkpointer 后，LangGraph 会在每一步保存 checkpoint，并按 thread 组织。调用时通过 `configurable.thread_id` 选择线程；相同 ID 会继续同一线程，新 ID 从空状态开始。持久化支持人工在环、会话记忆、time travel 调试和故障恢复。
+官方文档说明：编译图时配置 checkpointer 后，LangGraph 会在执行边界保存 checkpoint，并按 thread 组织。调用时通过 `configurable.thread_id` 选择持久游标。对已有 thread 传普通字典是在其最新状态上开始一次新 run；只有目标确实停在 interrupt 时，才应传 `Command(resume=...)`，把值交回那个 interrupt。新 ID 没有历史状态，但错误地对新 ID 发送 resume 不应依赖 runtime 自动拒绝。
+
+`thread_id` 不是审批凭据或授权证明。应用恢复前要校验租户/主体所有权、`snapshot.next` 和 pending interrupts；已完成、未知或停在其他节点的 thread 应由包装层失败关闭。
 
 生产环境不能把进程内 saver 当持久存储。测试可用 `InMemorySaver`，生产应选择可靠后端并验证备份、并发、加密、迁移和保留策略。
+
+当前 runtime 的 durability mode 还会改变 checkpoint 写入时机：`sync` 在进入下一步前同步落盘，`async` 与下一步并行写入而保留较小崩溃窗口，`exit` 只在运行退出、报错或 interrupt 时保存。本课程真实恢复项目显式使用 `sync`；这仍不把外部 API 与 checkpoint 变成同一事务。
 
 ## Thread ID 是隔离边界的一部分
 
@@ -89,9 +95,10 @@ source_checked: 2026-07-14
 
 ## 资料基线
 
-官方事实核对日期：2026-07-14。
+官方事实与锁定 runtime 核对日期：2026-07-19。
 
 - [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
 - [LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
+- [LangGraph Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)
 - [LangChain Agents - Memory](https://docs.langchain.com/oss/python/langchain/agents)
 - [[LangChain/01-Conceptual Overviews/04-Memory|既有官方译文：Memory]]

@@ -8,7 +8,9 @@ tags:
   - agent
   - task
   - process
-source_checked: 2026-07-14
+source_checked: 2026-07-21
+concept_source_checked: 2026-07-14
+package_source_checked: 2026-07-21
 ---
 
 # 核心对象：Crew、Agent、Task、Process
@@ -19,18 +21,18 @@ source_checked: 2026-07-14
 
 ## 先验证安装事实
 
-PyPI 在本次核对时给出 `crewai 1.15.2` 和 Python `>=3.10,<3.14`。若 `python --version` 是 3.14，就不满足该快照约束。应选择兼容解释器新建环境，不能期待 pip 忽略约束后仍可靠运行。
+PyPI 在 2026-07-21 显示最新稳定包为 `crewai 1.15.5`；本课程的真实 Layer B 仍固定在已复验的 `1.15.4`，其 Python 约束是 `>=3.10,<3.14`。若 `python --version` 是 3.14，就不满足该**经测试基线**的约束。应选择兼容解释器新建环境，不能期待 pip 忽略约束后仍可靠运行。
 
 ```powershell
-py -0p
-py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install "crewai==1.15.2"
-python -c "from importlib.metadata import version; print(version('crewai'))"
-python -m pip check
+py -0p  # 列出本机 Python Launcher 可用的解释器，先确认 3.13 是否存在。
+py -3.13 -m venv .venv  # 用满足课程基线约束的解释器创建项目专用环境。
+.\.venv\Scripts\Activate.ps1  # 让当前 PowerShell 会话使用刚创建的 .venv。
+python -m pip install "crewai==1.15.4"  # 安装锁定的教学基线，而不是不加验证地追逐最新版本。
+python -c "from importlib.metadata import version; print(version('crewai'))"  # 输出实际解析后的 CrewAI 版本以便记录。
+python -m pip check  # 检查已安装包之间是否仍有未满足的依赖关系。
 ```
 
-这是学习项目中的版本快照。团队项目还应保存锁文件或带哈希的依赖清单，并在升级前重新运行回归集。官方文档当前主推 `uv`；理解虚拟环境、解释器和依赖解析后，再使用官方 CLI/`uv` 创建规范项目。
+这是学习项目中的版本快照，不是“建议忽略 1.15.5”。团队项目还应保存锁文件或带哈希的依赖清单，并在升级前重新运行回归集。官方文档当前主推 `uv`；理解虚拟环境、解释器和依赖解析后，再使用官方 CLI/`uv` 创建规范项目。
 
 ## 四个对象的责任
 
@@ -64,28 +66,28 @@ python -m pip check
 下面代码形状来自 2026-07-14 访问的官方 Agents/Tasks/Crews 文档，用于识别对象关系；本库没有安装真实包或配置模型，因此未执行：
 
 ```python
-from crewai import Agent, Crew, Process, Task
+from crewai import Agent, Crew, Process, Task  # 导入协作主体、任务、编排器与推进策略。
 
-researcher = Agent(
-    role="Local evidence researcher",
-    goal="Extract claims only from approved sources",
-    backstory="You work within strict evidence boundaries.",
-    allow_delegation=False,
+researcher = Agent(  # 定义只在批准来源范围内工作的研究 Agent。
+    role="Local evidence researcher",  # 角色帮助模型理解当前职责，不构成权限。
+    goal="Extract claims only from approved sources",  # 把可接受证据范围写入工作目标。
+    backstory="You work within strict evidence boundaries.",  # 补充行为背景，但仍需代码侧控制。
+    allow_delegation=False,  # 禁止该 Agent 自行把工作转交给其他 Agent。
 )
 
-research_task = Task(
-    description="Extract supported claims for {topic}.",
-    expected_output="Structured claims with source identifiers and unknowns.",
-    agent=researcher,
+research_task = Task(  # 将研究目标包装成可分派、可验收的 Task。
+    description="Extract supported claims for {topic}.",  # {topic} 在 kickoff 时由输入字典填充。
+    expected_output="Structured claims with source identifiers and unknowns.",  # 明确要求来源 ID 与未知项，而非泛泛文本。
+    agent=researcher,  # 指定由前面定义的 researcher 执行这项任务。
 )
 
-crew = Crew(
-    agents=[researcher],
-    tasks=[research_task],
-    process=Process.sequential,
+crew = Crew(  # 把 Agent、Task 和协作推进方式组装为一个 Crew。
+    agents=[researcher],  # 注册本次运行允许参与协作的 Agent。
+    tasks=[research_task],  # 注册按顺序执行的任务列表。
+    process=Process.sequential,  # 选择确定的串行推进，而非让管理 Agent 动态分派。
 )
 
-# result = crew.kickoff(inputs={"topic": "Agent reliability"})
+# result = crew.kickoff(inputs={"topic": "Agent reliability"})  # 需先配置模型；保留注释以避免读者误发起真实调用。
 ```
 
 注释掉 kickoff 是为了防止读者误以为示例无需模型配置即可运行。实际参数、默认模型和导入路径必须以锁定版本验证。
@@ -149,6 +151,6 @@ crew = Crew(
 
 ## 参考资料
 
-- [PyPI：crewai](https://pypi.org/project/crewai/)（1.15.2 与 Python 约束；核对：2026-07-14）
+- [PyPI：crewai 1.15.4](https://pypi.org/project/crewai/1.15.4/)（经测试基线与 Python 约束）和 [PyPI：crewai 当前版本](https://pypi.org/project/crewai/)（最新观察为 1.15.5；核对：2026-07-21）
 - [CrewAI Installation](https://docs.crewai.com/en/installation)（动态文档，页面标签 `v1.14.0`；核对：2026-07-14）
 - [Agents](https://docs.crewai.com/en/concepts/agents)、[Tasks](https://docs.crewai.com/en/concepts/tasks)、[Crews](https://docs.crewai.com/en/concepts/crews)、[Processes](https://docs.crewai.com/en/concepts/processes)（官方动态文档；核对：2026-07-14）

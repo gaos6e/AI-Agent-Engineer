@@ -1,0 +1,143 @@
+{
+  "schema_version": "cross-layer-fixture-v1",
+  "contract": {
+    "adapter_revision": "cross-layer-adapter-v1",
+    "mapping_revision": "parser-line-to-namespaced-lexical-v1",
+    "parser_schema_version": "2.0",
+    "knowledge_store_schema_version": "1.0",
+    "chunk_strategy_version": "structure-v1",
+    "index_revision": "lexical-overlap-index-v1",
+    "authorization_revision": "authz-v1",
+    "chunk_config": {
+      "max_units": 64,
+      "overlap_units": 8
+    }
+  },
+  "documents": [
+    {
+      "tenant_id": "tenant-a",
+      "document_id": "refund-policy",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-a/refund-policy",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-a-refund-v1",
+      "run_id": "run-initial-a-refund",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-a/refund.md",
+      "root_section_path": [
+        "退款政策"
+      ],
+      "allowed_groups": [
+        "employees"
+      ],
+      "content": "# 退款政策\n\n退款审核通过后通常在一至三个工作日原路返回。\n"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "document_id": "oncall-secret",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-a/oncall-secret",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-a-oncall-v1",
+      "run_id": "run-initial-a-oncall",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-a/oncall.md",
+      "root_section_path": [
+        "值班手册"
+      ],
+      "allowed_groups": [
+        "oncall"
+      ],
+      "content": "# 值班手册\n\n内部值班电话是 010-5555-0188。\n"
+    },
+    {
+      "tenant_id": "tenant-b",
+      "document_id": "refund-policy-copy",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-b/refund-policy-copy",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-b-refund-v1",
+      "run_id": "run-initial-b-refund",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-b/refund.md",
+      "root_section_path": [
+        "退款政策"
+      ],
+      "allowed_groups": [
+        "employees"
+      ],
+      "content": "# 退款政策\n\n退款审核通过后通常在一至三个工作日原路返回。\n"
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "q-tenant-a-refund",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "退款多久原路返回",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "退款审核通过后通常在一至三个工作日原路返回。"
+      ],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-a-phone-denied",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "内部值班电话",
+      "top_k": 3,
+      "expected_claim_texts": [],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-a-phone-oncall",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "oncall"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "内部值班电话",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "内部值班电话是 010-5555-0188。"
+      ],
+      "forbidden_document_ids": [
+        "refund-policy",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-b-refund",
+      "tenant_id": "tenant-b",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "退款多久原路返回",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "退款审核通过后通常在一至三个工作日原路返回。"
+      ],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy"
+      ]
+    }
+  ]
+}
