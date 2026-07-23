@@ -3,6 +3,8 @@ import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promi
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { DEFAULT_LOCALE, getSiteLocale } from "../config/site-locales.mjs"
+import { quartzBaseUrl } from "./site-config.mjs"
 
 export const WEBSITE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 export const RUNTIME_ROOT = path.join(WEBSITE_ROOT, ".runtime")
@@ -542,7 +544,28 @@ async function stageMermaidAssets() {
   }
 }
 
-export async function bootstrapRuntime() {
+async function stageQuartzConfig(locale) {
+  const definition = getSiteLocale(locale)
+  const template = await readFile(path.join(WEBSITE_ROOT, "config", "quartz.config.yaml"), "utf8")
+  const replacements = new Map([
+    ["__AAE_PAGE_TITLE__", definition.pageTitle],
+    ["__AAE_PAGE_TITLE_SUFFIX__", definition.pageTitleSuffix],
+    ["__AAE_QUARTZ_LOCALE__", definition.quartzLocale],
+    ["__AAE_BASE_URL__", quartzBaseUrl(locale)],
+  ])
+  let rendered = template
+  for (const [token, value] of replacements) {
+    if (!rendered.includes(token)) throw new Error(`Quartz configuration template is missing ${token}`)
+    rendered = rendered.replaceAll(token, value)
+  }
+  if (/__AAE_[A-Z_]+__/.test(rendered)) {
+    throw new Error("Quartz configuration template contains an unresolved localization token")
+  }
+  await writeFile(path.join(RUNTIME_ROOT, "quartz.config.yaml"), rendered, "utf8")
+}
+
+export async function bootstrapRuntime(locale = DEFAULT_LOCALE) {
+  getSiteLocale(locale)
   const version = JSON.parse(await readFile(path.join(WEBSITE_ROOT, "quartz.version.json"), "utf8"))
   assertRuntimePath(RUNTIME_ROOT)
   await mkdir(path.join(CACHE_ROOT, "npm"), { recursive: true })
@@ -572,11 +595,7 @@ export async function bootstrapRuntime() {
 
   const pluginLock = await preparePluginLock(version.commit)
   await patchWindowsPluginRestore()
-  await cp(
-    path.join(WEBSITE_ROOT, "config", "quartz.config.yaml"),
-    path.join(RUNTIME_ROOT, "quartz.config.yaml"),
-    { force: true },
-  )
+  await stageQuartzConfig(locale)
 
   const npmMarker = path.join(RUNTIME_ROOT, ".aae-npm-ready")
   const packageLockHash = await fileHash(path.join(RUNTIME_ROOT, "package-lock.json"))
@@ -627,7 +646,7 @@ export async function bootstrapRuntime() {
   await cp(path.join(WEBSITE_ROOT, "overlay"), RUNTIME_ROOT, { recursive: true, force: true })
   await stageMermaidAssets()
 
-  return { runtimeRoot: RUNTIME_ROOT, commit: currentCommit }
+  return { runtimeRoot: RUNTIME_ROOT, commit: currentCommit, locale }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

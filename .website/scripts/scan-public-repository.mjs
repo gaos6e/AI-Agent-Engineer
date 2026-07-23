@@ -156,7 +156,7 @@ export async function scanPublicRepository(rootArgument, options = {}) {
     for (const [label, pattern] of HIGH_CONFIDENCE_SECRET_PATTERNS) {
       if (pattern.test(text)) throw new Error(`Possible ${label} in public repository file: ${file.relative}`)
     }
-    if (file.relative.startsWith("docs/") && text.toLowerCase().includes(PROGRESS_TOKEN)) {
+    if (/^docs-(?:CN|EN)\//.test(file.relative) && text.toLowerCase().includes(PROGRESS_TOKEN)) {
       throw new Error(`Learning-progress metadata entered the public snapshot: ${file.relative}`)
     }
     for (const fragment of fragments) {

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "source-1",
+      "title": "Internal Notes on Reliable Workflows",
+      "topics": ["Agent reliability", "Workflow reliability"],
+      "claims": [
+        "Reliable workflows need explicit terminal states, bounded retries, and verifiable completion criteria."
+      ]
+    },
+    {
+      "id": "source-2",
+      "title": "Internal Notes on Tool Safety",
+      "topics": ["Agent reliability", "Tool safety"],
+      "claims": [
+        "Tools with side effects need least privilege, parameter validation, and idempotent design."
+      ]
+    }
+  ]
+}

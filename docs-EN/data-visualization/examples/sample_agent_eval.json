@@ -1,0 +1,44 @@
+{
+  "dataset_version": "demo-2026-07-14-v1",
+  "note": "Synthetic teaching data only; it does not describe a real system.",
+  "versions": [
+    {
+      "name": "v1",
+      "success_count": 148,
+      "task_count": 200,
+      "timeout_count": 8,
+      "p50_latency_ms": 1100,
+      "p95_latency_ms": 4200,
+      "mean_cost_usd": 0.022
+    },
+    {
+      "name": "v2",
+      "success_count": 162,
+      "task_count": 200,
+      "timeout_count": 5,
+      "p50_latency_ms": 1250,
+      "p95_latency_ms": 3900,
+      "mean_cost_usd": 0.034
+    },
+    {
+      "name": "v3",
+      "success_count": 170,
+      "task_count": 200,
+      "timeout_count": 10,
+      "p50_latency_ms": 1180,
+      "p95_latency_ms": 4600,
+      "mean_cost_usd": 0.031
+    }
+  ],
+  "routing": {
+    "version": "v3",
+    "labels": ["account", "refund", "technical"],
+    "matrix": [
+      [60, 5, 3],
+      [4, 57, 5],
+      [3, 8, 55]
+    ]
+  }
+}
+
+

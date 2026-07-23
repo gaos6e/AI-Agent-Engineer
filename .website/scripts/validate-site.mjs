@@ -1,49 +1,32 @@
 import { createHash } from "node:crypto"
 import { readFile, readdir, stat } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import os from "node:os"
-import { DOCS_ROOT, MANIFEST_PATH, WEBSITE_ROOT } from "./prepare-content.mjs"
+import {
+  DEFAULT_LOCALE,
+  SITE_LOCALE_IDS,
+  contentRootFor,
+  getSiteLocale,
+  manifestPathFor,
+  slugifyPublishedPath,
+  sourceRootFor,
+} from "../config/site-locales.mjs"
+import { GENERATED_ROOT, WEBSITE_ROOT } from "./prepare-content.mjs"
 import { HIGH_CONFIDENCE_SECRET_PATTERNS } from "./scan-public-repository.mjs"
-import { SITE_BASE_PATH } from "./site-config.mjs"
+import { localeSiteUrl, SITE_BASE_PATH, SITE_ORIGIN } from "./site-config.mjs"
+
+export { slugifyPublishedPath }
 
 const PUBLIC_ROOT = path.join(WEBSITE_ROOT, "public")
-const BASE_PATH = SITE_BASE_PATH
 const FORBIDDEN_EXTENSIONS = new Set([
-  ".key",
-  ".pptx",
-  ".xlsx",
-  ".ttf",
-  ".class",
-  ".iml",
-  ".log",
-  ".lprof",
-  ".sql",
-  ".pdf",
-  ".env",
-  ".pem",
-  ".p12",
-  ".pfx",
-  ".sqlite",
-  ".db",
-  ".pt",
-  ".pth",
-  ".ckpt",
-  ".onnx",
-  ".safetensors",
-  ".zip",
-  ".tar",
-  ".gz",
-  ".7z",
-  ".rar",
-  ".exe",
-  ".dll",
-  ".pyc",
+  ".key", ".pptx", ".xlsx", ".ttf", ".class", ".iml", ".log", ".lprof", ".sql", ".pdf", ".env",
+  ".pem", ".p12", ".pfx", ".sqlite", ".db", ".pt", ".pth", ".ckpt", ".onnx", ".safetensors",
+  ".zip", ".tar", ".gz", ".7z", ".rar", ".exe", ".dll", ".pyc",
 ])
 const TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs", ".json", ".xml", ".txt", ".py", ".csv", ".jsonl", ".sh"])
-const SECRET_PATTERNS = HIGH_CONFIDENCE_SECRET_PATTERNS
 const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-const vaultRoot = path.resolve(DOCS_ROOT, "..", "..", "..")
+const vaultRoot = path.resolve(sourceRootFor(WEBSITE_ROOT, DEFAULT_LOCALE), "..", "..", "..")
 const homeRoot = os.homedir()
 const MACHINE_PATH_PATTERNS = [
   new RegExp(escapePattern(vaultRoot), "i"),
@@ -55,19 +38,6 @@ const MACHINE_PATH_PATTERNS = [
 
 function toPosix(value) {
   return value.split(path.sep).join("/")
-}
-
-export function slugifyPublishedPath(value) {
-  return value
-    .split("/")
-    .map((segment) => segment
-      .replace(/\s/g, "-")
-      .replace(/&/g, "-and-")
-      .replace(/%/g, "-percent")
-      .replace(/[?#]/g, ""))
-    .join("/")
-    .replace(/\/$/, "")
-    .replace(/(^|\/)\_index(?=\.|$)/g, "$1index")
 }
 
 export function markdownToHtmlPath(relativePath) {
@@ -92,10 +62,7 @@ async function walk(root) {
 }
 
 function decodeHtmlAttribute(value) {
-  return value
-    .replaceAll("&amp;", "&")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
+  return value.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&#39;", "'")
 }
 
 function safeDecode(value) {
@@ -121,11 +88,14 @@ export function localTarget(currentHtml, rawValue) {
 
   const withoutFragment = value.split("#")[0].split("?")[0]
   if (!withoutFragment) return null
+  const base = SITE_BASE_PATH.replace(/\/+$/, "") || "/"
   let target
-  if (withoutFragment === BASE_PATH || withoutFragment === `${BASE_PATH}/`) {
+  if (withoutFragment === base || withoutFragment === `${base}/`) {
     target = ""
-  } else if (withoutFragment.startsWith(`${BASE_PATH}/`)) {
-    target = withoutFragment.slice(BASE_PATH.length + 1)
+  } else if (base !== "/" && withoutFragment.startsWith(`${base}/`)) {
+    target = withoutFragment.slice(base.length + 1)
+  } else if (base === "/" && withoutFragment.startsWith("/")) {
+    target = withoutFragment.slice(1)
   } else if (withoutFragment.startsWith("/")) {
     return { outsideBase: value }
   } else {
@@ -139,9 +109,7 @@ export function localTarget(currentHtml, rawValue) {
 
 function targetExists(target, files) {
   const cleaned = target.replace(/\/$/, "")
-  const candidates = cleaned
-    ? [cleaned, `${cleaned}.html`, `${cleaned}/index.html`]
-    : ["index.html"]
+  const candidates = cleaned ? [cleaned, `${cleaned}.html`, `${cleaned}/index.html`] : ["index.html"]
   return candidates.some((candidate) => files.has(candidate))
 }
 
@@ -149,179 +117,145 @@ export function countKatexErrorSpans(html) {
   let count = 0
   for (const match of html.matchAll(/<span\b[^>]*>/gi)) {
     const classAttribute = match[0].match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/i)
-    const classNames = (classAttribute?.[1] ?? classAttribute?.[2] ?? "").split(/\s+/)
-    if (classNames.includes("katex-error")) count += 1
+    if ((classAttribute?.[1] ?? classAttribute?.[2] ?? "").split(/\s+/).includes("katex-error")) count += 1
   }
   return count
 }
 
-export async function validateSite() {
-  const publicStat = await stat(PUBLIC_ROOT)
-  if (!publicStat.isDirectory()) throw new Error("Public build directory does not exist")
+function absoluteRoute(route) {
+  const base = SITE_BASE_PATH.replace(/\/+$/, "")
+  const normalized = String(route).replace(/^\/+/, "")
+  const trailingSlash = SITE_LOCALE_IDS.some((locale) => normalized === getSiteLocale(locale).routePrefix)
+  return new URL(`${base}/${normalized}${trailingSlash ? "/" : ""}`, SITE_ORIGIN).href
+}
 
-  const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"))
-  const publicFiles = await walk(PUBLIC_ROOT)
-  const relativeFiles = publicFiles.map((file) => toPosix(path.relative(PUBLIC_ROOT, file)))
-  const fileSet = new Set(relativeFiles)
-  const errors = []
+function htmlAttribute(tag, name) {
+  const match = tag.match(new RegExp(`\\b${escapePattern(name)}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"))
+  return match?.[1] ?? match?.[2]
+}
 
-  for (const required of [
-    "index.html",
-    "static/contentIndex.json",
-    "static/mermaid.esm.min.mjs",
-    ".nojekyll",
-    "robots.txt",
-  ]) {
-    if (!fileSet.has(required)) errors.push(`Missing required build artifact: ${required}`)
+function expectedPagePath(locale, relativePath) {
+  return `${getSiteLocale(locale).routePrefix}/${markdownToHtmlPath(relativePath)}`
+}
+
+async function validatePageHead(locale, manifest, fileSet, errors) {
+  const expectedLanguage = locale === "en" ? "en" : "zh-CN"
+  for (const page of manifest.pageTranslations) {
+    const relativeHtml = expectedPagePath(locale, page.relativePath)
+    if (!fileSet.has(relativeHtml)) continue
+    const html = await readFile(path.join(PUBLIC_ROOT, ...relativeHtml.split("/")), "utf8")
+    const htmlLanguage = html.match(/<html\b[^>]*\blang=(?:"([^"]*)"|'([^']*)')/i)
+    if ((htmlLanguage?.[1] ?? htmlLanguage?.[2]) !== expectedLanguage) {
+      errors.push(`Invalid HTML language on ${relativeHtml}`)
+    }
+    const links = [...html.matchAll(/<link\b[^>]*>/gi)].map((match) => match[0])
+    const canonical = links.find((tag) => htmlAttribute(tag, "rel") === "canonical")
+    if (htmlAttribute(canonical ?? "", "href") !== absoluteRoute(page.route)) {
+      errors.push(`Invalid canonical URL on ${relativeHtml}`)
+    }
+    const alternate = new Map(
+      links
+        .filter((tag) => htmlAttribute(tag, "rel") === "alternate")
+        .map((tag) => [htmlAttribute(tag, "hreflang"), htmlAttribute(tag, "href")]),
+    )
+    if (alternate.get(expectedLanguage) !== absoluteRoute(page.route) ||
+        alternate.get(locale === "en" ? "zh-CN" : "en") !== absoluteRoute(page.alternateRoute) ||
+        alternate.get("x-default") !== absoluteRoute(page.defaultRoute)) {
+      errors.push(`Missing or incorrect hreflang links on ${relativeHtml}`)
+    }
   }
+}
 
-  const forbidden = relativeFiles.filter((file) => FORBIDDEN_EXTENSIONS.has(path.posix.extname(file).toLowerCase()))
-  if (forbidden.length > 0) errors.push(`Forbidden public file types: ${forbidden.slice(0, 10).join(", ")}`)
+async function validateLocale(locale, manifest, relativeFiles, fileSet, errors) {
+  const definition = getSiteLocale(locale)
+  const prefix = definition.routePrefix
+  const localeFiles = relativeFiles.filter((file) => file === `${prefix}.html` || file.startsWith(`${prefix}/`))
+  const localeSet = new Set(localeFiles)
+  const htmlFiles = localeFiles.filter((file) => file.endsWith(".html"))
+  const required = [
+    `${prefix}/index.html`,
+    `${prefix}/static/contentIndex.json`,
+    `${prefix}/static/mermaid.esm.min.mjs`,
+  ]
+  for (const artifact of required) if (!localeSet.has(artifact)) errors.push(`Missing ${locale} build artifact: ${artifact}`)
 
-  const htmlFiles = relativeFiles.filter((file) => file.endsWith(".html"))
   const expectedMinimum = Number(manifest.summary.stagedMarkdown)
-  if (htmlFiles.length < expectedMinimum) {
-    errors.push(`Expected at least ${expectedMinimum} HTML pages, found ${htmlFiles.length}`)
-  }
-
-  const courseIndexes = htmlFiles.filter((file) => {
-    const segments = file.split("/")
-    return segments.length === 2 && segments[1] === "00-目录.html"
-  })
-  const expectedCourseCount = manifest.courses.length
-  if (courseIndexes.length !== expectedCourseCount) {
-    errors.push(`Expected ${expectedCourseCount} top-level course index pages, found ${courseIndexes.length}`)
-  }
+  if (htmlFiles.length < expectedMinimum) errors.push(`Expected at least ${expectedMinimum} ${locale} HTML pages, found ${htmlFiles.length}`)
 
   const expectedCourseIndexes = manifest.courses.map((course) =>
-    `${slugifyPublishedPath(course.name)}/00-目录.html`)
-  const missingCourseIndexes = expectedCourseIndexes.filter((file) => !fileSet.has(file))
-  if (new Set(expectedCourseIndexes).size !== expectedCourseCount || missingCourseIndexes.length > 0) {
-    errors.push(`Missing or colliding course indexes: ${missingCourseIndexes.slice(0, 20).join(", ")}`)
+    `${prefix}/${markdownToHtmlPath(`${course.name}/${definition.courseIndexFilename}`)}`)
+  const courseIndexes = htmlFiles.filter((file) => expectedCourseIndexes.includes(file))
+  if (courseIndexes.length !== manifest.courses.length || expectedCourseIndexes.some((file) => !fileSet.has(file))) {
+    errors.push(`Missing or colliding ${locale} course indexes`)
   }
 
   const expectedDomainCount = new Set(manifest.courses.map((course) => course.domain)).size
-  const expectedRoleTrackCount = new Set(
-    manifest.courses.flatMap((course) => Object.keys(course.tracks ?? {})),
-  ).size
+  const expectedRoleTrackCount = new Set(manifest.courses.flatMap((course) => Object.keys(course.tracks ?? {}))).size
   const navigationProbe = expectedCourseIndexes[0]
-  let navigationDomains = 0
-  let navigationRoleTracks = 0
-  let navigationCourses = 0
   let navigationFolders = 0
   if (navigationProbe && fileSet.has(navigationProbe)) {
     const html = await readFile(path.join(PUBLIC_ROOT, ...navigationProbe.split("/")), "utf8")
-    navigationDomains = (html.match(/data-nav-domain=/g) ?? []).length
-    navigationRoleTracks = (html.match(/data-nav-track=/g) ?? []).length
-    navigationCourses = (html.match(/data-nav-course=/g) ?? []).length
+    const navigationDomains = (html.match(/data-nav-domain=/g) ?? []).length
+    const navigationRoleTracks = (html.match(/data-nav-track=/g) ?? []).length
+    const navigationCourses = (html.match(/data-nav-course=/g) ?? []).length
     navigationFolders = (html.match(/data-nav-folder=/g) ?? []).length
-    if (
-      navigationDomains !== expectedDomainCount ||
-      navigationRoleTracks !== expectedRoleTrackCount ||
-      navigationCourses !== expectedCourseCount ||
-      navigationFolders === 0
-    ) {
-      errors.push(
-        `Invalid v2 learning navigation: ${navigationDomains} domains, ` +
-        `${navigationRoleTracks} role tracks, ${navigationCourses} courses, ${navigationFolders} folders`,
-      )
+    if (navigationDomains !== expectedDomainCount || navigationRoleTracks !== expectedRoleTrackCount ||
+        navigationCourses !== manifest.courses.length || navigationFolders === 0) {
+      errors.push(`Invalid ${locale} learning navigation`)
     }
-    if (html.includes("Folder:")) errors.push("Virtual folder titles leaked into the learning navigation")
+    if (html.includes("Folder:")) errors.push(`Virtual folder titles leaked into ${locale} navigation`)
   } else {
-    errors.push(`Missing navigation probe page: ${navigationProbe ?? "<no course index>"}`)
+    errors.push(`Missing ${locale} navigation probe page`)
   }
 
-  if (fileSet.has("index.html")) {
-    const homeHtml = await readFile(path.join(PUBLIC_ROOT, "index.html"), "utf8")
-    if (homeHtml.includes('id="aae-course-nav"')) {
-      errors.push("Homepage unexpectedly embeds the full article navigation tree")
-    }
+  const homeHtml = `${prefix}/index.html`
+  if (fileSet.has(homeHtml)) {
+    const home = await readFile(path.join(PUBLIC_ROOT, ...homeHtml.split("/")), "utf8")
+    if (home.includes('id="aae-course-nav"')) errors.push(`${locale} homepage embeds the full article navigation tree`)
   }
 
-  const stagedMarkdown = [
-    ...manifest.publishedMarkdown,
-    ...manifest.stubMarkdown,
-    ...manifest.generatedPages,
-  ]
-  const expectedPublishedPages = stagedMarkdown.map(markdownToHtmlPath)
+  const stagedMarkdown = [...manifest.publishedMarkdown, ...manifest.stubMarkdown, ...manifest.generatedPages]
+  const expectedPublishedPages = stagedMarkdown.map((relativePath) => expectedPagePath(locale, relativePath))
   const missingPublishedPages = expectedPublishedPages.filter((file) => !fileSet.has(file))
-  if (new Set(expectedPublishedPages).size !== expectedPublishedPages.length) {
-    errors.push("Published Markdown routes collide after Quartz slugification")
-  }
-  if (missingPublishedPages.length > 0) {
-    errors.push(`Missing published pages (${missingPublishedPages.length}): ${missingPublishedPages.slice(0, 20).join(", ")}`)
+  if (new Set(expectedPublishedPages).size !== expectedPublishedPages.length || missingPublishedPages.length > 0) {
+    errors.push(`Missing or colliding ${locale} published pages: ${missingPublishedPages.slice(0, 20).join(", ")}`)
   }
 
-  const expectedAssets = new Map(manifest.assets.map((asset) => [slugifyPublishedPath(asset), asset]))
-  if (expectedAssets.size !== manifest.assets.length) {
-    errors.push("Published asset routes collide after Quartz slugification")
-  }
+  const expectedAssets = new Map(manifest.assets.map((asset) => [`${prefix}/${slugifyPublishedPath(asset)}`, asset]))
+  if (expectedAssets.size !== manifest.assets.length) errors.push(`Published ${locale} asset routes collide after slugification`)
   const missingAssets = [...expectedAssets.keys()].filter((file) => !fileSet.has(file))
-  if (missingAssets.length > 0) {
-    errors.push(`Missing published assets (${missingAssets.length}): ${missingAssets.slice(0, 20).join(", ")}`)
-  }
+  if (missingAssets.length > 0) errors.push(`Missing ${locale} assets: ${missingAssets.slice(0, 20).join(", ")}`)
+  const courseRoots = new Set(manifest.courses.map((course) => `${prefix}/${slugifyPublishedPath(course.name)}`))
+  const unexpectedCourseAssets = localeFiles.filter((file) =>
+    courseRoots.has(file.split("/").slice(0, 2).join("/")) && !file.endsWith(".html") && !expectedAssets.has(file))
+  if (unexpectedCourseAssets.length > 0) errors.push(`Unexpected ${locale} course assets: ${unexpectedCourseAssets.slice(0, 20).join(", ")}`)
 
-  const courseRoots = new Set(manifest.courses.map((course) => slugifyPublishedPath(course.name)))
-  const unexpectedCourseAssets = relativeFiles.filter((file) =>
-    courseRoots.has(file.split("/")[0]) && !file.endsWith(".html") && !expectedAssets.has(file))
-  if (unexpectedCourseAssets.length > 0) {
-    errors.push(`Unexpected course assets: ${unexpectedCourseAssets.slice(0, 20).join(", ")}`)
-  }
-
-  const changedAssets = []
   for (const [publicPath, stagedPath] of expectedAssets) {
     if (!fileSet.has(publicPath)) continue
     const [stagedBytes, publicBytes] = await Promise.all([
-      readFile(path.join(WEBSITE_ROOT, ".generated", "content", ...stagedPath.split("/"))),
+      readFile(path.join(contentRootFor(GENERATED_ROOT, locale), ...stagedPath.split("/"))),
       readFile(path.join(PUBLIC_ROOT, ...publicPath.split("/"))),
     ])
-    if (sha256(stagedBytes) !== sha256(publicBytes)) changedAssets.push(publicPath)
-  }
-  if (changedAssets.length > 0) {
-    errors.push(`Published assets changed during build: ${changedAssets.slice(0, 20).join(", ")}`)
+    if (sha256(stagedBytes) !== sha256(publicBytes)) errors.push(`Published ${locale} asset changed during build: ${publicPath}`)
   }
 
   const packageMermaidRoot = path.join(WEBSITE_ROOT, "node_modules", "mermaid", "dist")
   const packageMermaidChunks = path.join(packageMermaidRoot, "chunks", "mermaid.esm.min")
   const chunkNames = (await readdir(packageMermaidChunks, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
-    .map((entry) => entry.name)
-    .sort()
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs")).map((entry) => entry.name).sort()
   const mermaidModules = [
-    {
-      source: path.join(packageMermaidRoot, "mermaid.esm.min.mjs"),
-      publicPath: "static/mermaid.esm.min.mjs",
-    },
-    ...chunkNames.map((name) => ({
-      source: path.join(packageMermaidChunks, name),
-      publicPath: `static/chunks/mermaid.esm.min/${name}`,
-    })),
+    { source: path.join(packageMermaidRoot, "mermaid.esm.min.mjs"), publicPath: `${prefix}/static/mermaid.esm.min.mjs` },
+    ...chunkNames.map((name) => ({ source: path.join(packageMermaidChunks, name), publicPath: `${prefix}/static/chunks/mermaid.esm.min/${name}` })),
   ]
   const expectedMermaidFiles = new Set(mermaidModules.map(({ publicPath }) => publicPath))
-  const actualMermaidFiles = relativeFiles.filter((file) =>
-    file === "static/mermaid.esm.min.mjs" || file.startsWith("static/chunks/mermaid.esm.min/"))
-  const missingMermaidFiles = [...expectedMermaidFiles].filter((file) => !fileSet.has(file))
-  const unexpectedMermaidFiles = actualMermaidFiles.filter((file) => !expectedMermaidFiles.has(file))
-  if (missingMermaidFiles.length > 0 || unexpectedMermaidFiles.length > 0) {
-    errors.push(
-      `Invalid published Mermaid module graph: missing ${missingMermaidFiles.length}, ` +
-      `unexpected ${unexpectedMermaidFiles.length}`,
-    )
+  const actualMermaidFiles = localeFiles.filter((file) => file === `${prefix}/static/mermaid.esm.min.mjs` || file.startsWith(`${prefix}/static/chunks/mermaid.esm.min/`))
+  if ([...expectedMermaidFiles].some((file) => !fileSet.has(file)) || actualMermaidFiles.some((file) => !expectedMermaidFiles.has(file))) {
+    errors.push(`Invalid ${locale} Mermaid module graph`)
   }
-  const changedMermaidFiles = []
   for (const module of mermaidModules) {
     if (!fileSet.has(module.publicPath)) continue
-    const [packageBytes, publicBytes] = await Promise.all([
-      readFile(module.source),
-      readFile(path.join(PUBLIC_ROOT, ...module.publicPath.split("/"))),
-    ])
-    if (sha256(packageBytes) !== sha256(publicBytes)) changedMermaidFiles.push(module.publicPath)
-  }
-  if (changedMermaidFiles.length > 0) {
-    errors.push(
-      `Published Mermaid modules do not match the lockfile-installed package: ` +
-      changedMermaidFiles.slice(0, 20).join(", "),
-    )
+    const [packageBytes, publicBytes] = await Promise.all([readFile(module.source), readFile(path.join(PUBLIC_ROOT, ...module.publicPath.split("/")))])
+    if (sha256(packageBytes) !== sha256(publicBytes)) errors.push(`Published ${locale} Mermaid module changed: ${module.publicPath}`)
   }
 
   const broken = new Set()
@@ -334,72 +268,83 @@ export async function validateSite() {
   const remoteMermaidLoaders = new Set()
   for (const relativeHtml of htmlFiles) {
     const html = await readFile(path.join(PUBLIC_ROOT, ...relativeHtml.split("/")), "utf8")
-    if (/https:\/\/cdnjs\.cloudflare\.com/i.test(html)) {
-      remoteMermaidLoaders.add(relativeHtml)
-    }
-    const katexErrorCount = countKatexErrorSpans(html)
-    if (katexErrorCount > 0) katexErrorPages.set(relativeHtml, katexErrorCount)
+    if (/https:\/\/cdnjs\.cloudflare\.com/i.test(html)) remoteMermaidLoaders.add(relativeHtml)
+    const katexErrors = countKatexErrorSpans(html)
+    if (katexErrors > 0) katexErrorPages.set(relativeHtml, katexErrors)
     for (const match of html.matchAll(/<t[dh]\b[^>]*>[\s\S]*?<\/t[dh]>/gi)) {
-      const nonCodeCell = match[0].replace(/<code\b[^>]*>[\s\S]*?<\/code>/gi, "")
-      if (/\[\[[\s\S]*?\]\]/.test(nonCodeCell)) tableWikilinkLeaks.add(relativeHtml)
+      if (/\[\[[\s\S]*?\]\]/.test(match[0].replace(/<code\b[^>]*>[\s\S]*?<\/code>/gi, ""))) tableWikilinkLeaks.add(relativeHtml)
     }
     for (const match of html.matchAll(/<input\b[^>]*\bcheckbox-toggle\b[^>]*>/gi)) {
       if (!/\bdisabled(?:\s*=|\s|\/?>)/i.test(match[0])) interactiveCheckboxes.add(relativeHtml)
     }
-    for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
-      const tag = match[0]
+    for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
       if (!/\bhttp-equiv=(?:"refresh"|'refresh')/i.test(tag)) continue
-      const content = tag.match(/\bcontent=(?:"([^"]*)"|'([^']*)')/i)
-      const refreshTarget = (content?.[1] ?? content?.[2] ?? "").replace(/^.*?\burl\s*=\s*/i, "").trim()
-      if (!refreshTarget) continue
-      const resolved = localTarget(relativeHtml, refreshTarget)
-      if (resolved?.target !== undefined && htmlRoute(resolved.target) === htmlRoute(relativeHtml)) {
-        selfRedirects.add(`${relativeHtml} -> ${refreshTarget}`)
-      }
+      const content = htmlAttribute(tag, "content") ?? ""
+      const target = content.replace(/^.*?\burl\s*=\s*/i, "").trim()
+      const resolved = localTarget(relativeHtml, target)
+      if (resolved?.target !== undefined && htmlRoute(resolved.target) === htmlRoute(relativeHtml)) selfRedirects.add(`${relativeHtml} -> ${target}`)
     }
     for (const match of html.matchAll(/\b(?:href|src)=(?:"([^"]*)"|'([^']*)')/gi)) {
       const raw = match[1] ?? match[2] ?? ""
       const resolved = localTarget(relativeHtml, raw)
       if (!resolved) continue
-      if (resolved.unsupportedScheme) {
-        unsupportedSchemes.add(`${relativeHtml} -> ${resolved.unsupportedScheme}`)
-        continue
-      }
-      if (resolved.outsideBase) {
-        outsideBase.add(`${relativeHtml} -> ${resolved.outsideBase}`)
-        continue
-      }
-      if (!targetExists(resolved.target, fileSet)) broken.add(`${relativeHtml} -> ${raw}`)
+      if (resolved.unsupportedScheme) unsupportedSchemes.add(`${relativeHtml} -> ${resolved.unsupportedScheme}`)
+      else if (resolved.outsideBase) outsideBase.add(`${relativeHtml} -> ${resolved.outsideBase}`)
+      else if (!targetExists(resolved.target, fileSet)) broken.add(`${relativeHtml} -> ${raw}`)
     }
   }
-  if (remoteMermaidLoaders.size > 0) {
-    errors.push(
-      `Remote cdnjs references remain in HTML (${remoteMermaidLoaders.size}): ` +
-      [...remoteMermaidLoaders].slice(0, 20).join(", "),
-    )
+  if (remoteMermaidLoaders.size > 0) errors.push(`Remote cdnjs references remain in ${locale} HTML`)
+  if (unsupportedSchemes.size > 0) errors.push(`Unsupported ${locale} public URL schemes:\n${[...unsupportedSchemes].slice(0, 20).join("\n")}`)
+  if (broken.size > 0) errors.push(`Broken ${locale} local links (${broken.size}):\n${[...broken].slice(0, 100).join("\n")}`)
+  if (outsideBase.size > 0) errors.push(`URLs escape ${SITE_BASE_PATH} in ${locale}:\n${[...outsideBase].slice(0, 20).join("\n")}`)
+  if (selfRedirects.size > 0) errors.push(`Self-referential ${locale} redirects:\n${[...selfRedirects].slice(0, 20).join("\n")}`)
+  if (tableWikilinkLeaks.size > 0) errors.push(`Unparsed ${locale} table wikilinks`)
+  if (interactiveCheckboxes.size > 0) errors.push(`Interactive ${locale} learning checkboxes are present`)
+  if (katexErrorPages.size > 0) errors.push(`KaTeX render errors in ${locale}`)
+  await validatePageHead(locale, manifest, fileSet, errors)
+
+  return { htmlPages: htmlFiles.length, courseIndexes: courseIndexes.length, navigationFolders }
+}
+
+export async function validateSite() {
+  const publicStat = await stat(PUBLIC_ROOT)
+  if (!publicStat.isDirectory()) throw new Error("Public build directory does not exist")
+  const manifests = new Map(await Promise.all(SITE_LOCALE_IDS.map(async (locale) => [
+    locale,
+    JSON.parse(await readFile(manifestPathFor(GENERATED_ROOT, locale), "utf8")),
+  ])))
+  const publicFiles = await walk(PUBLIC_ROOT)
+  const relativeFiles = publicFiles.map((file) => toPosix(path.relative(PUBLIC_ROOT, file)))
+  const fileSet = new Set(relativeFiles)
+  const errors = []
+
+  for (const required of ["index.html", "404.html", ".nojekyll", "robots.txt"]) {
+    if (!fileSet.has(required)) errors.push(`Missing required build artifact: ${required}`)
   }
-  if (unsupportedSchemes.size > 0) {
-    errors.push(`Unsupported public URL schemes:\n${[...unsupportedSchemes].slice(0, 20).join("\n")}`)
+  const rootIndex = fileSet.has("index.html") ? await readFile(path.join(PUBLIC_ROOT, "index.html"), "utf8") : ""
+  if (!rootIndex.includes(`url=${SITE_BASE_PATH.replace(/\/+$/, "")}/${getSiteLocale(DEFAULT_LOCALE).routePrefix}`)) {
+    errors.push("Root page does not default to Chinese")
   }
-  if (broken.size > 0) {
-    errors.push(`Broken local links (${broken.size}):\n${[...broken].slice(0, 100).join("\n")}`)
+  const robots = fileSet.has("robots.txt") ? await readFile(path.join(PUBLIC_ROOT, "robots.txt"), "utf8") : ""
+  for (const locale of SITE_LOCALE_IDS) {
+    if (!robots.includes(`Sitemap: ${localeSiteUrl(locale)}/sitemap.xml`)) errors.push(`robots.txt lacks the ${locale} sitemap`)
   }
-  if (outsideBase.size > 0) {
-    errors.push(`URLs escape ${BASE_PATH}:\n${[...outsideBase].slice(0, 20).join("\n")}`)
+  const forbidden = relativeFiles.filter((file) => FORBIDDEN_EXTENSIONS.has(path.posix.extname(file).toLowerCase()))
+  if (forbidden.length > 0) errors.push(`Forbidden public file types: ${forbidden.slice(0, 10).join(", ")}`)
+
+  const localeSummaries = {}
+  for (const locale of SITE_LOCALE_IDS) {
+    localeSummaries[locale] = await validateLocale(locale, manifests.get(locale), relativeFiles, fileSet, errors)
   }
-  if (selfRedirects.size > 0) {
-    errors.push(`Self-referential redirect pages (${selfRedirects.size}):\n${[...selfRedirects].slice(0, 20).join("\n")}`)
-  }
-  if (tableWikilinkLeaks.size > 0) {
-    errors.push(`Unparsed wikilinks inside tables (${tableWikilinkLeaks.size}):\n${[...tableWikilinkLeaks].slice(0, 20).join("\n")}`)
-  }
-  if (interactiveCheckboxes.size > 0) {
-    errors.push(`Interactive learning checkboxes are present (${interactiveCheckboxes.size}):\n${[...interactiveCheckboxes].slice(0, 20).join("\n")}`)
-  }
-  if (katexErrorPages.size > 0) {
-    const total = [...katexErrorPages.values()].reduce((sum, count) => sum + count, 0)
-    const details = [...katexErrorPages].slice(0, 30).map(([file, count]) => `${file}: ${count}`)
-    errors.push(`KaTeX render errors (${total} across ${katexErrorPages.size} pages):\n${details.join("\n")}`)
+  const chineseManifest = manifests.get(DEFAULT_LOCALE)
+  for (const { route, targetRoute } of chineseManifest.legacyRoutes) {
+    const file = `${route}.html`
+    if (!fileSet.has(file)) {
+      errors.push(`Missing legacy redirect: ${file}`)
+      continue
+    }
+    const html = await readFile(path.join(PUBLIC_ROOT, ...file.split("/")), "utf8")
+    if (!html.includes(siteHref(targetRoute))) errors.push(`Legacy redirect has the wrong target: ${file}`)
   }
 
   const sensitiveLeaks = []
@@ -407,47 +352,31 @@ export async function validateSite() {
   for (const relative of relativeFiles.filter((file) => TEXT_EXTENSIONS.has(path.posix.extname(file).toLowerCase()))) {
     const text = await readFile(path.join(PUBLIC_ROOT, ...relative.split("/")), "utf8")
     if (/ai_learning_completed/i.test(text)) sensitiveLeaks.push(`${relative}: learning-progress metadata`)
-    if (text.includes("-checkbox-") && /localStorage\.(?:getItem|setItem)/.test(text)) {
-      checkboxProgressRuntimeLeaks.push(relative)
-    }
-    if (MACHINE_PATH_PATTERNS.some((pattern) => pattern.test(text))) {
-      sensitiveLeaks.push(`${relative}: machine-specific local path`)
-    }
-    for (const [label, pattern] of SECRET_PATTERNS) {
+    if (text.includes("-checkbox-") && /localStorage\.(?:getItem|setItem)/.test(text)) checkboxProgressRuntimeLeaks.push(relative)
+    if (MACHINE_PATH_PATTERNS.some((pattern) => pattern.test(text))) sensitiveLeaks.push(`${relative}: machine-specific local path`)
+    for (const [label, pattern] of HIGH_CONFIDENCE_SECRET_PATTERNS) {
       if (pattern.test(text)) sensitiveLeaks.push(`${relative}: ${label}`)
     }
   }
-  if (sensitiveLeaks.length > 0) {
-    errors.push(`Sensitive public content (${sensitiveLeaks.length}):\n${sensitiveLeaks.slice(0, 30).join("\n")}`)
-  }
-  if (checkboxProgressRuntimeLeaks.length > 0) {
-    errors.push(`Checkbox progress persistence is present (${checkboxProgressRuntimeLeaks.length}):\n${checkboxProgressRuntimeLeaks.slice(0, 20).join("\n")}`)
-  }
-
+  if (sensitiveLeaks.length > 0) errors.push(`Sensitive public content (${sensitiveLeaks.length}):\n${sensitiveLeaks.slice(0, 30).join("\n")}`)
+  if (checkboxProgressRuntimeLeaks.length > 0) errors.push(`Checkbox progress persistence is present`)
   if (errors.length > 0) throw new Error(errors.join("\n\n"))
 
   const summary = {
-    htmlPages: htmlFiles.length,
-    courseIndexes: courseIndexes.length,
-    publishedPages: expectedPublishedPages.length,
-    publishedAssets: expectedAssets.size,
+    locales: localeSummaries,
     publicFiles: relativeFiles.length,
     brokenLocalLinks: 0,
     forbiddenFiles: 0,
     progressMetadataLeaks: 0,
     sensitiveLeaks: 0,
-    selfRedirects: 0,
-    tableWikilinkLeaks: 0,
-    checkboxProgressRuntimeLeaks: 0,
-    interactiveCheckboxes: 0,
-    katexErrors: 0,
-    navigationDomains,
-    navigationRoleTracks,
-    navigationCourses,
-    navigationFolders,
+    hreflangErrors: 0,
   }
   console.log(JSON.stringify(summary))
   return summary
+}
+
+function siteHref(route) {
+  return `${SITE_BASE_PATH.replace(/\/+$/, "")}/${String(route).replace(/^\/+/, "")}`
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

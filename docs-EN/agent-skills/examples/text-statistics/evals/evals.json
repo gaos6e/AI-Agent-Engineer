@@ -1,0 +1,145 @@
+{
+  "skill_name": "text-statistics",
+  "evals": [
+    {
+      "id": "positive-01",
+      "prompt": "Count the English words, characters, and lines in this product note and return JSON: Hello agent\\nBuild safely.",
+      "should_trigger": true,
+      "reason": "It explicitly requests the script's three counts and JSON output.",
+      "expected_output": "Load the Skill and return valid JSON with integer words, characters, and lines."
+    },
+    {
+      "id": "positive-02",
+      "prompt": "How many lines are in this UTF-8 text file? Please include its character count.",
+      "should_trigger": true,
+      "reason": "Line and character counting for a text file is in scope.",
+      "expected_output": "Load the Skill, prefer --input, and state the UTF-8 and 1 MiB limit."
+    },
+    {
+      "id": "positive-03",
+      "prompt": "Under this course tool's rules, how many word-like tokens and logical lines are in an empty string?",
+      "should_trigger": true,
+      "reason": "The request explicitly uses the tool's counting rules with a boundary input.",
+      "expected_output": "Load the Skill; words, characters, and lines are all 0."
+    },
+    {
+      "id": "positive-04",
+      "prompt": "Count the words and lines in 'one two\\nthree' and give machine-readable output.",
+      "should_trigger": true,
+      "reason": "The English wording still requests deterministic text counting.",
+      "expected_output": "Load the Skill, return JSON, and do not echo unrequested full text."
+    },
+    {
+      "id": "positive-05",
+      "prompt": "Verify the total character count of this README fragment, including spaces and newlines.",
+      "should_trigger": true,
+      "reason": "Character counting and whitespace rules are part of the contract.",
+      "expected_output": "Load the Skill and explain that characters are Unicode code points."
+    },
+    {
+      "id": "positive-06",
+      "prompt": "How many word-like tokens does a mixed Han-and-Latin phrase have under your teaching rule?",
+      "should_trigger": true,
+      "reason": "Mixed-script word-like token counting is within scope.",
+      "expected_output": "Load the Skill and apply the single-Han-character and Latin-run rules."
+    },
+    {
+      "id": "positive-07",
+      "prompt": "I need a JSON summary containing only a text's words, characters, and lines.",
+      "should_trigger": true,
+      "reason": "Both fields and output contract match exactly.",
+      "expected_output": "Load the Skill; stdout contains only the three integer count fields."
+    },
+    {
+      "id": "positive-08",
+      "prompt": "This log fragment uses CRLF. Can you count logical lines?",
+      "should_trigger": true,
+      "reason": "CRLF logical-line counting is a stated boundary.",
+      "expected_output": "Load the Skill and treat CRLF as one line separator."
+    },
+    {
+      "id": "positive-09",
+      "prompt": "Do not analyze meaning. Tell me only how long this is: word-like count, characters, and lines.",
+      "should_trigger": true,
+      "reason": "It excludes semantic analysis and requests the three defined counts.",
+      "expected_output": "Load the Skill and perform only deterministic statistics."
+    },
+    {
+      "id": "positive-10",
+      "prompt": "Count words and lines in my specified text file offline; do not upload it.",
+      "should_trigger": true,
+      "reason": "Offline file counting and the no-network constraint match.",
+      "expected_output": "Load the Skill, use --input, and make no network request."
+    },
+    {
+      "id": "negative-01",
+      "prompt": "Make this English product description sound more natural.",
+      "should_trigger": false,
+      "reason": "This is rewriting rather than counting.",
+      "expected_output": "Do not load the Skill; use a text-rewriting capability."
+    },
+    {
+      "id": "negative-02",
+      "prompt": "Translate this document into Chinese while preserving Markdown.",
+      "should_trigger": false,
+      "reason": "This is a translation and format-preservation task.",
+      "expected_output": "Do not load the Skill."
+    },
+    {
+      "id": "negative-03",
+      "prompt": "Is the sentiment of this review positive or negative?",
+      "should_trigger": false,
+      "reason": "Sentiment classification is semantic analysis, not length counting.",
+      "expected_output": "Do not load the Skill."
+    },
+    {
+      "id": "negative-04",
+      "prompt": "How many GPT-model tokens will this prompt use, and what will it cost?",
+      "should_trigger": false,
+      "reason": "Model tokens and pricing depend on a specific tokenizer and current price, not word-like tokens.",
+      "expected_output": "Do not load the Skill; use the target model's official tokenizer and current pricing."
+    },
+    {
+      "id": "negative-05",
+      "prompt": "Draw a top-20 bar chart of word frequency.",
+      "should_trigger": false,
+      "reason": "Frequency distributions and visualization exceed the three total-count fields.",
+      "expected_output": "Do not load the Skill; use a frequency-analysis and visualization workflow."
+    },
+    {
+      "id": "negative-06",
+      "prompt": "Summarize the three main arguments in this article.",
+      "should_trigger": false,
+      "reason": "This is semantic summarization.",
+      "expected_output": "Do not load the Skill."
+    },
+    {
+      "id": "negative-07",
+      "prompt": "How many lint errors are in this Python code?",
+      "should_trigger": false,
+      "reason": "Although it asks 'how many,' the task is static code analysis, not text length.",
+      "expected_output": "Do not load the Skill; run an appropriate linter."
+    },
+    {
+      "id": "negative-08",
+      "prompt": "Extract every person's name from this contract and count each occurrence.",
+      "should_trigger": false,
+      "reason": "Entity extraction and grouped frequency are beyond simple total counts.",
+      "expected_output": "Do not load the Skill; use an entity-extraction workflow."
+    },
+    {
+      "id": "negative-09",
+      "prompt": "Compare the semantic similarity of these two articles.",
+      "should_trigger": false,
+      "reason": "This is an Embedding or semantic-matching task.",
+      "expected_output": "Do not load the Skill."
+    },
+    {
+      "id": "negative-10",
+      "prompt": "Read a 3 GB log file in full and count each error code.",
+      "should_trigger": false,
+      "reason": "The input exceeds 1 MiB and grouped error-code analysis is outside the input and output boundaries.",
+      "expected_output": "Do not load the Skill; design a streaming log-analysis approach."
+    }
+  ]
+}

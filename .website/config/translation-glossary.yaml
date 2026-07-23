@@ -1,0 +1,55 @@
+# This glossary is the source of truth for bilingual maintenance. Keep product,
+# API, protocol, code, and trademark names in English unless an entry says otherwise.
+protected_terms:
+  - AI Agent Engineer
+  - API
+  - SDK
+  - CLI
+  - JSON
+  - JSONL
+  - YAML
+  - Markdown
+  - Obsidian
+  - Quartz
+  - GitHub Pages
+  - LangChain
+  - LangGraph
+  - Model Context Protocol
+  - MCP
+  - Agent Skills
+  - A2A
+  - RAG
+  - LLM
+  - LLMOps
+  - MLOps
+  - OAuth
+  - RBAC
+  - ACL
+  - OpenAI
+  - Python
+  - JavaScript
+  - TypeScript
+
+terms:
+  "智能体": "agent"
+  "检索增强生成": "retrieval-augmented generation (RAG)"
+  "工具调用": "tool calling"
+  "上下文工程": "context engineering"
+  "提示词工程": "prompt engineering"
+  "知识库": "knowledge base"
+  "向量数据库": "vector database"
+  "嵌入": "embedding"
+  "重排序": "reranking"
+  "评测": "evaluation"
+  "可观测性": "observability"
+  "人在回路": "human-in-the-loop"
+  "硬前置": "hard prerequisite"
+  "工作流": "workflow"
+  "多智能体": "multi-agent"
+  "安全与治理": "safety and governance"
+
+style:
+  audience: "general technical English"
+  preserve_source_meaning: true
+  use_sentence_case_headings: true
+  use_us_english: true

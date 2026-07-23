@@ -1,0 +1,52 @@
+{
+  "step_budget": 8,
+  "roles": {
+    "researcher": {
+      "capabilities": ["collect_evidence"]
+    },
+    "writer": {
+      "capabilities": ["draft"]
+    },
+    "reviewer": {
+      "capabilities": ["review"]
+    }
+  },
+  "tasks": [
+    {
+      "id": "collect",
+      "owner": "researcher",
+      "requires": [],
+      "capability": "collect_evidence",
+      "max_attempts": 2,
+      "outcome_plan": ["transient_error", "success"],
+      "result_payload": {
+        "evidence_ids": ["E-1", "E-2"]
+      }
+    },
+    {
+      "id": "draft",
+      "owner": "writer",
+      "requires": ["collect"],
+      "capability": "draft",
+      "max_attempts": 1,
+      "outcome_plan": ["success"],
+      "result_payload": {
+        "artifact": "synthetic-draft-v1"
+      }
+    },
+    {
+      "id": "review",
+      "owner": "reviewer",
+      "requires": ["draft"],
+      "capability": "review",
+      "max_attempts": 1,
+      "outcome_plan": ["success"],
+      "result_payload": {
+        "accepted": true
+      }
+    }
+  ]
+}
+
+
+

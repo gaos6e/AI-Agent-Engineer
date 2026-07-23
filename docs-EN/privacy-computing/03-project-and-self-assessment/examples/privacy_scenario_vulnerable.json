@@ -1,0 +1,71 @@
+{
+  "schema_version": "2",
+  "scenario_id": "regional-statistics-vulnerable",
+  "purpose": "Publish regional service-usage statistics and train a federated demand-forecast model from two institutions.",
+  "non_goals": ["identify a person", "publish rare diagnoses", "retain raw records for future uses"],
+  "subject_scope": "One row per person during one reporting month.",
+  "data_fields": [
+    {"name": "person_name", "privacy_class": "direct_identifier", "output_role": "linkage_key", "necessary": false, "contribution_bound": 1},
+    {"name": "postal_code", "privacy_class": "quasi_identifier", "output_role": "dimension", "necessary": true, "contribution_bound": 1},
+    {"name": "diagnosis", "privacy_class": "sensitive_attribute", "output_role": "dimension", "necessary": true, "contribution_bound": 1},
+    {"name": "usage_count", "privacy_class": "non_sensitive", "output_role": "measure", "necessary": true, "contribution_bound": 20}
+  ],
+  "participants": [
+    {"id": "holder-a", "role": "data_holder", "trusted": true},
+    {"id": "holder-b", "role": "data_holder", "trusted": true},
+    {"id": "central-server", "role": "compute_service", "trusted": false},
+    {"id": "public-publisher", "role": "publisher", "trusted": false}
+  ],
+  "data_flows": [
+    {"id": "a-to-server", "from": "holder-a", "to": "central-server", "fields": ["person_name", "postal_code", "diagnosis", "usage_count"], "protection": "raw"},
+    {"id": "b-to-server", "from": "holder-b", "to": "central-server", "fields": ["person_name", "postal_code", "diagnosis", "usage_count"], "protection": "raw"},
+    {"id": "a-model-update", "from": "holder-a", "to": "central-server", "fields": ["usage_count"], "protection": "federated_update"},
+    {"id": "b-model-update", "from": "holder-b", "to": "central-server", "fields": ["usage_count"], "protection": "federated_update"}
+  ],
+  "processing": {
+    "task_type": "federated_training_and_statistics",
+    "local_training": true,
+    "secure_aggregation": false,
+    "mpc": false,
+    "homomorphic_encryption": false,
+    "tee": false,
+    "protocol_participants": [],
+    "protocol_security": "none",
+    "protocol_evidence": false
+  },
+  "release": {
+    "public": true,
+    "minimum_group_size": 5,
+    "adjacency": {"unit": "undefined", "relation": "undefined", "time_window": "undefined", "contribution_bounds_enforced": false},
+    "epsilon_limit": "1.0",
+    "delta_limit": "0.000001",
+    "mechanisms": [
+      {"id": "monthly-counts", "mechanism": "illustrative-laplace", "epsilon": "0.8", "delta": "0.0000008", "approved": false},
+      {"id": "diagnosis-breakdown", "mechanism": "illustrative-gaussian", "epsilon": "0.7", "delta": "0.0000008", "approved": true}
+    ],
+    "outputs": [
+      {"id": "monthly-public-table", "fields": ["postal_code", "diagnosis", "usage_count"], "transformation": "aggregate", "public": true}
+    ]
+  },
+  "retention": {"days": 365, "deletion_verified": false, "backups_in_scope": false},
+  "controls": {
+    "access_control": false,
+    "purpose_enforcement": false,
+    "output_review": false,
+    "budget_ledger": false,
+    "provenance": false,
+    "incident_plan": false,
+    "linkage_evaluation": false,
+    "update_validation": false
+  },
+  "threat_model": {
+    "honest_but_curious_server": true,
+    "collusion_threshold": 0,
+    "malicious_clients": true,
+    "final_output_inference": true
+  },
+  "risk_policy": {
+    "block_severities": ["critical", "high"],
+    "review_severities": ["medium", "low"]
+  }
+}

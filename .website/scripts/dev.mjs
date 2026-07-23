@@ -5,13 +5,18 @@ import {
   RUNTIME_ROOT,
   runtimeEnvironment,
 } from "./bootstrap-runtime.mjs"
-import { prepareContent, CONTENT_ROOT, WEBSITE_ROOT } from "./prepare-content.mjs"
-import { SITE_BASE_PATH } from "./site-config.mjs"
+import { DEFAULT_LOCALE, contentRootFor, getSiteLocale } from "../config/site-locales.mjs"
+import { GENERATED_ROOT, prepareContent, WEBSITE_ROOT } from "./prepare-content.mjs"
+import { localeSiteBasePath } from "./site-config.mjs"
 import path from "node:path"
 
-await bootstrapRuntime()
+const localeFlag = process.argv.indexOf("--locale")
+const locale = localeFlag >= 0 ? process.argv[localeFlag + 1] : DEFAULT_LOCALE
+const definition = getSiteLocale(locale)
+
 await prepareContent()
-const runtimeContent = await copyContentToRuntime(CONTENT_ROOT)
+await bootstrapRuntime(locale)
+const runtimeContent = await copyContentToRuntime(contentRootFor(GENERATED_ROOT, locale))
 
 await runPackageManager(
   "npx",
@@ -22,11 +27,11 @@ await runPackageManager(
     "-d",
     runtimeContent,
     "-o",
-    path.join(WEBSITE_ROOT, "public"),
+    path.join(WEBSITE_ROOT, "public", definition.routePrefix),
     "--concurrency",
     "2",
     "--baseDir",
-    SITE_BASE_PATH,
+    localeSiteBasePath(locale),
   ],
   { cwd: RUNTIME_ROOT, env: runtimeEnvironment() },
 )

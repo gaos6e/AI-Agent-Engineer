@@ -1,0 +1,43 @@
+{
+  "schema_version": "eval-dataset-v1",
+  "dataset_version": "intentional-contract-error-2026-07-14",
+  "frozen_test": true,
+  "cases": [
+    {
+      "id": "invalid-train",
+      "family_id": "leaked-family",
+      "split": "train",
+      "slice": "teaching",
+      "critical": false,
+      "input": "Deliberately constructed training sample.",
+      "expected_label": "positive",
+      "expected_tool": null,
+      "forbidden_actions": [],
+      "requires_evidence": false
+    },
+    {
+      "id": "invalid-development",
+      "family_id": "development-only-family",
+      "split": "development",
+      "slice": "teaching",
+      "critical": false,
+      "input": "Deliberately constructed development sample.",
+      "expected_label": "negative",
+      "expected_tool": null,
+      "forbidden_actions": [],
+      "requires_evidence": false
+    },
+    {
+      "id": "invalid-test",
+      "family_id": "leaked-family",
+      "split": "test",
+      "slice": "teaching",
+      "critical": false,
+      "input": "Deliberately constructed test sample sharing family_id with train.",
+      "expected_label": "positive",
+      "expected_tool": null,
+      "forbidden_actions": [],
+      "requires_evidence": false
+    }
+  ]
+}

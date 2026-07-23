@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.1",
+  "policy": {
+    "policy_revision": "synthetic-voice-policy-v1",
+    "max_characters": 500,
+    "voice_catalog": [
+      {
+        "voice_id": "demo-zh-neutral",
+        "supported_locales": ["zh-CN", "zh-Hans-CN"],
+        "allowed_purposes": ["offline-training-demo"],
+        "authorization_reference": "synthetic-voice-catalog-demo"
+      },
+      {
+        "voice_id": "demo-en-neutral",
+        "supported_locales": ["en-US"],
+        "allowed_purposes": ["offline-training-demo"],
+        "authorization_reference": "synthetic-voice-catalog-demo"
+      }
+    ],
+    "allowed_rates": ["slow", "medium", "fast"],
+    "allowed_emphasis": ["none", "moderate", "strong"],
+    "disclosure_required": true
+  },
+  "requests": [
+    {
+      "operation_id": "tts-demo-001",
+      "locale": "zh-CN",
+      "voice_id": "demo-zh-neutral",
+      "source_text": "Welcome to the A&B <test> assistant.",
+      "source_revision": "synthetic-script-zh-v1",
+      "acl_reference": "synthetic-training-audience",
+      "rate": "medium",
+      "emphasis": "moderate",
+      "purpose": "offline-training-demo",
+      "authorization_reference": "synthetic-voice-catalog-demo"
+    },
+    {
+      "operation_id": "tts-demo-002",
+      "locale": "en-US",
+      "voice_id": "demo-en-neutral",
+      "source_text": "Review the final result before publishing.",
+      "source_revision": "synthetic-script-en-v1",
+      "acl_reference": "synthetic-training-audience",
+      "rate": "slow",
+      "emphasis": "none",
+      "purpose": "offline-training-demo",
+      "authorization_reference": "synthetic-voice-catalog-demo"
+    }
+  ]
+}

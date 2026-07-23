@@ -1,0 +1,108 @@
+{
+  "session": {
+    "session_id": "session-demo-001",
+    "resume_token": "resume-demo-001"
+  },
+  "events": [
+    {
+      "event_id": "evt-001",
+      "type": "audio.frame",
+      "at_ms": 0,
+      "payload": {"turn_id": "turn-1", "sequence": 0, "duration_ms": 20, "speech": true}
+    },
+    {
+      "event_id": "evt-002",
+      "type": "turn.commit",
+      "at_ms": 40,
+      "payload": {"turn_id": "turn-1"}
+    },
+    {
+      "event_id": "evt-003",
+      "type": "response.started",
+      "at_ms": 60,
+      "payload": {"response_id": "response-1", "turn_id": "turn-1"}
+    },
+    {
+      "event_id": "evt-004",
+      "type": "response.audio",
+      "at_ms": 80,
+      "payload": {"response_id": "response-1", "sequence": 0, "duration_ms": 120}
+    },
+    {
+      "event_id": "evt-004",
+      "type": "response.audio",
+      "at_ms": 80,
+      "payload": {"response_id": "response-1", "sequence": 0, "duration_ms": 120}
+    },
+    {
+      "event_id": "evt-005",
+      "type": "user.interrupt",
+      "at_ms": 100,
+      "payload": {"turn_id": "turn-2", "response_id": "response-1", "reason": "barge_in"}
+    },
+    {
+      "event_id": "evt-006",
+      "type": "audio.frame",
+      "at_ms": 120,
+      "payload": {"turn_id": "turn-2", "sequence": 0, "duration_ms": 20, "speech": true}
+    },
+    {
+      "event_id": "evt-007",
+      "type": "turn.commit",
+      "at_ms": 160,
+      "payload": {"turn_id": "turn-2"}
+    },
+    {
+      "event_id": "evt-008",
+      "type": "response.started",
+      "at_ms": 180,
+      "payload": {"response_id": "response-2", "turn_id": "turn-2"}
+    },
+    {
+      "event_id": "evt-009",
+      "type": "tool.call",
+      "at_ms": 200,
+      "payload": {
+        "call_id": "call-1",
+        "response_id": "response-2",
+        "name": "calendar.lookup",
+        "arguments": {"date": "2030-01-01"}
+      }
+    },
+    {
+      "event_id": "evt-010",
+      "type": "tool.result",
+      "at_ms": 260,
+      "payload": {
+        "call_id": "call-1",
+        "response_id": "response-2",
+        "ok": true,
+        "result": "available"
+      }
+    },
+    {
+      "event_id": "evt-011",
+      "type": "response.completed",
+      "at_ms": 300,
+      "payload": {"response_id": "response-2"}
+    },
+    {
+      "event_id": "evt-012",
+      "type": "transport.disconnected",
+      "at_ms": 320,
+      "payload": {"reason": "network_change"}
+    },
+    {
+      "event_id": "evt-013",
+      "type": "transport.resumed",
+      "at_ms": 500,
+      "payload": {"resume_token": "resume-demo-001"}
+    },
+    {
+      "event_id": "evt-014",
+      "type": "session.completed",
+      "at_ms": 520,
+      "payload": {"reason": "user_goodbye"}
+    }
+  ]
+}

@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=./quartz/plugins/quartz-plugins.schema.json
 configuration:
-  pageTitle: AI Agent Engineer
-  pageTitleSuffix: " · 从零构建、评测与部署 AI Agent"
+  pageTitle: "__AAE_PAGE_TITLE__"
+  pageTitleSuffix: "__AAE_PAGE_TITLE_SUFFIX__"
   enableSPA: true
   enablePopovers: true
   analytics: null
-  locale: zh-CN
-  baseUrl: gaos6e.github.io/AI-Agent-Engineer
+  locale: "__AAE_QUARTZ_LOCALE__"
+  baseUrl: "__AAE_BASE_URL__"
   ignorePatterns:
     - private
     - templates

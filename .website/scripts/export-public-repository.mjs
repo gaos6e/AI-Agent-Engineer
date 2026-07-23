@@ -4,11 +4,17 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { pathToFileURL } from "node:url"
 import {
-  CONTENT_ROOT,
-  MANIFEST_PATH,
+  GENERATED_ROOT,
   WEBSITE_ROOT,
   prepareContent,
 } from "./prepare-content.mjs"
+import {
+  DEFAULT_LOCALE,
+  SITE_LOCALE_IDS,
+  contentRootFor,
+  getSiteLocale,
+  manifestPathFor,
+} from "../config/site-locales.mjs"
 import { scanPublicRepository } from "./scan-public-repository.mjs"
 
 const execFileAsync = promisify(execFile)
@@ -108,9 +114,10 @@ async function copyWebsiteSource(destination) {
   }
 }
 
-async function copyPublicSnapshot(destination, generatedPages) {
-  const target = path.join(destination, "docs")
-  await cp(CONTENT_ROOT, target, { recursive: true, force: true })
+async function copyPublicSnapshot(destination, locale, generatedPages) {
+  const target = path.join(destination, getSiteLocale(locale).sourceDirectory)
+  const contentRoot = contentRootFor(GENERATED_ROOT, locale)
+  await cp(contentRoot, target, { recursive: true, force: true })
   for (const relative of generatedPages) {
     const generated = path.join(target, ...relative.split("/"))
     assertInside(target, generated, "Generated page")
@@ -153,12 +160,16 @@ export async function exportPublicRepository(destinationArgument) {
   const destination = path.resolve(destinationArgument)
   await assertPublicationClone(destination)
   await prepareContent()
-  const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"))
+  const manifests = new Map(await Promise.all(SITE_LOCALE_IDS.map(async (locale) => [
+    locale,
+    JSON.parse(await readFile(manifestPathFor(GENERATED_ROOT, locale), "utf8")),
+  ])))
   await resetExportWorktree(destination)
   await mkdir(destination, { recursive: true })
   await Promise.all([
     copyWebsiteSource(destination),
-    copyPublicSnapshot(destination, manifest.generatedPages),
+    ...SITE_LOCALE_IDS.map((locale) =>
+      copyPublicSnapshot(destination, locale, manifests.get(locale).generatedPages)),
     copyRepositoryFiles(destination),
   ])
 
@@ -168,11 +179,14 @@ export async function exportPublicRepository(destinationArgument) {
 
   const result = {
     destination,
-    publicMarkdown: manifest.publishedMarkdown.length + manifest.stubMarkdown.length,
-    publicAssets: manifest.assets.length,
-    excludedSourceFiles: manifest.excluded.length,
+    publicMarkdown: [...manifests.values()].reduce(
+      (sum, manifest) => sum + manifest.publishedMarkdown.length + manifest.stubMarkdown.length,
+      0,
+    ),
+    publicAssets: [...manifests.values()].reduce((sum, manifest) => sum + manifest.assets.length, 0),
+    excludedSourceFiles: [...manifests.values()].reduce((sum, manifest) => sum + manifest.excluded.length, 0),
     repositoryFiles: await countFiles(destination),
-    sourceDigest: manifest.sourceDigest,
+    sourceDigest: manifests.get(DEFAULT_LOCALE).sourceDigest,
     scan,
   }
   console.log(JSON.stringify(result))

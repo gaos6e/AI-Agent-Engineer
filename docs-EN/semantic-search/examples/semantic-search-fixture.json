@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "representation": {
+    "name": "hand-authored-teaching-space",
+    "revision": "toy-r1",
+    "dimension": 7,
+    "metric": "cosine",
+    "normalized": true,
+    "notice": "Hand-authored unit vectors are only for offline pipeline teaching; they are not learned embeddings and do not represent real model quality."
+  },
+  "documents": [
+    {
+      "id": "d-01-format-general",
+      "title": "Upload format checks",
+      "text": "Before uploading a file, check its extension and size limits.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "uploads",
+      "source_revision": "r1",
+      "vector": [0, 0, 1, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-02-e042",
+      "title": "Error code E042",
+      "text": "Error code E042 means that the upload file format is unsupported; convert it to PDF.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "uploads",
+      "source_revision": "r1",
+      "vector": [0, 0, 1, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-03-refund-time",
+      "title": "Refund processing time",
+      "text": "After a refund is approved, it usually returns to the original payment method within one to three business days.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "payments",
+      "source_revision": "r2",
+      "vector": [1, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-04-double-charge",
+      "title": "Handling duplicate charges",
+      "text": "If an order has a duplicate payment, submit its order number and the two payment transaction records for resolution.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "payments",
+      "source_revision": "r3",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-05-vpn",
+      "title": "Remote-work VPN troubleshooting",
+      "text": "If you cannot connect to the company network while working remotely, first check your VPN account and client clock.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "network",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 1, 0, 0, 0]
+    },
+    {
+      "id": "d-06-membership",
+      "title": "Turn off automatic renewal",
+      "text": "You can turn off automatic membership renewal in subscription settings before the next billing date.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "membership",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 0, 1, 0, 0]
+    },
+    {
+      "id": "d-07-verification",
+      "title": "Verification code not received",
+      "text": "If you do not receive a text-message verification code, check the phone number, blocking settings, and sending frequency.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "language": "en",
+      "product": "account",
+      "source_revision": "r1",
+      "vector": [0, 0, 0, 0, 0, 1, 0]
+    },
+    {
+      "id": "d-08-internal-runbook",
+      "title": "Technical incident escalation procedure",
+      "text": "Escalate internal technical incidents according to the on-call schedule and record the response timeline in the incident channel.",
+      "tenant_id": "alpha",
+      "acl": ["platform"],
+      "status": "published",
+      "language": "en",
+      "product": "ops",
+      "source_revision": "r4",
+      "vector": [0, 0, 0, 0, 0, 0, 1]
+    },
+    {
+      "id": "d-09-beta-private",
+      "title": "Beta tenant duplicate-charge compensation",
+      "text": "If a payment is duplicated, enter the Beta tenant's dedicated compensation channel directly.",
+      "tenant_id": "beta",
+      "acl": ["guests"],
+      "status": "published",
+      "language": "en",
+      "product": "payments",
+      "source_revision": "r1",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "d-10-draft-payment",
+      "title": "New duplicate-charge draft",
+      "text": "If a payment is duplicated, compensate it automatically at once; this rule is not yet published.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "draft",
+      "language": "en",
+      "product": "payments",
+      "source_revision": "r9-draft",
+      "vector": [0, 1, 0, 0, 0, 0, 0]
+    }
+  ],
+  "queries": [
+    {
+      "id": "q-refund-time",
+      "text": "When will my refund arrive?",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "payments"},
+      "vector": [1, 0, 0, 0, 0, 0, 0],
+      "qrels": {"d-03-refund-time": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-double-charge",
+      "text": "My card was debited twice; what should I do?",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "payments"},
+      "vector": [0, 1, 0, 0, 0, 0, 0],
+      "qrels": {"d-04-double-charge": 3},
+      "must_not_return": ["d-09-beta-private", "d-10-draft-payment"]
+    },
+    {
+      "id": "q-e042",
+      "text": "What is E042?",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "uploads"},
+      "vector": [0, 0, 1, 0, 0, 0, 0],
+      "qrels": {"d-01-format-general": 1, "d-02-e042": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-vpn",
+      "text": "I cannot connect to the corporate intranet from home.",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "network"},
+      "vector": [0, 0, 0, 1, 0, 0, 0],
+      "qrels": {"d-05-vpn": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-membership",
+      "text": "How do I turn off automatic renewal?",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "membership"},
+      "vector": [0, 0, 0, 0, 1, 0, 0],
+      "qrels": {"d-06-membership": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-ops-platform",
+      "text": "Technical incident escalation procedure",
+      "tenant_id": "alpha",
+      "subject_groups": ["platform"],
+      "filters": {"language": "en", "product": "ops"},
+      "vector": [0, 0, 0, 0, 0, 0, 1],
+      "qrels": {"d-08-internal-runbook": 3},
+      "must_not_return": []
+    },
+    {
+      "id": "q-ops-guest",
+      "text": "Technical incident escalation procedure",
+      "tenant_id": "alpha",
+      "subject_groups": ["guests"],
+      "filters": {"language": "en", "product": "ops"},
+      "vector": [0, 0, 0, 0, 0, 0, 1],
+      "qrels": {},
+      "must_not_return": ["d-08-internal-runbook"]
+    }
+  ]
+}

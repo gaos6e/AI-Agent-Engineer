@@ -1,0 +1,156 @@
+{
+  "schema_version": 2,
+  "query": {
+    "id": "q-refund-time",
+    "text": "How long does a refund take after approval?",
+    "tenant_id": "alpha",
+    "subject_groups": ["guests"],
+    "authorization_revision": "authz-alpha-r7",
+    "as_of": "2026-07-14"
+  },
+  "settings": {
+    "candidate_window": 6,
+    "output_top_n": 3,
+    "max_per_canonical": 2
+  },
+  "candidates": [
+    {
+      "id": "d-01-membership",
+      "canonical_document_id": "doc-membership",
+      "title": "Membership renewal rules",
+      "text": "Automatic renewal can be disabled before the next billing date.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 1,
+      "first_score": 0.91
+    },
+    {
+      "id": "d-02-refund-apply",
+      "canonical_document_id": "doc-refund-apply",
+      "title": "Refund request portal",
+      "text": "Provide an order number and payment proof to submit your request.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-06-01",
+      "effective_to": null,
+      "source_revision": "r2",
+      "first_rank": 2,
+      "first_score": 0.84
+    },
+    {
+      "id": "d-03-login",
+      "canonical_document_id": "doc-login",
+      "title": "Account verification and sign-in",
+      "text": "If verification fails, submit identity materials again.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2025-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 3,
+      "first_score": 0.81
+    },
+    {
+      "id": "d-04-refund-time",
+      "canonical_document_id": "doc-refund-time",
+      "title": "Refund approval and processing time",
+      "text": "After approval, a refund usually returns to the original payment method within one to three business days.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r4",
+      "first_rank": 4,
+      "first_score": 0.78
+    },
+    {
+      "id": "d-05-refund-time-faq",
+      "canonical_document_id": "doc-refund-time",
+      "title": "Refund timing FAQ",
+      "text": "After approval, a refund usually arrives within three business days.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r4",
+      "first_rank": 5,
+      "first_score": 0.73
+    },
+    {
+      "id": "d-06-refund-delay",
+      "canonical_document_id": "doc-refund-delay",
+      "title": "Delayed refund handling",
+      "text": "If a card refund has not arrived after seven business days, contact customer support.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2026-02-01",
+      "effective_to": null,
+      "source_revision": "r2",
+      "first_rank": 6,
+      "first_score": 0.69
+    },
+    {
+      "id": "d-07-beta-private",
+      "canonical_document_id": "doc-beta-refund",
+      "title": "Beta tenant refund guarantee",
+      "text": "A refund is issued immediately after approval, with dedicated compensation.",
+      "tenant_id": "beta",
+      "acl": ["guests"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r1",
+      "first_rank": 7,
+      "first_score": 0.68
+    },
+    {
+      "id": "d-08-expired-policy",
+      "canonical_document_id": "doc-old-refund",
+      "title": "Legacy refund timing",
+      "text": "After approval, a refund is issued within twenty-four hours.",
+      "tenant_id": "alpha",
+      "acl": ["employees", "guests"],
+      "status": "published",
+      "effective_from": "2023-01-01",
+      "effective_to": "2025-01-01",
+      "source_revision": "r-old",
+      "first_rank": 8,
+      "first_score": 0.66
+    },
+    {
+      "id": "d-09-internal-runbook",
+      "canonical_document_id": "doc-refund-runbook",
+      "title": "Internal refund incident response",
+      "text": "If an approved refund has not arrived, platform staff must inspect the payment gateway queue.",
+      "tenant_id": "alpha",
+      "acl": ["platform"],
+      "status": "published",
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "source_revision": "r3",
+      "first_rank": 9,
+      "first_score": 0.63
+    }
+  ],
+  "qrels": {
+    "d-02-refund-apply": 1,
+    "d-04-refund-time": 3,
+    "d-05-refund-time-faq": 2,
+    "d-06-refund-delay": 2
+  },
+  "must_not_return": [
+    "d-07-beta-private",
+    "d-08-expired-policy",
+    "d-09-internal-runbook"
+  ]
+}
+

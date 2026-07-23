@@ -8,6 +8,28 @@ let refreshFrame: number | undefined
 let routeScrollFrame: number | undefined
 let previousPath = window.location.pathname
 
+const interactionCopy = document.documentElement.lang.toLowerCase().startsWith("en")
+  ? {
+    asset: "asset",
+    assetPreview: "asset preview",
+    closePreview: "Close asset preview",
+    loading: "Loading preview…",
+    download: "Download original file",
+    tooLarge: "This resource exceeds the online preview limit. Download it with the button below to inspect it.",
+    truncated: "…Preview truncated. Download the original file to inspect the full content.",
+    failed: "Unable to load the online preview:",
+  }
+  : {
+    asset: "资源",
+    assetPreview: "资源预览",
+    closePreview: "关闭资源预览",
+    loading: "正在加载预览…",
+    download: "下载原文件",
+    tooLarge: "该资源超过在线预览上限，请使用下方按钮下载后查看。",
+    truncated: "…预览已截断，请下载原文件查看完整内容。",
+    failed: "无法加载在线预览：",
+  }
+
 function teardownMotion() {
   if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)
   if (routeScrollFrame !== undefined) cancelAnimationFrame(routeScrollFrame)
@@ -154,14 +176,14 @@ async function openAssetPreview(url: URL, label: string) {
   document.querySelector(".aae-asset-dialog")?.remove()
   const dialog = document.createElement("dialog")
   dialog.className = "aae-asset-dialog"
-  dialog.setAttribute("aria-label", `${label} 资源预览`)
+  dialog.setAttribute("aria-label", `${label} ${interactionCopy.assetPreview}`)
   dialog.innerHTML = `
     <div class="aae-asset-dialog__head">
       <div><span>READ-ONLY ASSET</span><strong></strong></div>
-      <button type="button" aria-label="关闭资源预览">关闭</button>
+      <button type="button" aria-label="${interactionCopy.closePreview}">${interactionCopy.closePreview}</button>
     </div>
-    <div class="aae-asset-dialog__body"><p>正在加载预览…</p></div>
-    <div class="aae-asset-dialog__foot"><a>下载原文件</a></div>
+    <div class="aae-asset-dialog__body"><p>${interactionCopy.loading}</p></div>
+    <div class="aae-asset-dialog__foot"><a>${interactionCopy.download}</a></div>
   `
   const title = dialog.querySelector("strong")!
   const body = dialog.querySelector(".aae-asset-dialog__body")!
@@ -181,20 +203,20 @@ async function openAssetPreview(url: URL, label: string) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const declaredLength = Number(response.headers.get("content-length") ?? 0)
     if (declaredLength > 1_500_000) {
-      body.textContent = "该资源超过在线预览上限，请使用下方按钮下载后查看。"
+      body.textContent = interactionCopy.tooLarge
       return
     }
     let text = await response.text()
     if (url.pathname.toLowerCase().endsWith(".ipynb")) text = notebookToText(text)
     const truncated = text.length > 400_000
-    if (truncated) text = `${text.slice(0, 400_000)}\n\n…预览已截断，请下载原文件查看完整内容。`
+    if (truncated) text = `${text.slice(0, 400_000)}\n\n${interactionCopy.truncated}`
     const pre = document.createElement("pre")
     const code = document.createElement("code")
     code.textContent = text
     pre.append(code)
     body.replaceChildren(pre)
   } catch (error) {
-    body.textContent = `无法加载在线预览：${error instanceof Error ? error.message : String(error)}`
+    body.textContent = `${interactionCopy.failed} ${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -289,7 +311,7 @@ function initInteractions() {
     event.preventDefault()
     event.stopPropagation()
     event.stopImmediatePropagation()
-    void openAssetPreview(url, anchor.textContent?.trim() || url.pathname.split("/").at(-1) || "资源")
+    void openAssetPreview(url, anchor.textContent?.trim() || url.pathname.split("/").at(-1) || interactionCopy.asset)
   }
 
   const onKeydown = (event: KeyboardEvent) => {

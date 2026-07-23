@@ -5,16 +5,21 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import {
   assertPortablePublishedMarkdown,
+  assertCourseMetadataParity,
+  assertEnglishSourceLanguage,
+  assertTranslationPairs,
   assertVerifiedLangChainReferenceAsset,
   assertLegalLicenseDigest,
   assertThirdPartyAssetBoundaries,
   assertCompleteV2Migration,
   buildRoadmapTable,
   buildRoleTrackTables,
+  GENERATED_ROOT,
   buildStub,
   classifyPath,
   courseRecordsFromSources,
   ensureTitleAndStripProgress,
+  frontmatterValue,
   injectThirdPartyAttribution,
   normalizeTableWikilinks,
   normalizeRelativeMarkdownLinks,
@@ -24,6 +29,8 @@ import {
   replaceRoadmapRoleTrackSnapshot,
   replaceRoadmapSnapshots,
   transformVaultPaths,
+  prepareContent,
+  translationSourceHash,
   validateContentMetadata,
 } from "../scripts/prepare-content.mjs"
 import {
@@ -39,6 +46,24 @@ import {
   markdownToHtmlPath,
   slugifyPublishedPath,
 } from "../scripts/validate-site.mjs"
+
+function markdownSourcesFrom(root) {
+  const sources = []
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name)
+      if (entry.isDirectory()) visit(absolute)
+      else if (entry.isFile() && entry.name.endsWith(".md")) {
+        sources.push({
+          relativePath: path.relative(root, absolute).replaceAll(path.sep, "/"),
+          markdown: readFileSync(absolute, "utf8"),
+        })
+      }
+    }
+  }
+  if (existsSync(root)) visit(root)
+  return sources
+}
 
 test("publication policy keeps original layers out and preserves authored layers", () => {
   assert.equal(classifyPath("Python基础/Day01-20/01.初识Python.md", 100).action, "stub")
@@ -880,7 +905,7 @@ test("frozen LangChain reference images use a narrow verified allowlist", () => 
     /unreviewed\.png/,
   )
   const verifiedImagePath = fileURLToPath(
-    new URL("../../docs/LangChain/attachments/images/rag_indexing.png", import.meta.url),
+    new URL("../../docs-CN/LangChain/attachments/images/rag_indexing.png", import.meta.url),
   )
   assert.doesNotThrow(() => assertVerifiedLangChainReferenceAsset(
     "LangChain/attachments/images/rag_indexing.png",
@@ -907,6 +932,95 @@ test("vault path transformation skips fenced and inline code", () => {
   assert.match(result, /^\[\[RAG\/00-目录\|RAG\]\]/)
   assert.match(result, /`\[\[Knowledge\/AI Agent Engineer\/docs\/API\/00-目录\]\]`/)
   assert.match(result, /```markdown\n\[\[Knowledge\/AI Agent Engineer\/docs\/Git\/00-目录\]\]/)
+})
+
+test("translation pairs require one current English counterpart for every Chinese page", () => {
+  const chinese = [{ relativePath: "RAG/00-目录.md", markdown: "---\ntitle: RAG\n---\n# RAG" }]
+  const english = [{
+    relativePath: "retrieval/00-index.md",
+    markdown: [
+      "---",
+      "lang: en",
+      "translation_key: RAG/00-目录.md",
+      `translation_source_hash: ${translationSourceHash(chinese[0].markdown)}`,
+      "---",
+      "# RAG",
+    ].join("\n"),
+  }]
+  const pairs = assertTranslationPairs(chinese, english)
+  assert.equal(pairs.pairCount, 1)
+  assert.equal(pairs.chineseToEnglish.get("RAG/00-目录.md"), "retrieval/00-index.md")
+  assert.throws(() => assertTranslationPairs(chinese, []), /without English counterparts/)
+  assert.throws(
+    () => assertTranslationPairs(chinese, [{ ...english[0], markdown: english[0].markdown.replace(/[a-f0-9]{64}/, "0".repeat(64)) }]),
+    /stale or missing translation_source_hash/,
+  )
+})
+
+test("checked-in English pages each map to a current Chinese source page", () => {
+  const chineseRoot = fileURLToPath(new URL("../../docs-CN", import.meta.url))
+  const englishRoot = fileURLToPath(new URL("../../docs-EN", import.meta.url))
+  const chineseByPath = new Map(markdownSourcesFrom(chineseRoot).map((source) => [source.relativePath, source]))
+  const english = markdownSourcesFrom(englishRoot)
+  const chinese = english.map((source) => {
+    const key = frontmatterValue(source.markdown, "translation_key")
+    assert.ok(typeof key === "string" && chineseByPath.has(key), `Unknown translation_key in ${source.relativePath}`)
+    return chineseByPath.get(key)
+  })
+  assertTranslationPairs(chinese, english)
+})
+
+test("staged English pages each fingerprint their staged Chinese counterparts", async () => {
+  await prepareContent()
+  const stagedChinese = markdownSourcesFrom(path.join(GENERATED_ROOT, "content", "zh-CN"))
+  const stagedEnglish = markdownSourcesFrom(path.join(GENERATED_ROOT, "content", "en"))
+  assertTranslationPairs(stagedChinese, stagedEnglish)
+})
+
+test("English source language guard permits code literals but rejects untranslated prose", () => {
+  assert.doesNotThrow(() => assertEnglishSourceLanguage([{
+    relativePath: "agents/example.md",
+    markdown: [
+      "---",
+      "lang: en",
+      "translation_key: Agent 核心/01-示例.md",
+      "translation_route: zh-CN/Agent 核心/01-示例",
+      "translation_default_route: zh-CN/Agent 核心/01-示例",
+      "---",
+      "# Example",
+      "",
+      "The fixture keeps its original user-visible payload.",
+      "",
+      "```json",
+      '{ "message": "中文示例" }',
+      "```",
+    ].join("\n"),
+  }]))
+  assert.throws(
+    () => assertEnglishSourceLanguage([{
+      relativePath: "agents/example.md",
+      markdown: "---\nlang: en\ntranslation_key: Agent 核心/01-示例.md\n---\n# Example\n\n这段正文尚未翻译。",
+    }]),
+    /unlocalized Chinese prose/,
+  )
+  assert.throws(
+    () => assertEnglishSourceLanguage([{
+      relativePath: "agents/中文示例.md",
+      markdown: "---\nlang: en\ntranslation_key: Agent 核心/01-示例.md\n---\n# Example",
+    }]),
+    /semantic English names/,
+  )
+})
+
+test("course metadata remains identical across language trees", () => {
+  const chinese = [{
+    id: "rag", domain: "retrieval-and-data", catalogOrder: 100, hardPrerequisites: ["json"],
+    tracks: { rag: { order: 100, kind: "core" } },
+  }]
+  const english = structuredClone(chinese)
+  assert.doesNotThrow(() => assertCourseMetadataParity(chinese, english))
+  english[0].catalogOrder = 200
+  assert.throws(() => assertCourseMetadataParity(chinese, english), /Course metadata differs/)
 })
 
 test("staging removes progress metadata and injects a title without touching body text", () => {
@@ -1385,19 +1499,21 @@ test("course navigator and homepage consume v2 domains, catalog order, and role 
   const navigator = readFileSync(navigatorPath, "utf8")
   const homepage = readFileSync(homepagePath, "utf8")
 
-  assert.match(navigator, /aria-label="AI Agent Engineer v2 课程目录与角色路径"/)
+  assert.match(navigator, /localeCopy/)
+  assert.match(navigator, /uiLocale/)
   assert.match(navigator, /ai_learning_catalog_order/)
   assert.match(navigator, /ai_learning_track_/)
-  assert.match(navigator, />ROLE PATHS</)
+  assert.match(navigator, /ai_learning_id/)
   assert.doesNotMatch(navigator, /ai_learning_stage|ai_learning_order/)
+  assert.match(homepage, /localeCopy/)
+  assert.match(homepage, /uiLocale/)
   assert.match(homepage, /ai_learning_catalog_order/)
   assert.match(homepage, /ai_learning_track_/)
-  assert.match(homepage, />ROLE TRACKS</)
   assert.doesNotMatch(homepage, /ai_learning_stage|ai_learning_order/)
 })
 
 test("roadmap source keeps an interactive catalog or its generated static export", () => {
-  const roadmapPath = fileURLToPath(new URL("../../docs/All of AI.md", import.meta.url))
+  const roadmapPath = fileURLToPath(new URL("../../docs-CN/All of AI.md", import.meta.url))
   const docsRoot = path.dirname(roadmapPath)
   const source = readFileSync(roadmapPath, "utf8")
   const headings = [...source.matchAll(/^## (.+)$/gm)].map((match) => match[1])
@@ -1594,7 +1710,7 @@ test("roadmap source keeps an interactive catalog or its generated static export
 })
 
 test("authored Markdown escapes wikilink aliases inside table rows", () => {
-  const docsRoot = fileURLToPath(new URL("../../docs/", import.meta.url))
+  const docsRoot = fileURLToPath(new URL("../../docs-CN/", import.meta.url))
   const collectMarkdownFiles = (directory) => readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const entryPath = path.join(directory, entry.name)

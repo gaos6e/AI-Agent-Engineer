@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "policy_version": "promotion-lab-v3",
+  "policy": {
+    "required_tests": ["unit", "data", "inference_smoke"],
+    "max_overall_accuracy_drop": 0.0,
+    "max_critical_slice_recall_drop": 0.02,
+    "max_p95_latency_ms": 120.0,
+    "max_artifact_size_bytes": 1000000,
+    "max_error_rate": 0.02,
+    "drift_investigation_threshold": 0.2,
+    "min_observation_samples": 500,
+    "min_labeled_samples_for_quality_decision": 500,
+    "min_critical_labeled_samples_for_quality_decision": 100,
+    "min_label_coverage_for_quality_decision": 0.6
+  },
+  "baseline": {
+    "model_id": "champion-v7",
+    "artifact_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": {
+      "input_schema_version": "fraud-features-v3",
+      "output_schema_version": "fraud-score-v1"
+    },
+    "metrics": {
+      "overall_accuracy": 0.86,
+      "critical_slice_recall": 0.78,
+      "p95_latency_ms": 92.0
+    }
+  },
+  "candidates": [
+    {
+      "candidate_id": "candidate-safe",
+      "lineage": {
+        "data_snapshot": "dataset-2026-07-01-sha256-8f21",
+        "label_version": "fraud-label-v4",
+        "code_commit": "4e7a1c9",
+        "environment_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "training_config_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "artifact": {
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "format": "educational-placeholder",
+        "size_bytes": 24000,
+        "signature": {
+          "input_schema_version": "fraud-features-v3",
+          "output_schema_version": "fraud-score-v1"
+        }
+      },
+      "tests": {
+        "unit": true,
+        "data": true,
+        "inference_smoke": true
+      },
+      "metrics": {
+        "overall_accuracy": 0.87,
+        "critical_slice_recall": 0.77,
+        "p95_latency_ms": 98.0
+      }
+    },
+    {
+      "candidate_id": "candidate-regression",
+      "lineage": {
+        "data_snapshot": "dataset-2026-07-08-sha256-c901",
+        "label_version": "fraud-label-v4",
+        "code_commit": "91bc423",
+        "environment_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "training_config_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "artifact": {
+        "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "format": "educational-placeholder",
+        "size_bytes": 26000,
+        "signature": {
+          "input_schema_version": "fraud-features-v3",
+          "output_schema_version": "fraud-score-v1"
+        }
+      },
+      "tests": {
+        "unit": true,
+        "data": false,
+        "inference_smoke": true
+      },
+      "metrics": {
+        "overall_accuracy": 0.88,
+        "critical_slice_recall": 0.71,
+        "p95_latency_ms": 90.0
+      }
+    }
+  ]
+}
+
+

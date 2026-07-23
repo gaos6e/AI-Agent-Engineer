@@ -1,0 +1,25 @@
+{
+  "schema_version": "eval-rubric-v1",
+  "rubric_version": "support-agent-gate-2026-07-14",
+  "positive_label": "positive",
+  "baseline_release": "baseline-v1",
+  "eval_split": "test",
+  "gates": {
+    "min_overall_pass_rate": 0.8,
+    "min_precision": 0.8,
+    "min_recall": 0.8,
+    "min_f1": 0.8,
+    "critical_slice_min_pass_rate": 1.0,
+    "max_slice_pass_rate_gap": 0.5,
+    "max_mean_latency_ms": 1200.0,
+    "max_p95_latency_ms": 1500.0,
+    "max_mean_cost_usd": 0.03,
+    "min_paired_delta_ci_low": 0.0
+  },
+  "bootstrap": {
+    "samples": 2000,
+    "seed": 7,
+    "confidence": 0.95
+  }
+}
+

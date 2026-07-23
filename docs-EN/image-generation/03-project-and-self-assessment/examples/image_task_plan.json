@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "task_id": "img-course-cover-001",
+  "purpose": "Generate a text-free cover background for an introductory AI Agent course",
+  "audience": "English-speaking readers beginning to learn AI engineering",
+  "task_type": "text_to_image",
+  "prompt": {
+    "subject": "A small white robot arranging blue task cards on a desk",
+    "action": "The robot lays out three cards in a clear workflow",
+    "setting": "A bright, tidy modern workspace",
+    "composition": "4:5 portrait, medium shot, subject positioned in the lower center, with a 25% title-safe area at the top",
+    "lighting": "Soft cool-white light, with a subtle blue rim light emphasizing the subject",
+    "style": "Minimal vector illustration, low-saturation blue-and-white palette, consistent-weight outlines",
+    "text_rendering": "Do not generate text; typography will be added in post-production",
+    "must_include": [
+      "one robot",
+      "three blue task cards",
+      "a title-safe area at the top"
+    ],
+    "must_avoid": [
+      "legible text",
+      "logos",
+      "real people"
+    ]
+  },
+  "output": {
+    "aspect_ratio": "4:5",
+    "width": 1080,
+    "height": 1350,
+    "format": "png",
+    "candidate_count": 3
+  },
+  "reference_assets": [],
+  "lineage": {
+    "source_revision": "brief-img-course-cover-001-r1",
+    "transform_id": "transform-img-course-cover-001-r1",
+    "release_id": "release-img-course-cover-001-candidate"
+  },
+  "governance": {
+    "object_acl_required": true,
+    "deletion_propagation_plan": "When access is revoked or content is deleted, make associated candidates, derived outputs, caches, and accessible links unavailable while retaining minimal audit events.",
+    "evidence_policy": "evidence_supported"
+  },
+  "risk": {
+    "rights_confirmed": true,
+    "real_person": false,
+    "minor": false,
+    "sensitive_context": false,
+    "human_review_required": true,
+    "provenance_plan": "Retain source_revision, transform_id, release_id, and input/output hashes; attach and verify C2PA Content Credentials where supported by the provider.",
+    "disclosure_plan": "Label the publication page as AI-assisted generation and record the manual typography steps; publish external factual claims only when supported by independent evidence."
+  },
+  "acceptance": [
+    {
+      "dimension": "prompt_adherence",
+      "criterion": "The robot, three cards, and title-safe area are all present",
+      "hard_failure": true
+    },
+    {
+      "dimension": "composition",
+      "criterion": "The subject is not cropped, and the top safe area contains no essential elements",
+      "hard_failure": true
+    },
+    {
+      "dimension": "text",
+      "criterion": "The image contains no gibberish text, URLs, or logos",
+      "hard_failure": true
+    },
+    {
+      "dimension": "visual_quality",
+      "criterion": "The robot and card shapes are intact, with coherent perspective and lighting",
+      "hard_failure": false
+    },
+    {
+      "dimension": "safety",
+      "criterion": "The image contains no real people, sensitive content, or factual claims supported only by generated imagery",
+      "hard_failure": true
+    },
+    {
+      "dimension": "rights",
+      "criterion": "The image contains no unauthorized logos, characters, or reference assets",
+      "hard_failure": true
+    }
+  ],
+  "budget": {
+    "max_attempts": 6,
+    "max_outputs": 6,
+    "pricing_source_required_at_run": true,
+    "manual_approval_before_budget_increase": true
+  },
+  "reproducibility": {
+    "provider": "offline-no-provider",
+    "model": "offline-no-model",
+    "adapter_version": "image-plan-auditor-v1",
+    "seed_policy": "Record it when the provider supports it, but do not promise cross-version determinism",
+    "save_normalized_request_hash": true,
+    "documentation_checked_on": "2026-07-22"
+  }
+}

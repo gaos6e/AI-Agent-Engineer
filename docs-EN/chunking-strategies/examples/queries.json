@@ -1,0 +1,74 @@
+[
+  {
+    "query_id": "timeout-values",
+    "query": "What are the connection and read timeouts?",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e1", "quote": "connection timeout is 3 seconds"},
+      {"element_id": "api-e1", "quote": "read timeout is 10 seconds"}
+    ]
+  },
+  {
+    "query_id": "retry-policy",
+    "query": "Which errors are retryable, and how many attempts are allowed?",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e2", "quote": "network timeouts, rate limits, and transient server errors"},
+      {"element_id": "api-e3", "quote": "at most 3 attempts"}
+    ]
+  },
+  {
+    "query_id": "auth-failure",
+    "query": "Can an authentication failure be retried?",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e3", "quote": "authentication failures must not be retried"}
+    ]
+  },
+  {
+    "query_id": "credential-log",
+    "query": "May logs record API keys?",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e4", "quote": "never write keys to logs"}
+    ]
+  },
+  {
+    "query_id": "python-timeout",
+    "query": "Python client.get timeout example",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "api-e5", "quote": "client.get(url, timeout=timeout)"}
+    ]
+  },
+  {
+    "query_id": "production-row",
+    "query": "production replica count and approver",
+    "subject_groups": ["platform"],
+    "evidence": [
+      {"element_id": "deploy-e1", "quote": "Environment | Replicas | Approver"},
+      {"element_id": "deploy-e2", "quote": "production | 4 | SRE"}
+    ]
+  },
+  {
+    "query_id": "rollback-condition",
+    "query": "When should error-rate threshold breaches trigger a rollback?",
+    "subject_groups": ["employees"],
+    "evidence": [
+      {"element_id": "ops-e1", "quote": "error rate exceeds the threshold for two consecutive windows"},
+      {"element_id": "ops-e1", "quote": "stop expansion and roll back"}
+    ]
+  },
+  {
+    "query_id": "unauthorized-production",
+    "query": "production 4 SRE",
+    "subject_groups": ["employees"],
+    "evidence": []
+  },
+  {
+    "query_id": "absent-code",
+    "query": "ZXQ-991",
+    "subject_groups": ["employees"],
+    "evidence": []
+  }
+]

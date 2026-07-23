@@ -1,0 +1,105 @@
+{
+  "schema_version": "provider-stream-fixture-v1",
+  "provider": "openai",
+  "api_family": "responses",
+  "api_version": "v1",
+  "contract_revision": "openai-responses-reference-2026-07-21",
+  "fixture_layer": "typed-sse-projection",
+  "sdk_baseline": "openai-python 2.46.0",
+  "source_checked": "2026-07-21",
+  "source_urls": [
+    "https://developers.openai.com/api/docs/guides/function-calling",
+    "https://developers.openai.com/api/reference/resources/responses/streaming-events",
+    "https://github.com/openai/openai-python/releases/tag/v2.46.0"
+  ],
+  "events": [
+    {
+      "type": "response.created",
+      "sequence_number": 1,
+      "response": {
+        "id": "response-A",
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "response.in_progress",
+      "sequence_number": 2,
+      "response": {
+        "id": "response-A",
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 3,
+      "output_index": 0,
+      "item": {
+        "type": "function_call",
+        "id": "item-A",
+        "call_id": "call-A",
+        "name": "lookup_order",
+        "arguments": "",
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 4,
+      "item_id": "item-A",
+      "output_index": 0,
+      "delta": "{\"order_"
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 5,
+      "item_id": "item-A",
+      "output_index": 0,
+      "delta": "ref\":\"A-17\"}"
+    },
+    {
+      "type": "response.function_call_arguments.done",
+      "sequence_number": 6,
+      "item_id": "item-A",
+      "output_index": 0,
+      "name": "lookup_order",
+      "arguments": "{\"order_ref\":\"A-17\"}"
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 7,
+      "output_index": 0,
+      "item": {
+        "type": "function_call",
+        "id": "item-A",
+        "call_id": "call-A",
+        "name": "lookup_order",
+        "arguments": "{\"order_ref\":\"A-17\"}",
+        "status": "completed"
+      }
+    },
+    {
+      "type": "response.completed",
+      "sequence_number": 8,
+      "response": {
+        "id": "response-A",
+        "status": "completed",
+        "output": [
+          {
+            "type": "function_call",
+            "id": "item-A",
+            "call_id": "call-A",
+            "name": "lookup_order",
+            "arguments": "{\"order_ref\":\"A-17\"}",
+            "status": "completed"
+          }
+        ],
+        "usage": {
+          "input_tokens": 21,
+          "output_tokens": 13,
+          "total_tokens": 34
+        }
+      }
+    }
+  ]
+}
+

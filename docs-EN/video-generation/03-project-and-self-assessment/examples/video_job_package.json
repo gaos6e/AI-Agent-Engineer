@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "project_id": "video-task-flow-001",
+  "purpose": "Create a human-free instructional short showing task cards moving through a workflow",
+  "audience": "Beginners in AI agent engineering",
+  "technical": {
+    "duration_seconds": 8.0,
+    "fps": 24,
+    "width": 1280,
+    "height": 720,
+    "aspect_ratio": "16:9",
+    "container": "mp4"
+  },
+  "shots": [
+    {
+      "shot_id": "S01",
+      "start_seconds": 0.0,
+      "end_seconds": 2.5,
+      "shot_size": "wide shot",
+      "camera_motion": "locked-off camera",
+      "subject": "a small white robot and three blue task cards",
+      "action": "the robot stands on the left side of the workbench with the cards neatly arranged on the surface",
+      "setting": "a bright modern workbench with soft cool-white lighting",
+      "continuity_anchors": [
+        "the robot has a white shell and a round blue indicator light",
+        "all three cards remain blue",
+        "the key light always comes from the right side of the frame"
+      ],
+      "prompt": "Wide shot, locked-off camera. A small white robot stands on the left of a workbench, with three blue cards in the center; soft cool-white lighting. End with the robot's right hand near the first card.",
+      "reference_assets": []
+    },
+    {
+      "shot_id": "S02",
+      "start_seconds": 2.5,
+      "end_seconds": 5.5,
+      "shot_size": "medium shot",
+      "camera_motion": "slow pan right",
+      "subject": "the same white robot and three blue task cards",
+      "action": "the robot moves the first card to the completed area on the right",
+      "setting": "the same workbench and lighting",
+      "continuity_anchors": [
+        "the robot's blue indicator remains lit",
+        "the card moves from left to right",
+        "the second and third cards remain in the center of the workbench"
+      ],
+      "prompt": "Medium shot with a slow pan right. The same white robot moves the first blue card from the center to the completed area on the right; perform the action once and end with the card lying flat.",
+      "reference_assets": []
+    },
+    {
+      "shot_id": "S03",
+      "start_seconds": 5.5,
+      "end_seconds": 8.0,
+      "shot_size": "close-up",
+      "camera_motion": "locked-off camera",
+      "subject": "a blue card in the completed area on the right and the robot's hand",
+      "action": "the robot's hand leaves the card and its blue indicator flashes once",
+      "setting": "the right side of the same workbench, with a slightly blurred background",
+      "continuity_anchors": [
+        "the card in the completed area comes from the previous shot",
+        "the robot's shell and blue indicator retain the same appearance",
+        "the lighting direction remains from the right side of the frame"
+      ],
+      "prompt": "Close-up, locked-off camera. A blue card is clearly visible in the completed area on the right; the robot's white hand leaves the frame and the blue indicator flashes once. End on a stable frame.",
+      "reference_assets": []
+    }
+  ],
+  "lineage": {
+    "source_revision": "brief-video-task-flow-001-r1",
+    "transform_id": "transform-video-task-flow-001-r1",
+    "release_id": "release-video-task-flow-001-candidate"
+  },
+  "governance": {
+    "object_acl_required": true,
+    "deletion_propagation_plan": "When access is revoked or content is deleted, make shot candidates, proxy files, final-video derivatives, caches, and accessible links unavailable while retaining minimal audit events",
+    "evidence_policy": "evidence_supported"
+  },
+  "audio": {
+    "mode": "post_production",
+    "narration": "The task is broken down, executed, and completed.",
+    "music_rights_confirmed": true,
+    "voice_subject_consent": "not_applicable",
+    "sync_review_required": true
+  },
+  "captions": {
+    "format": "webvtt",
+    "language": "en-US",
+    "cues": [
+      {
+        "start_seconds": 0.5,
+        "end_seconds": 3.0,
+        "text": "The task is broken down first."
+      },
+      {
+        "start_seconds": 3.2,
+        "end_seconds": 7.2,
+        "text": "An agent then executes it and records the result."
+      }
+    ]
+  },
+  "risk": {
+    "reference_rights_confirmed": true,
+    "real_person": false,
+    "person_consent": "not_applicable",
+    "human_review_required": true,
+    "provenance_plan": "Record source_revision, per-shot transform_id, release_id, and input and output hashes; verify the final asset's C2PA status before release",
+    "disclosure_plan": "Disclose that the final video is AI-assisted and retain human-editing and caption records; publish external factual claims only when independently supported by evidence"
+  },
+  "acceptance": [
+    {
+      "dimension": "prompt_adherence",
+      "criterion": "Each shot performs only its specified single action",
+      "hard_failure": true
+    },
+    {
+      "dimension": "visual_quality",
+      "criterion": "The robot and cards retain complete shapes with no obvious flickering or melting",
+      "hard_failure": false
+    },
+    {
+      "dimension": "motion",
+      "criterion": "The card moves left to right at a continuous speed",
+      "hard_failure": true
+    },
+    {
+      "dimension": "identity",
+      "criterion": "The robot shell and blue indicator are consistent across shots",
+      "hard_failure": true
+    },
+    {
+      "dimension": "continuity",
+      "criterion": "The card moved in S02 remains consistent in S03's completed area",
+      "hard_failure": true
+    },
+    {
+      "dimension": "audio_captions",
+      "criterion": "Narration and captions are semantically correct, stay within the timeline, and receive human review",
+      "hard_failure": true
+    },
+    {
+      "dimension": "safety",
+      "criterion": "No real people, sensitive content, or factual claims supported solely by generated video",
+      "hard_failure": true
+    },
+    {
+      "dimension": "rights",
+      "criterion": "Rights are confirmed for all visual and audio assets",
+      "hard_failure": true
+    }
+  ],
+  "recovery": {
+    "max_attempts_per_shot": 3,
+    "checkpoint_between_shots": true,
+    "retry_policy": "Automatically retry only transient technical failures; escalate repeated visual failures for human review",
+    "fallback": "Shorten or split a failed shot; if necessary, use a still frame with motion added in post-production",
+    "manual_escalation_required": true
+  },
+  "budget": {
+    "max_total_attempts": 9,
+    "max_generated_seconds": 72,
+    "pricing_source_required_at_run": true,
+    "manual_approval_before_budget_increase": true
+  },
+  "adapter": {
+    "provider": "offline-no-provider",
+    "model": "offline-no-model",
+    "version": "video-job-validator-v1",
+    "documentation_checked_on": "2026-07-22"
+  }
+}

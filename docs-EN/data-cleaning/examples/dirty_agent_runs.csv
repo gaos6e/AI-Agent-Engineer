@@ -1,0 +1,12 @@
+run_id,started_at,status,latency_ms,query
+run-001,2026-07-13T01:00:00Z,ok,820, refund policy query 
+run-002,2026-07-13T01:01:00+00:00,failed,2500,tool call failed
+run-003,2026-07-13T09:02:00+08:00,canceled,120,user cancelled
+run-003,2026-07-13T09:02:01+08:00,canceled,130,duplicate event
+run-004,not-a-time,success,90,corrupt time field
+run-005,2026-07-13T01:05:00Z,unknown,100,unknown status
+run-006,2026-07-13T01:06:00Z,success,-5,negative latency
+,2026-07-13T01:07:00Z,success,220,missing run identifier
+
+
+

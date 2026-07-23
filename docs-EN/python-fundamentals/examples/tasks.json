@@ -1,0 +1,17 @@
+[
+  {
+    "id": "task-001",
+    "title": "Parse the requirements document",
+    "status": "done"
+  },
+  {
+    "id": "task-002",
+    "title": "Validate tool parameters",
+    "status": "pending"
+  },
+  {
+    "id": "task-003",
+    "title": "Generate the evaluation report",
+    "status": "pending"
+  }
+]

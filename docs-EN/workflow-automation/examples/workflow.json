@@ -1,0 +1,52 @@
+{
+  "name": "offline-order-workflow",
+  "version": "1.0.0",
+  "max_total_attempts": 12,
+  "steps": [
+    {
+      "name": "validate",
+      "needs": [],
+      "handler": "validate",
+      "approval": false,
+      "max_attempts": 1,
+      "retryable_errors": [],
+      "compensate": null
+    },
+    {
+      "name": "reserve_inventory",
+      "needs": ["validate"],
+      "handler": "reserve_inventory",
+      "approval": false,
+      "max_attempts": 3,
+      "retryable_errors": ["TRANSIENT", "UNKNOWN_RESULT"],
+      "compensate": "release_inventory"
+    },
+    {
+      "name": "risk_check",
+      "needs": ["validate"],
+      "handler": "risk_check",
+      "approval": false,
+      "max_attempts": 1,
+      "retryable_errors": [],
+      "compensate": null
+    },
+    {
+      "name": "charge",
+      "needs": ["reserve_inventory", "risk_check"],
+      "handler": "charge",
+      "approval": true,
+      "max_attempts": 3,
+      "retryable_errors": ["TRANSIENT", "UNKNOWN_RESULT"],
+      "compensate": "refund"
+    },
+    {
+      "name": "notify",
+      "needs": ["charge"],
+      "handler": "notify",
+      "approval": false,
+      "max_attempts": 2,
+      "retryable_errors": ["TRANSIENT"],
+      "compensate": null
+    }
+  ]
+}

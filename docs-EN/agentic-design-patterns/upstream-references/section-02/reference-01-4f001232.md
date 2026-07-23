@@ -1,0 +1,20 @@
+---
+title: "Agentic Design Patterns upstream reference"
+tags:
+  - third-party-reference
+third_party_stub: true
+lang: en
+translation_key: Agentic Design Patterns/02-附录/01-高级提示技术.md
+translation_route: zh-CN/Agentic-Design-Patterns/02-附录/01-高级提示技术
+translation_default_route: zh-CN/Agentic-Design-Patterns/02-附录/01-高级提示技术
+translation_source_hash: 9d6587267d68bebe35bedcb9cef8a29d71ecb2e2da7ad480e9809470e76fd538
+---
+
+# Agentic Design Patterns upstream reference
+
+> [!info] The third-party body is not reproduced here
+> This page is marked as third-party material without a clear, verifiable redistribution license. The public site keeps only a source link.
+
+[View this section at its upstream source](<https://github.com/xindoo/agentic-design-patterns/blob/effb52f1730913be650a04e5ffb251c093096894/chapters/Appendix%20A_%20Advanced%20Prompting%20Techniques.md>)
+
+Return to [[agentic-design-patterns/00-index|agentic-design-patterns course overview]]。

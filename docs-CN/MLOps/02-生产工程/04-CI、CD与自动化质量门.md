@@ -1,0 +1,96 @@
+---
+title: "CI、CD 与自动化质量门"
+tags:
+  - mlops
+  - cicd
+aliases:
+  - ML 持续交付
+source_checked: 2026-07-14
+lang: zh-CN
+translation_key: MLOps/02-生产工程/04-CI、CD与自动化质量门.md
+translation_route: en/mlops/production-engineering/04-ci-cd-and-automated-quality-gates
+translation_default_route: zh-CN/MLOps/02-生产工程/04-CI、CD与自动化质量门
+---
+
+# CI、CD 与自动化质量门
+
+## 本节目标
+
+区分持续集成、持续训练与持续交付，并把模型评测转成可解释的发布门。
+
+## 三条自动化链路
+
+| 链路 | 触发 | 主要输出 | 核心问题 |
+| --- | --- | --- | --- |
+| CI（持续集成） | 代码或配置变更 | 经过测试的代码包 | 改动是否可合并？ |
+| CT（持续训练） | 新数据、计划任务或漂移信号 | 新候选模型 | 是否值得产生新候选？ |
+| CD（持续交付/部署） | 候选获批 | 可部署版本或已发布版本 | 是否能安全进入目标环境？ |
+
+自动化不等于每次变化都直接上线。风险高、标签稀缺或影响难逆转的系统，可以保留人工审批；关键是审批所需证据自动且一致地产生。
+
+## CI 应检查什么
+
+- 代码格式、静态检查和单元测试；
+- 特征函数的边界与离线/在线一致性；
+- 数据契约、schema 和泄漏防护测试；
+- 训练脚本的最小冒烟运行；
+- 依赖漏洞、许可证和敏感信息检查；
+- 制品构建是否可重复，入口与配置是否明确。
+
+不要在每个小提交上执行昂贵全量训练。可先运行小数据冒烟测试，再由合并后或计划任务触发完整训练。
+
+## 质量门的结构
+
+一个可审计的门应输出 **通过/阻断 + 每条理由 + 使用的策略版本**。常见条件包括：
+
+1. 所需血缘字段齐全；
+2. 数据和代码测试通过；
+3. 候选相对 Champion 的整体指标满足策略；
+4. 关键切片没有超过允许退化；
+5. 延迟、内存或批处理耗时在预算内；
+6. 制品摘要、签名和回滚版本可用。
+
+“准确率大于某固定数”通常不够。数据不平衡时要看召回率、精确率或成本；模型指标存在随机波动时，还要比较置信区间或重复运行稳定性。
+
+## CD 的安全步骤
+
+```text
+解析固定制品 → 构建环境 → 部署到测试环境 → 冒烟测试
+→ 影子/Canary → 观察用户 SLI 与模型信号 → 扩大或回滚
+```
+
+每一步必须保留输入版本和结果。若发布工具只收到“部署 champion”，而未记录解析出的版本，后续就无法准确复盘。
+
+## 失败应当可理解
+
+错误示例：`gate failed`。
+
+可操作示例：
+
+```text
+BLOCK: critical_slice.recall=0.72，低于 baseline=0.78，
+本策略允许回退=0.02；policy_version=promotion-v3。
+```
+
+后者说明比较对象、观察值和策略来源。阈值仍然是项目决策，不是行业通用真理。
+
+## 练习与自测
+
+为一个每日训练的欺诈识别模型设计 CI、CT、CD 三条流程。明确哪些失败：
+
+- 只阻断代码合并；
+- 阻断候选生成；
+- 阻断发布但保留候选；
+- 需要人工审批。
+
+自测：为什么漂移告警不应直接触发无审查上线？为什么质量门必须同时保留策略版本和基线版本？
+
+## 小结与下一步
+
+质量门负责决定“是否值得尝试发布”，部署策略负责限制尝试的影响面。继续学习 [[MLOps/02-生产工程/05-部署、Canary与回滚|部署、Canary 与回滚]]。
+
+## 参考资料
+
+- [Google Cloud：MLOps 持续交付与自动化管线](https://docs.cloud.google.com/architecture/mlops-continuous-delivery-and-automation-pipelines-in-machine-learning)（核对于 2026-07-14；CI、CD、CT 为厂商架构建议）
+- [MLflow Model Deployment](https://mlflow.org/docs/latest/ml/deployment)（核对于 2026-07-14）
+- [Kubernetes Deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)（核对于 2026-07-14）

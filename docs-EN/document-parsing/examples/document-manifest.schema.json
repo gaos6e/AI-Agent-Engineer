@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ai-agent-engineer/document-manifest.schema.json",
+  "title": "Offline Document Parsing Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parser",
+    "config",
+    "config_sha256",
+    "root",
+    "documents",
+    "summary",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "parser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "stdlib-document-inspector" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "config": { "type": "object" },
+    "config_sha256": { "$ref": "#/$defs/sha256" },
+    "root": { "const": "." },
+    "documents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/document" }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate",
+        "discovered_file_count",
+        "processed_file_count",
+        "consumed_bytes",
+        "status_counts",
+        "error_count",
+        "warning_count"
+      ],
+      "properties": {
+        "gate": { "enum": ["pass", "review_required", "fail"] },
+        "discovered_file_count": { "type": "integer", "minimum": 0 },
+        "processed_file_count": { "type": "integer", "minimum": 0 },
+        "consumed_bytes": { "type": "integer", "minimum": 0 },
+        "status_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parsed", "external_adapter_required", "rejected"],
+          "properties": {
+            "parsed": { "type": "integer", "minimum": 0 },
+            "external_adapter_required": { "type": "integer", "minimum": 0 },
+            "rejected": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "error_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "element_id",
+        "kind",
+        "text",
+        "text_sha256",
+        "order",
+        "location",
+        "section_path",
+        "attributes"
+      ],
+      "properties": {
+        "element_id": {
+          "type": "string",
+          "pattern": "^elm_[0-9a-f]{64}$"
+        },
+        "kind": { "type": "string", "minLength": 1 },
+        "text": { "type": "string" },
+        "text_sha256": { "$ref": "#/$defs/sha256" },
+        "order": { "type": "integer", "minimum": 1 },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["coordinate_space", "line_start", "line_end"],
+          "properties": {
+            "coordinate_space": {
+              "const": "normalized-text-lines-1-based-inclusive-v1"
+            },
+            "line_start": { "type": "integer", "minimum": 1 },
+            "line_end": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "section_path": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "attributes": { "type": "object" }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path",
+        "source_id",
+        "raw_sha256",
+        "size_bytes",
+        "extension_media_type",
+        "detected_media_type",
+        "detection_method",
+        "encoding",
+        "status",
+        "parser",
+        "parser_version",
+        "parse_revision_sha256",
+        "elements",
+        "issues"
+      ],
+      "properties": {
+        "relative_path": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 },
+        "raw_sha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "extension_media_type": { "type": ["string", "null"] },
+        "detected_media_type": { "type": ["string", "null"] },
+        "detection_method": { "type": "string", "minLength": 1 },
+        "encoding": { "type": ["string", "null"] },
+        "status": { "enum": ["parsed", "external_adapter_required", "rejected"] },
+        "parser": { "type": ["string", "null"] },
+        "parser_version": { "type": ["string", "null"] },
+        "parse_revision_sha256": {
+          "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+        },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/element" }
+        },
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/issue" }
+        }
+      }
+    }
+  }
+}

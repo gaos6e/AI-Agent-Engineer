@@ -118,7 +118,7 @@
 }
 
 @media (max-width: 960px) {
-  .aae-site-header__link {
+  .aae-site-header__link:not(.aae-site-header__language) {
     display: none;
   }
 
@@ -126,6 +126,13 @@
     display: inline-flex;
     border-color: var(--aae-hairline);
   }
+}
+
+.aae-site-header__language {
+  border-color: var(--aae-hairline);
+  font-family: var(--aae-font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 @media (max-width: 660px) {

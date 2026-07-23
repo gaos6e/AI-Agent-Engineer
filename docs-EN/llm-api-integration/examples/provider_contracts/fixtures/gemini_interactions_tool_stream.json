@@ -1,0 +1,87 @@
+{
+  "schema_version": "provider-stream-fixture-v1",
+  "provider": "google",
+  "api_family": "interactions",
+  "api_version": "v1",
+  "contract_revision": "gemini-interactions-ga-v1-2026-07-21",
+  "fixture_layer": "typed-sse-projection",
+  "sdk_baseline": "google-genai 2.12.1",
+  "source_checked": "2026-07-21",
+  "source_urls": [
+    "https://ai.google.dev/gemini-api/docs/interactions-overview",
+    "https://ai.google.dev/api/interactions-api-v1",
+    "https://github.com/googleapis/python-genai/releases/tag/v2.12.1"
+  ],
+  "events": [
+    {
+      "event_type": "interaction.created",
+      "event_id": "event-1",
+      "interaction": {
+        "id": "interaction-A",
+        "status": "in_progress"
+      }
+    },
+    {
+      "event_type": "step.start",
+      "event_id": "event-2",
+      "index": 0,
+      "step": {
+        "type": "function_call",
+        "arguments": {},
+        "id": "call-A",
+        "name": "lookup_order"
+      }
+    },
+    {
+      "event_type": "step.delta",
+      "event_id": "event-3",
+      "index": 0,
+      "delta": {
+        "type": "arguments_delta",
+        "arguments": "{\"order_"
+      }
+    },
+    {
+      "event_type": "step.delta",
+      "event_id": "event-4",
+      "index": 0,
+      "delta": {
+        "type": "arguments_delta"
+      }
+    },
+    {
+      "event_type": "step.delta",
+      "event_id": "event-5",
+      "index": 0,
+      "delta": {
+        "type": "arguments_delta",
+        "arguments": "ref\":\"A-17\"}"
+      }
+    },
+    {
+      "event_type": "step.stop",
+      "event_id": "event-6",
+      "index": 0
+    },
+    {
+      "event_type": "interaction.status_update",
+      "event_id": "event-7",
+      "interaction_id": "interaction-A",
+      "status": "in_progress"
+    },
+    {
+      "event_type": "interaction.completed",
+      "event_id": "event-8",
+      "interaction": {
+        "id": "interaction-A",
+        "status": "requires_action",
+        "usage": {
+          "total_input_tokens": 22,
+          "total_output_tokens": 11,
+          "total_tokens": 33
+        }
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,4 @@
+2026-07-13T10:00:01Z level=INFO run_id=r1 latency_ms=120 message="completed"
+2026-07-13T10:00:02Z level=ERROR run_id=r2 latency_ms=2200 message="timeout"
+invalid line that must not be ignored
+2026-07-13T10:00:03Z level=WARNING run_id=r3 latency_ms=950 message="retrying"

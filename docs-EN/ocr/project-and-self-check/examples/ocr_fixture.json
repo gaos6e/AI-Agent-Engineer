@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "document_id": "synthetic-invoice-001",
+  "review_threshold": 0.9,
+  "pages": [
+    {
+      "page": 1,
+      "width": 1000,
+      "height": 1400,
+      "blocks": [
+        {
+          "block_id": "p1-title",
+          "type": "title",
+          "bbox": [100, 80, 900, 150],
+          "order": 1,
+          "reference_text": "Example purchase order",
+          "predicted_text": "Example purchase order",
+          "confidence": 0.98,
+          "critical": false
+        },
+        {
+          "block_id": "p1-number",
+          "type": "field",
+          "bbox": [100, 190, 500, 250],
+          "order": 2,
+          "reference_text": "Invoice no. A1028",
+          "predicted_text": "Invoice no. A1O28",
+          "confidence": 0.87,
+          "critical": true
+        },
+        {
+          "block_id": "p1-table",
+          "type": "table",
+          "bbox": [100, 300, 900, 620],
+          "order": 3,
+          "reference_text": "Item Quantity Total Sample 2 128.00",
+          "predicted_text": "Item Quantity Total Sample 2 128.00",
+          "confidence": 0.94,
+          "critical": true,
+          "table": {
+            "reference_shape": [2, 3],
+            "predicted_shape": [2, 3]
+          }
+        }
+      ]
+    }
+  ]
+}
+
+

@@ -1,0 +1,791 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ai-agent-engineer/external-provenance-bundle-v2.schema.json",
+  "title": "External provenance bundle v2",
+  "description": "Protected cross-process RAG artifact. JSON Schema checks structure only; trusted digest binding, semantic rebuild, live authorization, and local publication are separate gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_contract",
+    "canonicalization_revision",
+    "chunks",
+    "documents",
+    "index_entries",
+    "integrity",
+    "producer_contract",
+    "release",
+    "schema_version"
+  ],
+  "properties": {
+    "authorization_contract": { "$ref": "#/$defs/authorizationContract" },
+    "canonicalization_revision": {
+      "const": "ai-agent-engineer/restricted-canonical-json/v1"
+    },
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/chunk" }
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/document" }
+    },
+    "index_entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/indexEntry" }
+    },
+    "integrity": { "$ref": "#/$defs/integrity" },
+    "producer_contract": { "$ref": "#/$defs/producerContract" },
+    "release": { "$ref": "#/$defs/release" },
+    "schema_version": { "const": "external-provenance-bundle-v2" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "sourceUri": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "portableMarkdownPath": {
+      "$comment": "Structural precheck only. Importers must also reject dot/reserved/oversize segments and prove the resolved materialization target remains below their isolated root.",
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 300,
+      "pattern": "^(?!/)(?!.*[\\\\<>:\"|?*])(?:[^/]+/)*[^/]+\\.md$"
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/token" },
+      "uniqueItems": true,
+      "maxItems": 128
+    },
+    "nonEmptyStringArray": {
+      "allOf": [
+        { "$ref": "#/$defs/stringArray" },
+        { "minItems": 1 }
+      ]
+    },
+    "logicalSourceId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "ai-agent-engineer/logical-source/v1" },
+        "value": { "type": "string", "pattern": "^xsrc_[0-9a-f]{64}$" }
+      }
+    },
+    "knowledgeRevisionId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "ai-agent-engineer/knowledge-revision/v1" },
+        "value": { "type": "string", "pattern": "^kbr_[0-9a-f]{64}$" }
+      }
+    },
+    "parserRevisionId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "document-inspector/parse-revision/v2" },
+        "value": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "parserElementId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "document-inspector/element/v2" },
+        "value": { "type": "string", "pattern": "^elm_[0-9a-f]{64}$" }
+      }
+    },
+    "adapterElementId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "ai-agent-engineer/namespaced-parser-element/v1" },
+        "value": { "type": "string", "pattern": "^xel_[0-9a-f]{64}$" }
+      }
+    },
+    "chunkId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "chunking-lab/chunk/v1" },
+        "value": { "type": "string", "pattern": "^chk_[0-9a-f]{64}$" }
+      }
+    },
+    "indexEntryId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "chunking-lab/index-entry/v1" },
+        "value": { "type": "string", "pattern": "^idx_[0-9a-f]{64}$" }
+      }
+    },
+    "generationId": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": { "const": "ai-agent-engineer/cross-layer-generation/v1" },
+        "value": { "type": "string", "pattern": "^xgen_[0-9a-f]{64}$" }
+      }
+    },
+    "nativeLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate_space", "line_end", "line_start"],
+      "properties": {
+        "coordinate_space": {
+          "const": "normalized-text-lines-1-based-inclusive-v1"
+        },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "line_start": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "canonicalMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mapping_revision", "reason_code", "status"],
+      "properties": {
+        "mapping_revision": { "const": "parser-line-to-namespaced-lexical-v1" },
+        "reason_code": {
+          "const": "parser_projection_is_not_one_exact_canonical_span"
+        },
+        "status": { "const": "unavailable" }
+      }
+    },
+    "sourceEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connector",
+        "media_type",
+        "relative_path",
+        "root_section_path",
+        "run_id",
+        "sequence",
+        "source_uri",
+        "source_version",
+        "upstream_event_id"
+      ],
+      "properties": {
+        "connector": { "$ref": "#/$defs/token" },
+        "media_type": { "const": "text/markdown" },
+        "relative_path": { "$ref": "#/$defs/portableMarkdownPath" },
+        "root_section_path": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "run_id": { "$ref": "#/$defs/token" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "source_uri": { "$ref": "#/$defs/sourceUri" },
+        "source_version": { "$ref": "#/$defs/token" },
+        "upstream_event_id": { "$ref": "#/$defs/token" }
+      }
+    },
+    "rawRepresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "mode", "sha256", "size_bytes", "text"],
+      "properties": {
+        "encoding": { "const": "utf-8" },
+        "mode": { "const": "inline_utf8" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100000 }
+      }
+    },
+    "canonicalRepresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "normalizer_revision", "sha256", "text"],
+      "properties": {
+        "mode": { "const": "inline_text" },
+        "normalizer_revision": { "const": "utf8-no-bom-lf-nfc-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100000 }
+      }
+    },
+    "accessSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_groups", "authorization_revision", "sha256"],
+      "properties": {
+        "allowed_groups": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "authorization_revision": { "$ref": "#/$defs/token" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "parserArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_sha256",
+        "name",
+        "parse_revision_id",
+        "record",
+        "record_sha256",
+        "schema_version",
+        "version"
+      ],
+      "properties": {
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "name": { "$ref": "#/$defs/token" },
+        "parse_revision_id": { "$ref": "#/$defs/parserRevisionId" },
+        "record": { "$ref": "#/$defs/parserRecord" },
+        "record_sha256": { "$ref": "#/$defs/sha256" },
+        "schema_version": { "$ref": "#/$defs/token" },
+        "version": { "$ref": "#/$defs/token" }
+      }
+    },
+    "parserIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "severity"],
+      "properties": {
+        "code": { "$ref": "#/$defs/token" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "severity": { "enum": ["info", "warning", "error"] }
+      }
+    },
+    "parserElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attributes",
+        "element_id",
+        "kind",
+        "location",
+        "order",
+        "section_path",
+        "text",
+        "text_sha256"
+      ],
+      "properties": {
+        "attributes": { "type": "object" },
+        "element_id": {
+          "type": "string",
+          "pattern": "^elm_[0-9a-f]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "heading",
+            "paragraph",
+            "list_item",
+            "code_block",
+            "table_header",
+            "table_row"
+          ]
+        },
+        "location": { "$ref": "#/$defs/nativeLocation" },
+        "order": { "type": "integer", "minimum": 1 },
+        "section_path": { "$ref": "#/$defs/stringArray" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100000 },
+        "text_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "parserRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detected_media_type",
+        "detection_method",
+        "elements",
+        "encoding",
+        "extension_media_type",
+        "issues",
+        "parse_revision_sha256",
+        "parser",
+        "parser_version",
+        "raw_sha256",
+        "relative_path",
+        "size_bytes",
+        "source_id",
+        "status"
+      ],
+      "properties": {
+        "detected_media_type": { "const": "text/markdown" },
+        "detection_method": { "$ref": "#/$defs/token" },
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/parserElement" }
+        },
+        "encoding": { "enum": ["utf-8", "utf-8-sig"] },
+        "extension_media_type": { "const": "text/markdown" },
+        "issues": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/parserIssue" }
+        },
+        "parse_revision_sha256": { "$ref": "#/$defs/sha256" },
+        "parser": { "$ref": "#/$defs/token" },
+        "parser_version": { "$ref": "#/$defs/token" },
+        "raw_sha256": { "$ref": "#/$defs/sha256" },
+        "relative_path": { "$ref": "#/$defs/portableMarkdownPath" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "source_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "status": { "const": "parsed" }
+      }
+    },
+    "identityInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_groups",
+        "build_state_hash",
+        "canonical_text_sha256",
+        "document_id",
+        "id_scheme",
+        "parse_revision_sha256",
+        "pipeline_version",
+        "revision_number",
+        "run_id",
+        "source_state_hash",
+        "source_uri",
+        "source_version",
+        "tenant_id"
+      ],
+      "properties": {
+        "allowed_groups": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "build_state_hash": { "$ref": "#/$defs/sha256" },
+        "canonical_text_sha256": { "$ref": "#/$defs/sha256" },
+        "document_id": { "$ref": "#/$defs/token" },
+        "id_scheme": { "const": "ai-agent-engineer/knowledge-revision/v1" },
+        "parse_revision_sha256": { "$ref": "#/$defs/sha256" },
+        "pipeline_version": { "$ref": "#/$defs/token" },
+        "revision_number": { "type": "integer", "minimum": 1 },
+        "run_id": { "$ref": "#/$defs/token" },
+        "source_state_hash": { "$ref": "#/$defs/sha256" },
+        "source_uri": { "$ref": "#/$defs/sourceUri" },
+        "source_version": { "$ref": "#/$defs/token" },
+        "tenant_id": { "$ref": "#/$defs/token" }
+      }
+    },
+    "knowledgeRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_snapshot_sha256",
+        "identity_inputs",
+        "producer_snapshot_sha256",
+        "ref",
+        "revision_number"
+      ],
+      "properties": {
+        "external_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "identity_inputs": { "$ref": "#/$defs/identityInputs" },
+        "producer_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "ref": { "$ref": "#/$defs/knowledgeRevisionId" },
+        "revision_number": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "adapterElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "access_snapshot_sha256",
+        "allowed_groups",
+        "element_id",
+        "kind",
+        "logical_source_id",
+        "native_location",
+        "section_path",
+        "source_revision_ref",
+        "text",
+        "text_sha256"
+      ],
+      "properties": {
+        "access_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "allowed_groups": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "element_id": { "$ref": "#/$defs/adapterElementId" },
+        "kind": {
+          "enum": [
+            "paragraph",
+            "list_item",
+            "code_block",
+            "table_header",
+            "table_row"
+          ]
+        },
+        "logical_source_id": { "$ref": "#/$defs/logicalSourceId" },
+        "native_location": { "$ref": "#/$defs/nativeLocation" },
+        "section_path": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "source_revision_ref": { "$ref": "#/$defs/knowledgeRevisionId" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100000 },
+        "text_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "crosswalkItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_element_id",
+        "canonical_mapping",
+        "native_element_id",
+        "native_location",
+        "projection_relation"
+      ],
+      "properties": {
+        "adapter_element_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/adapterElementId" }
+          ]
+        },
+        "canonical_mapping": { "$ref": "#/$defs/canonicalMapping" },
+        "native_element_id": { "$ref": "#/$defs/parserElementId" },
+        "native_location": { "$ref": "#/$defs/nativeLocation" },
+        "projection_relation": { "enum": ["context_only", "projected_as_body"] }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "access_snapshot",
+        "adapter_elements",
+        "canonical_representation",
+        "crosswalk",
+        "crosswalk_sha256",
+        "document_id",
+        "knowledge_revision",
+        "logical_source_id",
+        "parser_artifact",
+        "raw_representation",
+        "source_event",
+        "tenant_id"
+      ],
+      "properties": {
+        "access_snapshot": { "$ref": "#/$defs/accessSnapshot" },
+        "adapter_elements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/adapterElement" }
+        },
+        "canonical_representation": { "$ref": "#/$defs/canonicalRepresentation" },
+        "crosswalk": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/crosswalkItem" }
+        },
+        "crosswalk_sha256": { "$ref": "#/$defs/sha256" },
+        "document_id": { "$ref": "#/$defs/token" },
+        "knowledge_revision": { "$ref": "#/$defs/knowledgeRevision" },
+        "logical_source_id": { "$ref": "#/$defs/logicalSourceId" },
+        "parser_artifact": { "$ref": "#/$defs/parserArtifact" },
+        "raw_representation": { "$ref": "#/$defs/rawRepresentation" },
+        "source_event": { "$ref": "#/$defs/sourceEvent" },
+        "tenant_id": { "$ref": "#/$defs/token" }
+      }
+    },
+    "elementSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element_id", "unit_end", "unit_start"],
+      "properties": {
+        "element_id": { "$ref": "#/$defs/adapterElementId" },
+        "unit_end": { "type": "integer", "minimum": 1 },
+        "unit_start": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "access_snapshot_sha256",
+        "allowed_groups",
+        "chunk_id",
+        "content_sha256",
+        "element_spans",
+        "family",
+        "logical_source_id",
+        "ordinal",
+        "overlap_units",
+        "retrieval_sha256",
+        "retrieval_text",
+        "retrieval_unit_count",
+        "section_path",
+        "source_revision_ref",
+        "strategy_version",
+        "text",
+        "unit_count"
+      ],
+      "properties": {
+        "access_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "allowed_groups": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "chunk_id": { "$ref": "#/$defs/chunkId" },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "element_spans": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/elementSpan" }
+        },
+        "family": { "$ref": "#/$defs/token" },
+        "logical_source_id": { "$ref": "#/$defs/logicalSourceId" },
+        "ordinal": { "type": "integer", "minimum": 1 },
+        "overlap_units": { "type": "integer", "minimum": 0 },
+        "retrieval_sha256": { "$ref": "#/$defs/sha256" },
+        "retrieval_text": { "type": "string", "minLength": 1, "maxLength": 200000 },
+        "retrieval_unit_count": { "type": "integer", "minimum": 1 },
+        "section_path": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "source_revision_ref": { "$ref": "#/$defs/knowledgeRevisionId" },
+        "strategy_version": { "$ref": "#/$defs/token" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 100000 },
+        "unit_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "indexEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "access_snapshot_sha256",
+        "chunk_id",
+        "document_id",
+        "index_entry_id",
+        "index_revision",
+        "logical_source_id",
+        "retrieval_sha256",
+        "source_revision_ref",
+        "tenant_id"
+      ],
+      "properties": {
+        "access_snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "chunk_id": { "$ref": "#/$defs/chunkId" },
+        "document_id": { "$ref": "#/$defs/token" },
+        "index_entry_id": { "$ref": "#/$defs/indexEntryId" },
+        "index_revision": { "$ref": "#/$defs/token" },
+        "logical_source_id": { "$ref": "#/$defs/logicalSourceId" },
+        "retrieval_sha256": { "$ref": "#/$defs/sha256" },
+        "source_revision_ref": { "$ref": "#/$defs/knowledgeRevisionId" },
+        "tenant_id": { "$ref": "#/$defs/token" }
+      }
+    },
+    "producerContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter_revision",
+        "chunk_config",
+        "chunk_strategy_version",
+        "coordinate_schemes",
+        "identity_schemes",
+        "index_revision",
+        "knowledge_state_revision",
+        "knowledge_store_schema_version",
+        "lexical_unit_revision",
+        "mapping_revision",
+        "normalizer_revision",
+        "parser",
+        "pipeline_fingerprint"
+      ],
+      "properties": {
+        "adapter_revision": { "const": "cross-layer-adapter-v1" },
+        "chunk_config": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_units", "overlap_units"],
+          "properties": {
+            "max_units": { "type": "integer", "minimum": 1 },
+            "overlap_units": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "chunk_strategy_version": { "$ref": "#/$defs/token" },
+        "coordinate_schemes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["canonical_mapping", "lexical", "native_location"],
+          "properties": {
+            "canonical_mapping": { "const": "external-provenance/canonical-mapping/v2" },
+            "lexical": { "const": "element-lexical-unit-0-based-half-open-v1" },
+            "native_location": { "const": "normalized-text-lines-1-based-inclusive-v1" }
+          }
+        },
+        "identity_schemes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "chunk",
+            "generation",
+            "index_entry",
+            "knowledge_revision",
+            "logical_source",
+            "namespaced_element",
+            "parser_element",
+            "parser_revision"
+          ],
+          "properties": {
+            "chunk": { "const": "chunking-lab/chunk/v1" },
+            "generation": { "const": "ai-agent-engineer/cross-layer-generation/v1" },
+            "index_entry": { "const": "chunking-lab/index-entry/v1" },
+            "knowledge_revision": { "const": "ai-agent-engineer/knowledge-revision/v1" },
+            "logical_source": { "const": "ai-agent-engineer/logical-source/v1" },
+            "namespaced_element": { "const": "ai-agent-engineer/namespaced-parser-element/v1" },
+            "parser_element": { "const": "document-inspector/element/v2" },
+            "parser_revision": { "const": "document-inspector/parse-revision/v2" }
+          }
+        },
+        "index_revision": { "$ref": "#/$defs/token" },
+        "knowledge_state_revision": {
+          "const": "knowledge-store/source-build-state/v1"
+        },
+        "knowledge_store_schema_version": { "const": "1.0" },
+        "lexical_unit_revision": { "const": "chunking-lab/regex-lexical-unit/v1" },
+        "mapping_revision": { "const": "parser-line-to-namespaced-lexical-v1" },
+        "normalizer_revision": { "const": "utf8-no-bom-lf-nfc-v1" },
+        "parser": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config_sha256", "name", "schema_version", "version"],
+          "properties": {
+            "config_sha256": { "$ref": "#/$defs/sha256" },
+            "name": { "$ref": "#/$defs/token" },
+            "schema_version": { "$ref": "#/$defs/token" },
+            "version": { "$ref": "#/$defs/token" }
+          }
+        },
+        "pipeline_fingerprint": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "authorizationContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acl_enforcement",
+        "authorization_revision",
+        "consumer_live_authorization_check",
+        "subject_membership_evidence"
+      ],
+      "properties": {
+        "acl_enforcement": { "const": "tenant-and-acl-before-score" },
+        "authorization_revision": { "$ref": "#/$defs/token" },
+        "consumer_live_authorization_check": { "const": "required-before-publish-and-query" },
+        "subject_membership_evidence": { "const": "not-in-bundle-host-resolved" }
+      }
+    },
+    "documentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logical_source_id", "source_revision_ref"],
+      "properties": {
+        "logical_source_id": { "$ref": "#/$defs/logicalSourceId" },
+        "source_revision_ref": { "$ref": "#/$defs/knowledgeRevisionId" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization_revision",
+        "capture_artifact_sha256",
+        "capture_state_sha256",
+        "document_refs",
+        "entry_refs",
+        "entry_set_sha256",
+        "evidence_level",
+        "generation_id",
+        "pipeline_fingerprint",
+        "producer_entry_set_sha256",
+        "producer_release_manifest_reference",
+        "publication_mode",
+        "source_manifest_sha256",
+        "tombstone_state_sha256"
+      ],
+      "properties": {
+        "authorization_revision": { "$ref": "#/$defs/token" },
+        "capture_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "capture_state_sha256": { "$ref": "#/$defs/sha256" },
+        "document_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/documentRef" }
+        },
+        "entry_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/indexEntryId" }
+        },
+        "entry_set_sha256": { "$ref": "#/$defs/sha256" },
+        "evidence_level": { "const": "document-revision-bridge" },
+        "generation_id": { "$ref": "#/$defs/generationId" },
+        "pipeline_fingerprint": { "$ref": "#/$defs/sha256" },
+        "producer_entry_set_sha256": { "$ref": "#/$defs/sha256" },
+        "producer_release_manifest_reference": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "verification"],
+          "properties": {
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "verification": { "const": "opaque-producer-reference-only" }
+          }
+        },
+        "publication_mode": { "const": "producer-published-consumer-must-stage" },
+        "source_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "tombstone_state_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestation",
+        "canonicalization_revision",
+        "payload_sha256",
+        "producer_validation"
+      ],
+      "properties": {
+        "attestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "trust_scope"],
+          "properties": {
+            "mode": { "const": "none" },
+            "trust_scope": { "const": "self-consistency-only" }
+          }
+        },
+        "canonicalization_revision": {
+          "const": "ai-agent-engineer/restricted-canonical-json/v1"
+        },
+        "payload_sha256": { "$ref": "#/$defs/sha256" },
+        "producer_validation": { "const": "fresh-local-rebuild-before-export" }
+      }
+    }
+  }
+}

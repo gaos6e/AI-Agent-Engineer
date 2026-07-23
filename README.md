@@ -9,12 +9,12 @@
 
 <p align="center">
   <a href="https://gaos6e.github.io/AI-Agent-Engineer/"><img src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E9%98%85%E8%AF%BB-GitHub%20Pages-181717?style=for-the-badge&amp;logo=github" alt="在线阅读" /></a>
-  <a href="docs/All%20of%20AI.md"><img src="https://img.shields.io/badge/%E8%AF%BE%E7%A8%8B%E5%9C%B0%E5%9B%BE-%E5%9B%9B%E6%9D%A1%E8%A7%92%E8%89%B2%E8%B7%AF%E5%BE%84-6B5EEB?style=for-the-badge" alt="课程地图" /></a>
+  <a href="docs-CN/All%20of%20AI.md"><img src="https://img.shields.io/badge/%E8%AF%BE%E7%A8%8B%E5%9C%B0%E5%9B%BE-%E5%9B%9B%E6%9D%A1%E8%A7%92%E8%89%B2%E8%B7%AF%E5%BE%84-6B5EEB?style=for-the-badge" alt="课程地图" /></a>
   <a href="https://github.com/gaos6e/AI-Agent-Engineer/actions/workflows/deploy-pages.yml"><img src="https://github.com/gaos6e/AI-Agent-Engineer/actions/workflows/deploy-pages.yml/badge.svg?branch=main" alt="部署状态" /></a>
 </p>
 
 <p align="center">
-  <a href="https://gaos6e.github.io/AI-Agent-Engineer/"><strong>立即开始学习</strong></a> · <a href="docs/All%20of%20AI.md">查看完整路线</a> · <a href="docs/">浏览全部课程</a>
+  <a href="https://gaos6e.github.io/AI-Agent-Engineer/"><strong>立即开始学习</strong></a> · <a href="docs-CN/All%20of%20AI.md">查看完整路线</a> · <a href="docs-CN/">浏览全部课程</a>
 </p>
 
 > **学完不是读完。** 每门课都以“能交付什么、怎样验证”为完成条件；框架、协议和多 Agent 只在它们真的能解决问题时再引入。
@@ -40,7 +40,7 @@ flowchart LR
 | 可观测、可回滚、经得起真实运行的系统 | Agent 平台与可靠性 | 有 trace、发布门禁与事故演练的运行平台 |
 | 能被打断、会用工具的实时多模态体验 | 多模态与实时交互 | 可测量延迟与恢复能力的交互原型 |
 
-[查看四条角色路径的完整课程顺序 →](docs/All%20of%20AI.md)
+[查看四条角色路径的完整课程顺序 →](docs-CN/All%20of%20AI.md)
 
 ## 用它来学习，而不是收藏
 
@@ -57,7 +57,7 @@ flowchart LR
 | --- | --- | --- |
 | AI 基础认知、Python、JSON、API、Git、数学与机器学习 | 现代 LLM、提示词、上下文工程、RAG、向量检索、Tool Calling、MCP、Agent Skills、工作流与多 Agent | 评测体系、Benchmark、数据质量、LLMOps、运行监控、AI 安全、隐私计算与治理 |
 
-课程不是一次性堆砌：目录、角色路径和前置关系会随公开内容一同校验更新。完整结构从[课程地图](docs/All%20of%20AI.md)进入最合适。
+课程不是一次性堆砌：目录、角色路径和前置关系会随公开内容一同校验更新。完整结构从[课程地图](docs-CN/All%20of%20AI.md)进入最合适。
 
 ## 适合谁
 
@@ -68,7 +68,7 @@ flowchart LR
 
 ## 公开阅读、反馈与贡献
 
-优先在[在线学习站](https://gaos6e.github.io/AI-Agent-Engineer/)阅读：支持全文搜索、深浅主题和课程导航；GitHub 上的 `docs/` 也可以直接浏览。
+优先在[在线学习站](https://gaos6e.github.io/AI-Agent-Engineer/)阅读：支持全文搜索、深浅主题、课程导航和中英文页面切换，根路径默认进入中文站。GitHub 上可直接浏览一一配对的 `docs-CN/` 与 `docs-EN/`。
 
 发现错别字、断链、过时信息或路线问题，欢迎提交 Issue。修改正文或引入第三方资料前，请先阅读[公开发布策略](.website/PUBLISHING.md)：公开仓库只保留经过许可、隐私与资源检查的发布快照，不能再发布的参考内容会保留来源说明，而不是直接复制正文。
 
@@ -98,6 +98,6 @@ npm run preview
 <div align="center">
 
 如果这份路线帮你少走了弯路，欢迎点一个 Star。<br />
-<a href="https://gaos6e.github.io/AI-Agent-Engineer/">开始学习</a> · <a href="docs/All%20of%20AI.md">浏览课程地图</a>
+<a href="https://gaos6e.github.io/AI-Agent-Engineer/">开始学习</a> · <a href="docs-CN/All%20of%20AI.md">浏览课程地图</a>
 
 </div>

@@ -1,0 +1,143 @@
+{
+  "schema_version": "cross-layer-fixture-v1",
+  "contract": {
+    "adapter_revision": "cross-layer-adapter-v1",
+    "mapping_revision": "parser-line-to-namespaced-lexical-v1",
+    "parser_schema_version": "2.0",
+    "knowledge_store_schema_version": "1.0",
+    "chunk_strategy_version": "structure-v1",
+    "index_revision": "lexical-overlap-index-v1",
+    "authorization_revision": "authz-v1",
+    "chunk_config": {
+      "max_units": 64,
+      "overlap_units": 8
+    }
+  },
+  "documents": [
+    {
+      "tenant_id": "tenant-a",
+      "document_id": "refund-policy",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-a/refund-policy",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-a-refund-v1",
+      "run_id": "run-initial-a-refund",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-a/refund.md",
+      "root_section_path": [
+        "Refund policy"
+      ],
+      "allowed_groups": [
+        "employees"
+      ],
+      "content": "# Refund policy\n\nApproved refunds usually return to the original payment method within one to three business days.\n"
+    },
+    {
+      "tenant_id": "tenant-a",
+      "document_id": "oncall-secret",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-a/oncall-secret",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-a-oncall-v1",
+      "run_id": "run-initial-a-oncall",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-a/oncall.md",
+      "root_section_path": [
+        "On-call runbook"
+      ],
+      "allowed_groups": [
+        "oncall"
+      ],
+      "content": "# On-call runbook\n\nThe internal on-call phone is 010-5555-0188.\n"
+    },
+    {
+      "tenant_id": "tenant-b",
+      "document_id": "refund-policy-copy",
+      "source_sequence": 1,
+      "source_uri": "kb://tenant-b/refund-policy-copy",
+      "source_version": "v1",
+      "connector": "offline-fixture",
+      "upstream_event_id": "event-tenant-b-refund-v1",
+      "run_id": "run-initial-b-refund",
+      "media_type": "text/markdown",
+      "relative_path": "tenant-b/refund.md",
+      "root_section_path": [
+        "Refund policy"
+      ],
+      "allowed_groups": [
+        "employees"
+      ],
+      "content": "# Refund policy\n\nApproved refunds usually return to the original payment method within one to three business days.\n"
+    }
+  ],
+  "queries": [
+    {
+      "query_id": "q-tenant-a-refund",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "How long does an approved refund take to return?",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "Approved refunds usually return to the original payment method within one to three business days."
+      ],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-a-phone-denied",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "internal on-call phone",
+      "top_k": 3,
+      "expected_claim_texts": [],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-a-phone-oncall",
+      "tenant_id": "tenant-a",
+      "subject_groups": [
+        "oncall"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "internal on-call phone",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "The internal on-call phone is 010-5555-0188."
+      ],
+      "forbidden_document_ids": [
+        "refund-policy",
+        "refund-policy-copy"
+      ]
+    },
+    {
+      "query_id": "q-tenant-b-refund",
+      "tenant_id": "tenant-b",
+      "subject_groups": [
+        "employees"
+      ],
+      "authorization_revision": "authz-v1",
+      "query": "How long does an approved refund take to return?",
+      "top_k": 3,
+      "expected_claim_texts": [
+        "Approved refunds usually return to the original payment method within one to three business days."
+      ],
+      "forbidden_document_ids": [
+        "oncall-secret",
+        "refund-policy"
+      ]
+    }
+  ]
+}

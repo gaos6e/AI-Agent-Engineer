@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "meeting-assistant",
+  "max_steps": 8,
+  "timeout_seconds": 30,
+  "tools": [
+    {
+      "name": "search_notes",
+      "mode": "read",
+      "requires_approval": false
+    },
+    {
+      "name": "create_calendar_event",
+      "mode": "write",
+      "requires_approval": true
+    }
+  ]
+}
+

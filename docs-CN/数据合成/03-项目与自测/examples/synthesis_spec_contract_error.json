@@ -1,0 +1,36 @@
+{
+  "dataset_id": "order-agent-synthetic-eval-teaching",
+  "dataset_version": "2.0.0-invalid",
+  "schema_version": "2",
+  "purpose": "This fixture intentionally contains an unknown top-level field.",
+  "non_goals": ["production use"],
+  "generator": {
+    "type": "author-designed-template",
+    "version": "template-pipeline-2.0.0",
+    "source_checked": "2026-07-14",
+    "contains_real_data": false
+  },
+  "split": {"seed": 13, "development_family_count": 1},
+  "quality_gates": {
+    "min_records_per_cell": 1,
+    "min_released_records": 1,
+    "max_duplicate_fraction": 0.1,
+    "require_all_conditions": true
+  },
+  "teaching_faults": {"inject_duplicate": false, "inject_missing_expected_action": false},
+  "conditions": {
+    "en": {
+      "status": {
+        "expected_action": "lookup_order",
+        "critical": false,
+        "templates": ["Check fictional order {order_id}"]
+      },
+      "missing-id": {
+        "expected_action": "ask_for_order_id",
+        "critical": false,
+        "templates": ["I omitted the fictional order ID"]
+      }
+    }
+  },
+  "unexpected_field": true
+}

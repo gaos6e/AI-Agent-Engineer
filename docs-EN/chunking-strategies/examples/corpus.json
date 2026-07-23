@@ -1,0 +1,101 @@
+[
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e1",
+    "kind": "paragraph",
+    "text": "The connection and read timeouts must both be set for every external request. The connection timeout is 3 seconds and the read timeout is 10 seconds.",
+    "section_path": ["API Guide", "Timeouts"],
+    "acl": ["employees"],
+    "line_start": 3,
+    "line_end": 4
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e2",
+    "kind": "paragraph",
+    "text": "Only network timeouts, rate limits, and transient server errors are eligible for retry.",
+    "section_path": ["API Guide", "Retries"],
+    "acl": ["employees"],
+    "line_start": 6,
+    "line_end": 6
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e3",
+    "kind": "paragraph",
+    "text": "Retries use exponential backoff, with at most 3 attempts; authentication failures must not be retried.",
+    "section_path": ["API Guide", "Retries"],
+    "acl": ["employees"],
+    "line_start": 7,
+    "line_end": 7
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e4",
+    "kind": "paragraph",
+    "text": "Read API keys only from environment variables; never write keys to logs.",
+    "section_path": ["API Guide", "Credentials"],
+    "acl": ["employees"],
+    "line_start": 9,
+    "line_end": 9
+  },
+  {
+    "source_id": "api-guide",
+    "source_revision": "rev-3",
+    "element_id": "api-e5",
+    "kind": "code_block",
+    "text": "timeout = (3, 10)\nresponse = client.get(url, timeout=timeout)",
+    "section_path": ["API Guide", "Python Example"],
+    "acl": ["employees"],
+    "line_start": 11,
+    "line_end": 12
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e1",
+    "kind": "table_header",
+    "text": "Environment | Replicas | Approver",
+    "section_path": ["Deployment Guide", "Environment Matrix"],
+    "acl": ["platform"],
+    "line_start": 4,
+    "line_end": 4
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e2",
+    "kind": "table_row",
+    "text": "production | 4 | SRE",
+    "section_path": ["Deployment Guide", "Environment Matrix"],
+    "acl": ["platform"],
+    "line_start": 5,
+    "line_end": 5
+  },
+  {
+    "source_id": "deploy-guide",
+    "source_revision": "rev-2",
+    "element_id": "deploy-e3",
+    "kind": "table_row",
+    "text": "staging | 2 | team-lead",
+    "section_path": ["Deployment Guide", "Environment Matrix"],
+    "acl": ["platform"],
+    "line_start": 6,
+    "line_end": 6
+  },
+  {
+    "source_id": "operations-guide",
+    "source_revision": "rev-1",
+    "element_id": "ops-e1",
+    "kind": "paragraph",
+    "text": "Before release, check configuration, dependencies, permissions, and the rollback entry point. During release, expand traffic gradually and continuously observe error rate and latency. If the error rate exceeds the threshold for two consecutive windows, stop expansion and roll back. After recovery, retain the incident timeline, impact scope, and verification evidence. The final rule is that an unverified release must not be released again.",
+    "section_path": ["Runbook", "Canary Release"],
+    "acl": ["employees"],
+    "line_start": 3,
+    "line_end": 5
+  }
+]

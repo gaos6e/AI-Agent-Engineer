@@ -1,0 +1,438 @@
+{
+  "version": "model-selection-v2",
+  "decision": {
+    "task": "Anonymous tool-using ticket-assistant candidate selection (teaching data)",
+    "as_of": "2026-07-18",
+    "required_capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "allowed_deployments": [
+      "approved-region",
+      "self-hosted"
+    ],
+    "require_no_training": true,
+    "max_retention_days": 7,
+    "max_p95_latency_ms": 1500,
+    "max_avg_cost_usd": 0.03,
+    "min_trials_per_case": 3,
+    "min_task_success_rate": 0.75,
+    "min_structured_output_rate": 0.95,
+    "min_tool_success_rate": 0.9,
+    "weights": {
+      "task_success": 0.45,
+      "structured_output": 0.15,
+      "tool_success": 0.15,
+      "latency_headroom": 0.15,
+      "cost_headroom": 0.1
+    },
+    "sensitivity_weights": [
+      {
+        "name": "quality-priority",
+        "weights": {
+          "task_success": 0.6,
+          "structured_output": 0.15,
+          "tool_success": 0.15,
+          "latency_headroom": 0.05,
+          "cost_headroom": 0.05
+        }
+      },
+      {
+        "name": "efficiency-priority",
+        "weights": {
+          "task_success": 0.25,
+          "structured_output": 0.1,
+          "tool_success": 0.1,
+          "latency_headroom": 0.25,
+          "cost_headroom": 0.3
+        }
+      }
+    ]
+  },
+  "candidates": [
+    {
+      "id": "candidate-a",
+      "evidence": {
+        "status": "verified",
+        "uri": "urn:fixture:model-card:candidate-a",
+        "checked_on": "2026-07-17",
+        "owner": "model-governance",
+        "expires_on": "2026-08-17",
+        "missing_items": []
+      },
+      "deployment": "approved-region",
+      "capabilities": [
+        "structured-output",
+        "tool-calling",
+        "vision"
+      ],
+      "data_policy": {
+        "training_use": false,
+        "retention_days": 0
+      },
+      "trials": [
+        {
+          "trial_id": "a-c1-t1",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 1150,
+          "cost_usd": 0.02
+        },
+        {
+          "trial_id": "a-c1-t2",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.95,
+          "latency_ms": 1180,
+          "cost_usd": 0.021
+        },
+        {
+          "trial_id": "a-c1-t3",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 1200,
+          "cost_usd": 0.021
+        },
+        {
+          "trial_id": "a-c2-t1",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 1250,
+          "cost_usd": 0.022
+        },
+        {
+          "trial_id": "a-c2-t2",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.95,
+          "latency_ms": 1280,
+          "cost_usd": 0.022
+        },
+        {
+          "trial_id": "a-c2-t3",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 1300,
+          "cost_usd": 0.023
+        }
+      ]
+    },
+    {
+      "id": "candidate-b",
+      "evidence": {
+        "status": "verified",
+        "uri": "urn:fixture:model-card:candidate-b",
+        "checked_on": "2026-07-17",
+        "owner": "model-governance",
+        "expires_on": "2026-08-17",
+        "missing_items": []
+      },
+      "deployment": "self-hosted",
+      "capabilities": [
+        "structured-output",
+        "tool-calling"
+      ],
+      "data_policy": {
+        "training_use": false,
+        "retention_days": 0
+      },
+      "trials": [
+        {
+          "trial_id": "b-c1-t1",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 600,
+          "cost_usd": 0.008
+        },
+        {
+          "trial_id": "b-c1-t2",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.95,
+          "latency_ms": 620,
+          "cost_usd": 0.008
+        },
+        {
+          "trial_id": "b-c1-t3",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 640,
+          "cost_usd": 0.009
+        },
+        {
+          "trial_id": "b-c2-t1",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 680,
+          "cost_usd": 0.009
+        },
+        {
+          "trial_id": "b-c2-t2",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 720,
+          "cost_usd": 0.01
+        },
+        {
+          "trial_id": "b-c2-t3",
+          "case_id": "case-02",
+          "task_success": false,
+          "structured_output_valid": true,
+          "tool_success": 0.95,
+          "latency_ms": 750,
+          "cost_usd": 0.01
+        }
+      ]
+    },
+    {
+      "id": "candidate-c",
+      "evidence": {
+        "status": "verified",
+        "uri": "urn:fixture:model-card:candidate-c",
+        "checked_on": "2026-07-17",
+        "owner": "model-governance",
+        "expires_on": "2026-08-17",
+        "missing_items": []
+      },
+      "deployment": "approved-region",
+      "capabilities": [
+        "structured-output",
+        "tool-calling"
+      ],
+      "data_policy": {
+        "training_use": false,
+        "retention_days": 3
+      },
+      "trials": [
+        {
+          "trial_id": "c-c1-t1",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 800,
+          "cost_usd": 0.011
+        },
+        {
+          "trial_id": "c-c1-t2",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 820,
+          "cost_usd": 0.011
+        },
+        {
+          "trial_id": "c-c1-t3",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 850,
+          "cost_usd": 0.012
+        },
+        {
+          "trial_id": "c-c2-t1",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 900,
+          "cost_usd": 0.012
+        },
+        {
+          "trial_id": "c-c2-t2",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 930,
+          "cost_usd": 0.013
+        },
+        {
+          "trial_id": "c-c2-t3",
+          "case_id": "case-02",
+          "task_success": false,
+          "structured_output_valid": true,
+          "tool_success": 0.9,
+          "latency_ms": 950,
+          "cost_usd": 0.013
+        }
+      ]
+    },
+    {
+      "id": "candidate-d",
+      "evidence": {
+        "status": "verified",
+        "uri": "urn:fixture:model-card:candidate-d",
+        "checked_on": "2026-07-17",
+        "owner": "model-governance",
+        "expires_on": "2026-08-17",
+        "missing_items": []
+      },
+      "deployment": "approved-region",
+      "capabilities": [
+        "structured-output",
+        "tool-calling"
+      ],
+      "data_policy": {
+        "training_use": false,
+        "retention_days": 0
+      },
+      "trials": [
+        {
+          "trial_id": "d-c1-t1",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.8,
+          "latency_ms": 450,
+          "cost_usd": 0.004
+        },
+        {
+          "trial_id": "d-c1-t2",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.8,
+          "latency_ms": 465,
+          "cost_usd": 0.004
+        },
+        {
+          "trial_id": "d-c1-t3",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.8,
+          "latency_ms": 475,
+          "cost_usd": 0.005
+        },
+        {
+          "trial_id": "d-c2-t1",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.8,
+          "latency_ms": 500,
+          "cost_usd": 0.005
+        },
+        {
+          "trial_id": "d-c2-t2",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 0.8,
+          "latency_ms": 510,
+          "cost_usd": 0.005
+        },
+        {
+          "trial_id": "d-c2-t3",
+          "case_id": "case-02",
+          "task_success": false,
+          "structured_output_valid": false,
+          "tool_success": 0.8,
+          "latency_ms": 525,
+          "cost_usd": 0.006
+        }
+      ]
+    },
+    {
+      "id": "candidate-e",
+      "evidence": {
+        "status": "blocked",
+        "uri": null,
+        "checked_on": "2026-07-17",
+        "owner": "risk-review",
+        "expires_on": null,
+        "missing_items": [
+          "data-retention-contract",
+          "regional-processing-proof"
+        ]
+      },
+      "deployment": "approved-region",
+      "capabilities": [
+        "structured-output",
+        "tool-calling"
+      ],
+      "data_policy": {
+        "training_use": false,
+        "retention_days": 0
+      },
+      "trials": [
+        {
+          "trial_id": "e-c1-t1",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 400,
+          "cost_usd": 0.003
+        },
+        {
+          "trial_id": "e-c1-t2",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 410,
+          "cost_usd": 0.003
+        },
+        {
+          "trial_id": "e-c1-t3",
+          "case_id": "case-01",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 420,
+          "cost_usd": 0.003
+        },
+        {
+          "trial_id": "e-c2-t1",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 430,
+          "cost_usd": 0.004
+        },
+        {
+          "trial_id": "e-c2-t2",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 440,
+          "cost_usd": 0.004
+        },
+        {
+          "trial_id": "e-c2-t3",
+          "case_id": "case-02",
+          "task_success": true,
+          "structured_output_valid": true,
+          "tool_success": 1.0,
+          "latency_ms": 450,
+          "cost_usd": 0.004
+        }
+      ]
+    }
+  ]
+}
