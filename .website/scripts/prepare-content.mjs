@@ -809,7 +809,11 @@ function normalizedTranslationKey(value) {
 }
 
 export function translationSourceHash(markdown) {
-  return createHash("sha256").update(Buffer.from(markdown, "utf8")).digest("hex")
+  // Translation metadata is checked in Windows and Linux worktrees. Normalize
+  // line endings so a checkout conversion cannot make a current translation
+  // look stale.
+  const normalized = String(markdown).replace(/\r\n?/g, "\n")
+  return createHash("sha256").update(Buffer.from(normalized, "utf8")).digest("hex")
 }
 
 const HAN_CHARACTER = /\p{Script=Han}/u

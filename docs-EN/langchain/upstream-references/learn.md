@@ -7,7 +7,7 @@ lang: en
 translation_key: LangChain/01-Learn.md
 translation_route: zh-CN/LangChain/01-Learn
 translation_default_route: zh-CN/LangChain/01-Learn
-translation_source_hash: 3ef9821c36363241042d1eb11590a05f25315ad153eb02820df8ed5fac9349d1
+translation_source_hash: 64e08090f131bdcd26813ebcaed5825710b7d9542ffda9892016a6fb198b3179
 ---
 
 # LangChain upstream reference — learn

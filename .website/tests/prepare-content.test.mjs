@@ -936,6 +936,10 @@ test("vault path transformation skips fenced and inline code", () => {
 
 test("translation pairs require one current English counterpart for every Chinese page", () => {
   const chinese = [{ relativePath: "RAG/00-目录.md", markdown: "---\ntitle: RAG\n---\n# RAG" }]
+  assert.equal(
+    translationSourceHash(chinese[0].markdown),
+    translationSourceHash(chinese[0].markdown.replaceAll("\n", "\r\n")),
+  )
   const english = [{
     relativePath: "retrieval/00-index.md",
     markdown: [
